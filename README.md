@@ -1,5 +1,7 @@
 # In4matx-43-Project
-Live Geolocation IRL Common-Interest Friend Finder
+
+# Title: AroundU
+# Tag Line: Trying to get as many people on and as many people off
 
 # 📋 Team Meeting Log
 
