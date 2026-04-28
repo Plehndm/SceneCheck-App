@@ -42,6 +42,39 @@ We came up with 11 key features:
 
 ---
 
+## Meeting #2 — April 27, 2026
+
+**Type: Virtual** <!-- In-person / Virtual / Async -->
+
+**Attendees:**
+| Name | Participation |
+|------|--------------|
+| David Plehn | In-person / <mark>Virtual</mark> / Slack / Email |
+| Kyle He | In-person / <mark>Virtual</mark> / Slack / Email |
+| Duy Tran | In-person / <mark>Virtual</mark> / Slack / Email |
+| Kaylee Quinn | In-person / <mark>Virtual</mark> / Slack / Email |
+
+**Summary:**
+<!-- 50–100 words describing what was discussed -->
+We finalized what the niche for our app would be which is events, and did more brainstorming on features for how users should interact with the map, events, other users, etc. Here are some of our ideas:
+- Select a radius (ie 10 miles) or select a city
+- Events shown: your selected interests (loosely matches your interests)
+- Subscribe/Register to event you are interested in
+   + Once subscribed, have the option to join a groupchat with everyone else subscribed to that event
+   + Event coordinator has ability to send announcement to subscribers
+   + During/after event, you can meet people there and add them as a friend
+- Users who are friends can follow each other's events they attend/attended, create a chat, share events
+- After subscribing to an interest you get notified of an event of that type’s creation within your radius
+- After subscribing to an organization you get notified of any events created by them
+
+**Action Items:**
+- [ ] Update Functional Requirements — assigned to @Kyle He — due 4/29/26
+- [ ] Make User Flows — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He — due 4/29/26
+- [ ] Meeting Summary — assigned to @David Plehn — due 4/27/26
+- [ ] Write Pros/Cons — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 4/29/26
+
+---
+
 ## Meeting #[N] — [Month Day, Year]
 
 **Type:** <!-- In-person / Virtual / Async -->
@@ -60,5 +93,4 @@ We came up with 11 key features:
 - [ ] [Task] — assigned to @[person] — due [date]
 
 ---
-
 <!-- Repeat block above for each meeting -->
