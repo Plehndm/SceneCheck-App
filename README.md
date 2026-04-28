@@ -1,7 +1,7 @@
 # In4matx-43-Project
 
-# Title: AroundU
-# Tag Line: Trying to get as many people on and as many people off
+## Title: AroundU
+## Tag Line: Trying to get as many people on and as many people off
 
 # 📋 Team Meeting Log
 
