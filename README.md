@@ -71,7 +71,7 @@ We finalized what the niche for our app would be which is events, and did more b
 - [ ] Update Functional Requirements — assigned to @Kyle He — due 4/29/26
 - [ ] Make User Flows — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He — due 4/29/26
 - [ ] Meeting Summary — assigned to @David Plehn — due 4/27/26
-- [ ] Write Pros/Cons — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 4/29/26
+- [ ] Write Pros/Cons and Ethic Concerns — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 4/29/26
 
 ---
 
