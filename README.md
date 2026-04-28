@@ -66,6 +66,15 @@ We finalized what the niche for our app would be which is events, and did more b
 - Users who are friends can follow each other's events they attend/attended, create a chat, share events
 - After subscribing to an interest you get notified of an event of that type’s creation within your radius
 - After subscribing to an organization you get notified of any events created by them
+- App made events
+   + Web scraper to auto make events, assigned with tags
+- User made events, assigned with tags
+   + 	If doesnt get enough subscribers within __, cancel event
+   + 	Event is made if __ users initially subscribe to it
+   + 	User making event can see extra info:
+        * What city hosts what types of events
+        * What specific location hosts what events
+- Users have ability to rate events after
 
 **Action Items:**
 - [ ] Update Functional Requirements — assigned to @Kyle He — due 4/29/26
