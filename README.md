@@ -1,6 +1,6 @@
 # In4matx-43-Project
 
-## Title: AroundU
+## Title: SceneCheck
 ## Tag Line: Trying to get as many people on and as many people off
 
 # 📋 Team Meeting Log
