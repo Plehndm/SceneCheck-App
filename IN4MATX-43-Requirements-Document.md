@@ -738,7 +738,7 @@ the app to send push notification</td>
 
 ## Sketches
 
-<img width="1065" height="387" alt="sketches" src="https://github.com/user-attachments/assets/dbaf98ad-7179-4301-8041-5d91ad13ff6a" />
+![UI Draft](/assets/img/UI-Draft.png)
 
 ## Related Planning Documents
 
