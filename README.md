@@ -86,6 +86,29 @@ We finalized what the niche for our app would be which is events, and did more b
 
 ---
 
+## Meeting #3 — May 8, 2026
+
+**Type: In-person** <!-- In-person / Virtual / Async -->
+
+**Attendees:**
+| Name | Participation |
+|------|--------------|
+| David Plehn | <mark>In-person</mark> / Virtual / Slack / Email |
+| Shrujan Sriram | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kyle He | <mark>In-person</mark> / Virtual / Slack / Email |
+| Duy Tran | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kaylee Quinn | <mark>In-person</mark> / Virtual / Slack / Email |
+
+**Summary:**
+<!-- 50–100 words describing what was discussed -->
+We discussed architecture decisions about what backend we should use and how to merge that with the frontend. We decided on using Supabase for the backend (as it simplifies our database/backend integration as well as ease of connection with external services) and use JavaScript with React for the frontend. Additionally, we discussed general design decisions with the prototype and refined the event creation process to include a limit on when a user created event is shown to people outside of its tagged interests, the ability to select if a created event is from a user or an organization.
+
+**Action Items:**
+- [ ] Meeting Summary — assigned to @David Plehn — due 5/8/26
+- [ ] Write Architecture Document — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 5/14/26
+
+---
+
 ## Meeting #[N] — [Month Day, Year]
 
 **Type:** <!-- In-person / Virtual / Async -->
