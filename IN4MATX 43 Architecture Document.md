@@ -238,8 +238,7 @@ The <span style="color:#188038">data.deep_link</span> field tells the React Nati
 - Edge Function validates required fields, runs keyword/embedding auto-tagging, then inserts with <span style="color:#188038">source: 'scraped'</span>
 
 Here's a visual overview of how all these channels connect:
-
-
+<img width="635" height="742" alt="Screenshot 2026-05-13 121336" src="https://github.com/user-attachments/assets/26980853-7b0f-4980-82e6-8fa1569f0c92" />
 
 # Examples of Component Functions and Connector Communications
 
