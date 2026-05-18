@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SceneCheck — Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --primary: #FF5B47;
+    --primary-ink: #FFFFFF;
+    --primary-soft: #FFE3DD;
+    --accent-blue: #2E7BFF;
+    --accent-friend: #1A1714;
+    --ink: #14110F;
+    --ink-2: #4D453E;
+    --ink-3: #8A8077;
+    --surface: #FFFBF5;
+    --card: #FFFFFF;
+    --subtle: #F2EBDF;
+    --line: #ECE3D2;
+    --good: #2BB673;
+    --warn: #F2B33C;
+    --map-land: #EFE6D2;
+    --map-park: #B7D69A;
+    --map-water: #BBD8EC;
+    --map-road: #FFFFFF;
+    --map-build: #E5DBC6;
+    --map-pin-mute: #A89E8C;
+    --page-bg: #ECE3D2;
+    --page-glow-1: #F8E3CC;
+    --page-glow-2: #F4D8C3;
+    --display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+    --body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--page-bg);
+    font-family: var(--body);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Buttons/inputs/selects default to system text colors —
+     force them to inherit so theme tokens propagate. */
+  button, input, select, textarea {
+    color: inherit;
+    font-family: inherit;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(1200px 600px at 20% 10%, var(--page-glow-1) 0%, transparent 60%),
+      radial-gradient(1000px 800px at 90% 90%, var(--page-glow-2) 0%, transparent 60%),
+      var(--page-bg);
+    overflow: hidden;
+    transition: background-color 200ms ease;
+  }
+  #stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scale-wrap {
+    transform-origin: center center;
+    transition: transform 200ms ease;
+  }
+  /* hide scrollbars in inner content */
+  .scroll::-webkit-scrollbar { display: none; }
+  .scroll { scrollbar-width: none; }
+  /* press affordance */
+  .press { transition: transform 120ms ease, opacity 120ms ease, background 120ms ease; }
+  .press:active { transform: scale(0.97); opacity: 0.85; }
+  .fade-in {
+    animation: fadeIn 280ms ease both;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  /* Pulse for "you are here" map dot */
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.65; }
+    50%      { transform: scale(2.4); opacity: 0; }
+  }
+  .pulse-ring {
+    animation: pulse 2.4s ease-out infinite;
+  }
+  /* clip helper */
+  .clip { overflow: hidden; }
+
+  /* SceneCheck mark */
+  .scene-mark {
+    font-family: var(--display);
+    font-weight: 800;
+    font-stretch: 80%;
+    letter-spacing: -0.02em;
+  }
+  .mono { font-family: var(--mono); }
+  .display { font-family: var(--display); font-weight: 700; letter-spacing: -0.025em; font-stretch: 90%; }
+  .display-tight { font-family: var(--display); font-weight: 800; letter-spacing: -0.045em; font-stretch: 75%; }
+  .label-cap {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 500;
+  }
+</style>
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#ECE3D2">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#ECE3D2"/>
+    <g transform="translate(600 400)">
+      <circle r="180" fill="#FF5B47"/>
+      <text x="0" y="22" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, sans-serif"
+        font-size="200" font-weight="800"
+        font-stretch="80%" letter-spacing="-4"
+        fill="#FFFBF5">SC</text>
+    </g>
+    <text x="600" y="680" text-anchor="middle"
+      font-family="ui-monospace, monospace"
+      font-size="22" letter-spacing="6"
+      fill="#4D453E">S C E N E C H E C K</text>
+  </svg>
+</template>
+<div id="stage">
+  <div id="root"></div>
+</div>
+
+<!-- React 18 + Babel for JSX transpilation -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<!-- Application modules — loaded in dependency order -->
+<!-- Each module exposes its exports on `window` so other modules can reference them. -->
+<!-- This ordering ensures each file's dependencies are available when it runs. -->
+<script type="text/babel" src="src/ios-frame.jsx"></script>
+<script type="text/babel" src="src/tweaks-panel.jsx"></script>
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/components.jsx"></script>
+<script type="text/babel" src="src/additions.jsx"></script>
+<script type="text/babel" src="src/heuristic-fixes.jsx"></script>
+<script type="text/babel" src="src/screens.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>
