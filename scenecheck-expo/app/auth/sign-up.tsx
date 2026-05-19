@@ -56,11 +56,32 @@ export default function SignUpScreen() {
     }
     setSubmitting(true);
     try {
-      await api.signUp(email, password, displayName.trim());
+      const result = await api.signUp(email, password, displayName.trim());
       // Write the name into the store directly so the profile tab
       // reflects it immediately, even before AuthBootstrap's listener
       // re-hydrates from the profiles row.
       setMe({ name: displayName.trim() });
+
+      // When the Supabase project has "Confirm email" enabled (the
+      // hosted default), `auth.signUp` returns a user but no session
+      // — the user has to click the confirmation link in the email
+      // before they can sign in. Routing to /(tabs) here would land
+      // them on the auth gate's redirect to /auth/sign-in, which
+      // then fails with "Email not confirmed". Detect the missing
+      // session and route to /auth/sign-in with a clear message
+      // instead. Mock mode + projects with confirmation off both
+      // return a session, so the happy path goes straight to tabs.
+      const hasSession = !!(result as { session?: unknown } | null)?.session;
+      if (!hasSession && !api.isMock()) {
+        showToast({
+          message: 'Account created — check your email to confirm before signing in.',
+          kind: 'info',
+          duration: 8000,
+        });
+        router.replace('/auth/sign-in' as never);
+        return;
+      }
+
       showToast({ message: 'Account created. Welcome!', kind: 'success' });
       router.replace('/(tabs)' as never);
     } catch (e) {

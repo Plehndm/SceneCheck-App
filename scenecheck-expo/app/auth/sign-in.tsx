@@ -30,10 +30,14 @@ export default function SignInScreen() {
       await api.signIn(email, password);
       router.replace('/(tabs)' as never);
     } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : 'Sign-in failed.',
-        kind: 'error',
-      });
+      // Surface a clearer message for the unconfirmed-email case.
+      // Supabase's default error message is just "Email not confirmed",
+      // which doesn't tell the user what to do next.
+      const raw = e instanceof Error ? e.message : 'Sign-in failed.';
+      const friendly = /email.+not.+confirm/i.test(raw)
+        ? 'Email not confirmed yet — check your inbox for the confirmation link.'
+        : raw;
+      showToast({ message: friendly, kind: 'error', duration: 8000 });
       setSubmitting(false);
     }
   };
