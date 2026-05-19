@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **282/282** after full-migration Phase 1 (§2.10 — hard auth gate). Earlier deltas in §2.7 (web-bundle compatibility), §2.8 (design-parity + create-flow), and §2.9 (Supabase live wire-up Phase 0)._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **291/291** after full-migration Phase 2 (§2.11 — event detail). Earlier deltas in §2.7 / §2.8 / §2.9 / §2.10 (Phase 1 + display-name edit). Display-name edit landed alongside Phase 1; see §2.10._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 26 files (7 components + 17 screens + 2 hooks), 178 test cases |
-| **Total tests** | — | — | **282 tests, 38 suites** |
+| **Integration tests** | Required | ≥ 3 | 28 files (8 components + 17 screens + 3 hooks), 187 test cases |
+| **Total tests** | — | — | **291 tests, 40 suites** |
 
 ### 2.2 Migration note
 
@@ -177,12 +177,14 @@ scenecheck-expo/
     │   ├── AuthGate.test.tsx            # NEW (§2.10) — hard auth gate
     │   ├── ConflictChip.test.tsx
     │   ├── EditEventSheet.test.tsx      # NEW (§2.8) — host-only edit modal
+    │   ├── EditProfileSheet.test.tsx    # NEW (§2.10) — display-name edit
     │   ├── SCAvatar.test.tsx
     │   ├── SCDatePicker.test.tsx        # NEW (§2.8) — calendar popover
     │   ├── SCEventCard.test.tsx
     │   └── SCTimePicker.test.tsx        # NEW (§2.8) — three-wheel time picker
     ├── hooks/
-    │   ├── useEvents.test.ts           # NEW (§2.9) — events data hook
+    │   ├── useEvent.test.ts             # NEW (§2.11) — single-event hook
+    │   ├── useEvents.test.ts            # NEW (§2.9) — events data hook
     │   └── useImagePicker.test.ts
     └── screens/                         # per-route integration tests
         ├── attendees.test.tsx
@@ -245,10 +247,10 @@ Approximate run-times:
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
-| Component (7 files) | 31 | <1s | local + CI |
-| Hook (2 files) | 7 | <1s | local + CI |
-| Screen integration (24 files) | 140 | ~3s | local + CI |
-| **Total (Jest)** | **282** | **~5s** | local + CI |
+| Component (8 files) | 35 | <1s | local + CI |
+| Hook (3 files) | 10 | <1s | local + CI |
+| Screen integration (24 files) | 142 | ~3s | local + CI |
+| **Total (Jest)** | **291** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -444,6 +446,38 @@ test file + one existing screen test that's been updated.
   component (`AuthGate.tsx`, fully covered) + ~50 added lines in
   `AuthBootstrap.tsx` (intentionally uncovered). Below the 0.5pp
   threshold.
+
+### 2.11 Full-migration Phase 2: Event detail (post-§2.10 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §13._
+
+Phase 2 of the 7-phase plan wires the event-detail screen through
+real Supabase mutations: join/leave via `api.subscribeToEvent` /
+`api.cancelSubscription`, host edit via `api.updateEvent`, host
+cancel via `api.cancelEvent`. The data hook is `useEvent` (mirrors
+`useEvents`).
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useEvent.test.ts` (new, 3 cases) | Sync mock-mode init / unknown id / undefined id | First-render `event === SC_EVENT_BY_ID['e1']` and `loading === false`; unknown id yields `null`; `undefined` id no-ops. Live-mode behavior covered indirectly by the screen tests + manual verification in `PROGRESS_SNAPSHOT.md` §13.6. |
+
+| File updated | Change | Why |
+|---|---|---|
+| `tests/components/EditEventSheet.test.tsx` | The "SAVE CHANGES writes the patch" case is now `async`. Awaits two microtask flushes before asserting the override + toast, and now also asserts the new `onSaved` callback fires. | `handleSave` awaits `api.updateEvent` (mock-mode no-op `Promise.resolve(patch)`) before writing the override + toast, so the assertions land one microtask later. |
+| `tests/screens/event-detail.test.tsx` | Same microtask flush on the "saving the edit sheet writes an override" case. | Same reason. |
+
+**Delivered count**: 291 / 291 (up from 288). 40 suites (up from 39).
+
+**What this section deliberately does NOT do:**
+
+- Test the `api.cancelEvent` / `api.cancelSubscription` /
+  `api.updateEvent` live-mode paths. All three short-circuit in
+  mock mode (the only mode jest-expo gives us); live verification
+  is in `PROGRESS_SNAPSHOT.md` §13.6.
+- Test the optimistic-rollback path on join failure. Mock-mode
+  `api.subscribeToEvent` always resolves successfully, so the
+  rollback branch is unreachable from Jest. Live-mode coverage
+  would need a Supabase mock; deferred.
 
 ---
 

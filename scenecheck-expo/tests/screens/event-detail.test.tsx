@@ -82,11 +82,15 @@ describe('EventDetailScreen', () => {
     expect(getByText('SAVE CHANGES')).toBeTruthy();
   });
 
-  test('saving the edit sheet writes an override + emits toast', () => {
+  test('saving the edit sheet writes an override + emits toast', async () => {
     setRouteParams({ id: 'e1' });
     const { getByText } = renderScreen(<EventDetailScreen />);
     fireEvent.press(getByText('EDIT EVENT'));
     fireEvent.press(getByText('SAVE CHANGES'));
+    // Phase 2: handleSave awaits api.updateEvent (mock-mode no-op),
+    // so the override + toast land on the next microtask.
+    await Promise.resolve();
+    await Promise.resolve();
     expect(useStore.getState().eventOverrides.e1).toBeTruthy();
     const toasts = useStore.getState().toasts;
     expect(toasts.some(t => /attendees notified/i.test(t.message))).toBe(true);

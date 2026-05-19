@@ -207,6 +207,64 @@ export const api = {
     return data;
   },
 
+  // Remove the caller's row from event_subscriptions. The legacy used
+  // a soft-delete (status='cancelled') so analytics could see leaves;
+  // we follow the same shape so dispatch-notification can still find
+  // the row if/when we add a "$user left your event" notification.
+  async cancelSubscription(eventId: string) {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('event_subscriptions')
+      .update({ status: 'cancelled' })
+      .eq('event_id', toUUID(eventId))
+      .eq('user_id', user.id);
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // Host-only edit. Accepts the in-memory SCEvent shape and translates
+  // to the DB column names (`location_name`, `capacity`, `description`).
+  // `when` / `endTime` are intentionally NOT mapped here — those are
+  // friendly strings ("Sat May 9 · 7:00 AM") that would need parsing
+  // back into ISO timestamps. A dedicated start/end picker for editing
+  // will land in a later phase; for now the field stays editable but
+  // doesn't persist to the DB time columns.
+  async updateEvent(
+    eventId: string,
+    patch: { title?: string; where?: string; cap?: number; desc?: string },
+  ) {
+    if (isMock()) return patch;
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.title !== undefined) dbPatch.title = patch.title;
+    if (patch.where !== undefined) dbPatch.location_name = patch.where;
+    if (patch.cap !== undefined) dbPatch.capacity = patch.cap;
+    if (patch.desc !== undefined) dbPatch.description = patch.desc;
+    if (Object.keys(dbPatch).length === 0) return patch;
+    const sb = requireClient();
+    const { error } = await sb.from('events')
+      .update(dbPatch)
+      .eq('id', toUUID(eventId));
+    if (error) throw error;
+    return patch;
+  },
+
+  // Soft-cancel an event. `rank_events_query` filters on
+  // `status='published'`, so flipping the column hides the event from
+  // Home / Map / Search without losing the row (and the subscribers
+  // table, so dispatch-notification can fan out cancellation emails).
+  // RLS on the events table requires the caller to be the creator.
+  async cancelEvent(eventId: string) {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const { error } = await sb.from('events')
+      .update({ status: 'cancelled' })
+      .eq('id', toUUID(eventId));
+    if (error) throw error;
+    return { ok: true };
+  },
+
   // ── Profile ──
   async getProfile(userId: string): Promise<Account> {
     if (isMock()) return SC_ACCOUNT_BY_ID[userId] || SC_ME;

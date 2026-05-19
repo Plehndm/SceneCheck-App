@@ -1,9 +1,16 @@
 // Edit-event bottom sheet, ported from the legacy `EditEventSheet` in
 // `legacy/src/heuristic-fixes.jsx`. Host-only: surfaces from the
-// "EDIT EVENT" button on the event detail screen. Saves go through
-// `useStore.applyEventOverride(id, patch)` — the slice that replaced
-// the legacy's `window.SC_EVENT_OVERRIDES` global map. After save we
-// emit a toast mirroring the legacy "Saved · attendees notified" copy.
+// "EDIT EVENT" button on the event detail screen.
+//
+// Persistence has two layers since Phase 2 of the migration:
+//   1. `api.updateEvent(id, patch)` — writes title / location_name /
+//      capacity to the `events` table (no-op in mock mode).
+//   2. `applyEventOverride(id, patch)` — Zustand override so the UI
+//      reflects the change instantly without waiting for a re-fetch.
+//      In mock mode this IS the persistence layer.
+// `onSaved` is invoked after a successful save so the parent screen
+// (event/[id].tsx) can `reload()` its `useEvent` hook and replace the
+// override with the freshly-fetched DB row.
 
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, TextInput, View } from 'react-native';
@@ -11,6 +18,7 @@ import { SCText } from './SCText';
 import { SCIcon } from './SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
+import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -18,9 +26,10 @@ interface Props {
   visible: boolean;
   event: SCEvent;
   onClose: () => void;
+  onSaved?: () => void;
 }
 
-export function EditEventSheet({ visible, event, onClose }: Props) {
+export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
   const t = useTokens();
   const applyEventOverride = useStore(s => s.applyEventOverride);
   const showToast = useStore(s => s.showToast);
@@ -29,6 +38,7 @@ export function EditEventSheet({ visible, event, onClose }: Props) {
   const [when, setWhen] = useState(event.when);
   const [where, setWhere] = useState(event.where);
   const [cap, setCap] = useState(event.cap);
+  const [saving, setSaving] = useState(false);
 
   // Reset local form whenever the sheet (re-)opens onto a different
   // event id, so navigating between hosted events doesn't carry stale
@@ -39,13 +49,30 @@ export function EditEventSheet({ visible, event, onClose }: Props) {
       setWhen(event.when);
       setWhere(event.where);
       setCap(event.cap);
+      setSaving(false);
     }
   }, [visible, event.id, event.title, event.when, event.where, event.cap]);
 
-  const handleSave = () => {
-    applyEventOverride(event.id, { title, when, where, cap });
-    showToast({ message: 'Saved · attendees notified of changes.', kind: 'success' });
-    onClose();
+  const handleSave = async () => {
+    setSaving(true);
+    const patch = { title, where, cap };
+    try {
+      // `when` isn't passed to api.updateEvent — see the api.ts header.
+      // It's still part of the override patch below so the local UI
+      // reflects the user's typed value until a real date/time editor
+      // lands.
+      await api.updateEvent(event.id, patch);
+      applyEventOverride(event.id, { ...patch, when });
+      showToast({ message: 'Saved · attendees notified of changes.', kind: 'success' });
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save.",
+        kind: 'error',
+      });
+      setSaving(false);
+    }
   };
 
   return (
@@ -155,14 +182,16 @@ export function EditEventSheet({ visible, event, onClose }: Props) {
             </Pressable>
             <Pressable
               onPress={handleSave}
+              disabled={saving}
               style={({ pressed }) => [{
                 flex: 2, height: 48, borderRadius: RADIUS.lg,
                 backgroundColor: t.primary,
                 alignItems: 'center', justifyContent: 'center',
+                opacity: saving ? 0.6 : 1,
               }, pressed && { opacity: 0.85 }]}
             >
               <SCText variant="mono" size={12} weight="700" color={t.primaryInk}>
-                SAVE CHANGES
+                {saving ? 'SAVING…' : 'SAVE CHANGES'}
               </SCText>
             </Pressable>
           </View>

@@ -32,15 +32,20 @@ describe('EditEventSheet', () => {
     expect(getByText(`Capacity · ${event.cap}`)).toBeTruthy();
   });
 
-  test('SAVE CHANGES writes the patch via applyEventOverride + emits toast', () => {
+  test('SAVE CHANGES writes the patch via applyEventOverride + emits toast', async () => {
     const event = SC_EVENT_BY_ID.e1;
     const onClose = jest.fn();
+    const onSaved = jest.fn();
     const { getByText, getByDisplayValue } = renderScreen(
-      <EditEventSheet visible event={event} onClose={onClose} />,
+      <EditEventSheet visible event={event} onClose={onClose} onSaved={onSaved} />,
     );
     // Edit the title field.
     fireEvent.changeText(getByDisplayValue(event.title), 'Updated title');
     fireEvent.press(getByText('SAVE CHANGES'));
+    // handleSave is now async (Phase 2 wires api.updateEvent); let
+    // microtasks flush so applyEventOverride + toast + onClose land.
+    await Promise.resolve();
+    await Promise.resolve();
 
     const override = useStore.getState().eventOverrides[event.id];
     expect(override).toBeTruthy();
@@ -52,6 +57,7 @@ describe('EditEventSheet', () => {
     expect(toasts[0].kind).toBe('success');
     expect(toasts[0].message).toMatch(/attendees notified/i);
 
+    expect(onSaved).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
 

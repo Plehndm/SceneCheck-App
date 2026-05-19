@@ -21,7 +21,9 @@ import { SCAddButton } from '@/components/SCAddButton';
 import { EditEventSheet } from '@/components/EditEventSheet';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
-import { SC_EVENT_BY_ID, SC_CHATS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { useEvent } from '@/hooks/useEvent';
+import { api } from '@/lib/api';
+import { SC_CHATS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
@@ -67,10 +69,15 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [editOpen, setEditOpen] = useState(false);
 
-  const baseEvent = id ? SC_EVENT_BY_ID[id] : null;
+  // useEvent: in mock mode this is synchronous (SC_EVENT_BY_ID lookup);
+  // in live mode it hits `api.getEventById` and re-renders when the
+  // promise resolves. `reload()` is called after a successful host
+  // edit so the screen reflects the freshly-written row.
+  const { event: baseEvent, reload: reloadEvent } = useEvent(id);
   const override = useStore(s => id ? s.eventOverrides[id] : null);
   const isJoined = useStore(s => id ? s.isJoined(id) : false);
   const joinEvent = useStore(s => s.joinEvent);
+  const leaveEventStore = useStore(s => s.leaveEvent);
   const schedulePendingLeave = useStore(s => s.schedulePendingLeave);
   const cancelPendingLeave = useStore(s => s.cancelPendingLeave);
   const showToast = useStore(s => s.showToast);
@@ -113,22 +120,46 @@ export default function EventDetailScreen() {
     e.kind === 'friend' ? 'FRIEND HOSTING' :
     'RECOMMENDED · APP-CREATED';
 
-  const handleToggleJoin = () => {
+  const handleToggleJoin = async () => {
     if (!id) return;
     if (isJoined) {
+      // Optimistic: schedule the local pending-leave grace timer first
+      // so the UI flips immediately; the API call commits the leave to
+      // the DB. If the API call fails, surface a separate error toast
+      // — the pending-leave timer will still clear after 5s.
       schedulePendingLeave(id);
       showToast({
         message: `Left "${e.title}". Removing in 5s.`,
         kind: 'info', duration: 5200,
         action: { label: 'UNDO', onPress: () => cancelPendingLeave(id) },
       });
+      try {
+        await api.cancelSubscription(id);
+      } catch (err) {
+        showToast({
+          message: err instanceof Error ? `Couldn't leave: ${err.message}` : "Couldn't leave.",
+          kind: 'error',
+        });
+      }
     } else {
+      // Optimistic add — local first, then commit.
       joinEvent(id);
       showToast({ message: `Joined "${e.title}".`, kind: 'success' });
+      try {
+        await api.subscribeToEvent(id, true);
+      } catch (err) {
+        // Roll back the optimistic add so the UI matches reality.
+        leaveEventStore(id);
+        showToast({
+          message: err instanceof Error ? `Couldn't join: ${err.message}` : "Couldn't join.",
+          kind: 'error',
+        });
+      }
     }
   };
 
   const handleCancelEvent = () => {
+    if (!id) return;
     showConfirm({
       title: 'Cancel this event?',
       body: `"${e.title}" will be removed from the map and all ${e.attendees} attendees will be notified. This can't be undone.`,
@@ -136,9 +167,22 @@ export default function EventDetailScreen() {
       cancelLabel: 'KEEP IT',
       tone: 'danger',
       icon: 'x',
-      onConfirm: () => {
-        showToast({ message: `"${e.title}" cancelled. Attendees notified.`, kind: 'info' });
-        router.back();
+      onConfirm: async () => {
+        try {
+          // Soft-cancel via `api.cancelEvent` → sets status='cancelled'
+          // in live mode; no-op in mock mode. After it succeeds we
+          // navigate back; the home / map screens will re-fetch and
+          // drop the row because `rank_events_query` filters on
+          // `status='published'`.
+          await api.cancelEvent(id);
+          showToast({ message: `"${e.title}" cancelled. Attendees notified.`, kind: 'info' });
+          router.back();
+        } catch (err) {
+          showToast({
+            message: err instanceof Error ? `Couldn't cancel: ${err.message}` : "Couldn't cancel.",
+            kind: 'error',
+          });
+        }
       },
     });
   };
@@ -314,6 +358,7 @@ export default function EventDetailScreen() {
         visible={editOpen}
         event={e}
         onClose={() => setEditOpen(false)}
+        onSaved={() => reloadEvent()}
       />
     </Screen>
   );

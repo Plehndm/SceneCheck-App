@@ -39,6 +39,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Create Event tag chips now auto-fill from `me.interests` and gained a tag-search input that matches against the union of `SC_INTERESTS_SUGGESTED` + `Object.keys(SC_INTERESTS_DETAILS)` + `me.interests`. Draft hydration still wins. +3 tests on `create-event.test.tsx`. |
 | 2026-05-19 | First Supabase live wire-up: switched `.env` from the hosted project to the local stack (`http://127.0.0.1:54321` + `sb_publishable_AC…`), built `components/AuthBootstrap.tsx` to subscribe to `supabase.auth.onAuthStateChange` + hydrate `me` from the `profiles` + `user_interests` tables, added `hooks/useEvents.ts` that calls `api.fetchEvents()` (initializes synchronously with `SC_EVENTS` in mock mode so existing screen tests stay green), and wired the Home tab + Map tab through it. Settings sign-out now actually calls `api.signOut()` instead of toasting a mock message. The other 17 screens still import `SC_*` from `data/mocks.ts`; a screen-by-screen plan for the full migration is queued. See §11. |
 | 2026-05-19 | Full-migration **Phase 1** of 7: hard auth gate + session-driven store hydration. Added `session` slice to the store; `AuthBootstrap` now mirrors `onAuthStateChange` into it and hydrates `joined`, `friends`, `outgoingRequests`, `incomingRequests`, `subscribedInterests` from `event_subscriptions` + `friendships` + `user_interests` in parallel. New `AuthGate` component wraps the `(tabs)` route group and redirects to `/auth/sign-in` when no session (mock-mode short-circuits to pass-through so the 279 existing tests stay green). Dropped the "SKIP — EXPLORE AS GUEST" link from sign-in. `following` isn't hydrated (no `org_follows` table yet). See §12. |
+| 2026-05-19 | Display name captured on sign-up (`api.signUp(email, password, displayName)` writes to `profiles.name` post-trigger) and editable from the profile tab via a new `components/EditProfileSheet.tsx` (mirrors `EditEventSheet`). The profile header is now a tappable Pressable with a small pencil icon that opens the edit sheet. +6 tests. |
+| 2026-05-19 | Full-migration **Phase 2** of 7: event detail wire-up. New `hooks/useEvent.ts` (mock-mode synchronous, live-mode async). New API methods: `api.cancelSubscription`, `api.updateEvent` (writes `events.title` / `location_name` / `capacity` / `description`), `api.cancelEvent` (soft-cancel via `status='cancelled'`). `event/[id].tsx`: join/leave now hit `subscribeToEvent` / `cancelSubscription` with optimistic local state + rollback on failure; CANCEL EVENT awaits the real cancel; the EditEventSheet calls `api.updateEvent` + `applyEventOverride` and signals `onSaved` so the screen can `reload()` the hook. `when` (start/end time) intentionally not persisted yet — needs a real date+time editor. See §13. |
 
 ### Current layout
 
@@ -716,7 +718,108 @@ See `docs/TEST_PLAN.md` §2.10 for the test additions.
 
 ---
 
-## 13. How to re-snapshot this file
+## 13. Full migration — Phase 2: Event detail
+
+_Last updated: 2026-05-19_
+
+Phase 2 of the 7-phase plan. Migrates the highest-traffic detail
+screen — `app/event/[id].tsx` — and wires the host-side edit /
+cancel flows + the join/leave optimistic-update path through real
+Supabase mutations.
+
+### 13.1 New API methods
+
+| Method | Signature | DB effect |
+|---|---|---|
+| `api.cancelSubscription(eventId)` | `(id) → { ok: true }` | `update event_subscriptions set status='cancelled' where event_id = … and user_id = me`. Soft-delete so dispatch-notification can still find the row. |
+| `api.updateEvent(eventId, patch)` | `(id, { title?, where?, cap?, desc? }) → patch` | `update events set …`. Maps the in-memory shape to DB columns: `where → location_name`, `cap → capacity`, `desc → description`. **`when` / `endTime` are intentionally NOT mapped** — they're friendly strings ("Sat May 9 · 7:00 AM") that need parsing back to ISO, which lands with a dedicated date+time editor in a later phase. The override layer still reflects the typed value locally. |
+| `api.cancelEvent(eventId)` | `(id) → { ok: true }` | `update events set status='cancelled' where id = …`. `rank_events_query` filters on `status='published'`, so the event disappears from Home / Map / Search without losing the subscriber rows. |
+
+All three short-circuit in mock mode (returning shaped responses
+that match the live signature) so existing tests don't have to mock
+the supabase client.
+
+### 13.2 New hook
+
+`hooks/useEvent.ts` — single-event wrapper around
+`api.getEventById(id)`. Same shape as `useEvents` from Phase 0:
+
+- Mock mode: `useState` initializer pulls from `SC_EVENT_BY_ID[id]`
+  so the first render already has the event; existing event-detail
+  tests don't need `findByText`.
+- Live mode: starts with `event=null + loading=true`, populates
+  after the promise resolves.
+- Returns a `reload()` callback so the screen can force a re-fetch
+  after a successful host edit.
+- Handles `id === undefined` gracefully (Expo Router param-not-yet-
+  resolved edge case).
+
+### 13.3 `event/[id].tsx` wiring
+
+- `SC_EVENT_BY_ID[id]` direct lookup replaced with `useEvent(id)`.
+  The override layer (`s.eventOverrides[id]`) is unchanged — it
+  still gets merged into the base event on render, so a host edit
+  reflects instantly even before the API re-fetch lands.
+- `handleToggleJoin` is now async. Optimistic local update first
+  (schedulePendingLeave / joinEvent), then `await
+  api.cancelSubscription(id)` or `api.subscribeToEvent(id, true)`.
+  On API failure we roll the optimistic add back via
+  `leaveEventStore(id)` and surface an error toast. The
+  pendingLeave timer naturally undoes itself after 5s if the API
+  call fails.
+- `handleCancelEvent.onConfirm` now awaits `api.cancelEvent(id)`
+  before navigating back. Error path stays on the screen with a
+  toast.
+- The `<EditEventSheet>` now receives an `onSaved` callback that
+  invokes the hook's `reload()`. After save, the API has the truth,
+  the override has the same shape, and the next mount fetches the
+  fresh row.
+
+### 13.4 `EditEventSheet.tsx` changes
+
+- `handleSave` is now async: `await api.updateEvent(event.id,
+  { title, where, cap })` → `applyEventOverride(...)` → emit toast
+  → `onSaved?.()` → `onClose()`. Errors surface a toast and keep
+  the sheet open.
+- The button label switches to "SAVING…" + disables itself during
+  the async call.
+- New optional `onSaved` prop.
+
+### 13.5 Tests
+
+- `tests/hooks/useEvent.test.ts` (new, 3 cases) — mock-mode sync
+  init, unknown-id returns null, undefined-id no-crash.
+- `tests/components/EditEventSheet.test.tsx` — updated the SAVE
+  CHANGES case to await microtasks (handleSave is now async). Also
+  asserts that the new `onSaved` callback fires.
+- `tests/screens/event-detail.test.tsx` — same microtask flush on
+  the "saving the edit sheet writes an override" case.
+
+### 13.6 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 291 / 291, 40 suites, ~20s (+3 over Phase 1's 288) |
+| SSR + web bundles compile cleanly | ✅ |
+| Live host edit → row in `public.events` reflects the new `title` / `location_name` / `capacity` | manually verifiable via Studio |
+| Live JOIN EVENT inserts an `event_subscriptions` row, LEAVE flips it to `status='cancelled'` | manually verifiable via Studio |
+| CANCEL EVENT flips `events.status='cancelled'`, event disappears from Home / Map after refresh | manually verifiable via Studio |
+
+### 13.7 Out of scope (deferred to later phases)
+
+- Editing the event's start / end time. Requires plumbing a real
+  date+time editor (`SCDatePicker` + `SCTimePicker` from §10) into
+  the `EditEventSheet` so we collect ISO timestamps the DB can
+  store. Tracked for a follow-up — the field stays typeable today
+  but doesn't reach the DB.
+- A hosted "cancel-event" Edge Function. The current direct UPDATE
+  is fine; an Edge Function makes sense once we want server-side
+  fan-out (push notifications, group-chat cleanup), which is a
+  Phase 6 / 7 concern.
+
+---
+
+## 14. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
