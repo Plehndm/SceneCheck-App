@@ -156,6 +156,58 @@ export const api = {
     await requireClient().auth.signOut();
   },
 
+  // Re-send the confirmation email for an unconfirmed sign-up.
+  // Supabase rate-limits this; the wrapper just propagates any error
+  // up to the screen so the user sees a real toast.
+  async resendConfirmation(email: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const { error } = await requireClient().auth.resend({ type: 'signup', email });
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // Kick off password recovery — Supabase emails the user a link
+  // that lands on `${redirectTo}#access_token=…&type=recovery`.
+  // supabase-js auto-creates a temporary session from that hash when
+  // the page loads, which lets `auth.updateUser({ password })` work
+  // on the reset-password screen.
+  //
+  // We compute `redirectTo` from window.location.origin on web; on
+  // native we fall back to the app's URL scheme (scenecheckexpo://
+  // configured in app.json). The native deep-link path needs
+  // expo-linking config to actually open the app — currently this
+  // flow is web-first; native users can still reset via the same
+  // email link opened in a browser.
+  async requestPasswordReset(email: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const redirectTo = typeof window !== 'undefined' && window.location?.origin
+      ? `${window.location.origin}/auth/reset-password`
+      : 'scenecheckexpo://auth/reset-password';
+    const { error } = await requireClient().auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // Change the signed-in user's email. Supabase sends a confirmation
+  // to BOTH the old and new addresses; the email isn't switched until
+  // both confirm (this is the default — projects can require only
+  // the new address to confirm).
+  async updateEmail(newEmail: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const { error } = await requireClient().auth.updateUser({ email: newEmail });
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // Change the signed-in user's password. Requires an active session
+  // (the AuthGate ensures one exists before settings is reachable).
+  async updatePassword(newPassword: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const { error } = await requireClient().auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    return { ok: true };
+  },
+
   async getCurrentUser() {
     if (isMock()) return SC_ME;
     const { data } = await requireClient().auth.getUser();

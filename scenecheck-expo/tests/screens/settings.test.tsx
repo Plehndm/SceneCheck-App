@@ -18,12 +18,27 @@ describe('SettingsScreen', () => {
 
   test('renders every named section', () => {
     const { getByText } = renderScreen(<SettingsScreen />);
+    expect(getByText(/ACCOUNT/)).toBeTruthy();
     expect(getByText(/DISCOVERY · /)).toBeTruthy();
     expect(getByText(/PROFILE VISIBILITY · /)).toBeTruthy();
     expect(getByText('APPEARANCE')).toBeTruthy();
     expect(getByText('NOTIFICATIONS')).toBeTruthy();
     expect(getByText(/PREFERENCES · /)).toBeTruthy();
     expect(getByText('TWEAKS · DEV')).toBeTruthy();
+  });
+
+  test('tapping Email row opens the change-email sheet', () => {
+    const { getByText, queryByText } = renderScreen(<SettingsScreen />);
+    expect(queryByText('SEND CONFIRMATIONS')).toBeNull();
+    fireEvent.press(getByText('Email'));
+    expect(getByText('SEND CONFIRMATIONS')).toBeTruthy();
+  });
+
+  test('tapping Password row opens the change-password sheet', () => {
+    const { getByText, queryByText } = renderScreen(<SettingsScreen />);
+    expect(queryByText('UPDATE PASSWORD')).toBeNull();
+    fireEvent.press(getByText('Password'));
+    expect(getByText('UPDATE PASSWORD')).toBeTruthy();
   });
 
   test('switching to Private visibility mutates the store', () => {

@@ -2,6 +2,7 @@
 // mode), notifications, blocked users, linked calendar, sign-out.
 // Tweaks panel exposed at the bottom for dev/heuristic toggles.
 
+import { useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
@@ -11,6 +12,8 @@ import { SCCard } from '@/components/SCCard';
 import { SCIcon, type IconName } from '@/components/SCIcon';
 import { SCSection } from '@/components/SCSection';
 import { SCButton } from '@/components/SCAddButton';
+import { ChangeEmailSheet } from '@/components/ChangeEmailSheet';
+import { ChangePasswordSheet } from '@/components/ChangePasswordSheet';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
@@ -39,6 +42,9 @@ const TWEAK_ROWS: { k: keyof Tweaks; label: string; desc: string }[] = [
 
 export default function SettingsScreen() {
   const t = useTokens();
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const sessionEmail = useStore(s => s.session?.email);
   const radius = useStore(s => s.radius);
   const setRadius = useStore(s => s.setRadius);
   const visibility = useStore(s => s.visibility);
@@ -96,6 +102,25 @@ export default function SettingsScreen() {
         <SCText variant="labelCap">Account</SCText>
         <SCText variant="displayTight" size={36} style={{ marginTop: 4 }}>Settings</SCText>
       </View>
+
+      {/* Account credentials — email + password */}
+      <SCSection title={`ACCOUNT${sessionEmail ? ` · ${sessionEmail}` : ''}`}>
+        <SCCard>
+          <RowMenu
+            icon="mail"
+            label="Email"
+            v={sessionEmail || 'Not signed in'}
+            onPress={() => setEmailOpen(true)}
+          />
+          <RowMenu
+            icon="lock"
+            label="Password"
+            v="••••••••"
+            onPress={() => setPasswordOpen(true)}
+            last
+          />
+        </SCCard>
+      </SCSection>
 
       {/* Discovery radius */}
       <SCSection title={`DISCOVERY · ${radius} MI RADIUS`}>
@@ -316,6 +341,9 @@ export default function SettingsScreen() {
       <View style={{ paddingHorizontal: 18, paddingVertical: 14, alignItems: 'center' }}>
         <SCText variant="mono" size={11} color={t.ink3}>SceneCheck · v0.4.2</SCText>
       </View>
+
+      <ChangeEmailSheet visible={emailOpen} onClose={() => setEmailOpen(false)} />
+      <ChangePasswordSheet visible={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </Screen>
   );
 }

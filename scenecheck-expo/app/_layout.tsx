@@ -49,6 +49,8 @@ export default function RootLayout() {
           <Stack.Screen name="drafts" options={{ presentation: 'card' }} />
           <Stack.Screen name="auth/sign-in" options={{ presentation: 'modal' }} />
           <Stack.Screen name="auth/sign-up" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="auth/forgot-password" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="auth/reset-password" options={{ presentation: 'modal' }} />
         </Stack>
         <AuthBootstrap />
         <ToastHost />

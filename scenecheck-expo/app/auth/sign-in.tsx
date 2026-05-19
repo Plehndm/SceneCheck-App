@@ -18,6 +18,8 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [resending, setResending] = useState(false);
   const showToast = useStore(s => s.showToast);
 
   const submit = async () => {
@@ -26,6 +28,7 @@ export default function SignInScreen() {
       return;
     }
     setSubmitting(true);
+    setNeedsConfirm(false);
     try {
       await api.signIn(email, password);
       router.replace('/(tabs)' as never);
@@ -34,11 +37,36 @@ export default function SignInScreen() {
       // Supabase's default error message is just "Email not confirmed",
       // which doesn't tell the user what to do next.
       const raw = e instanceof Error ? e.message : 'Sign-in failed.';
-      const friendly = /email.+not.+confirm/i.test(raw)
-        ? 'Email not confirmed yet — check your inbox for the confirmation link.'
+      const isConfirmIssue = /email.+not.+confirm/i.test(raw);
+      const friendly = isConfirmIssue
+        ? 'Email not confirmed yet — check your inbox for the link, or resend below.'
         : raw;
       showToast({ message: friendly, kind: 'error', duration: 8000 });
+      setNeedsConfirm(isConfirmIssue);
       setSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!email.trim()) {
+      showToast({ message: 'Enter your email above first.', kind: 'error' });
+      return;
+    }
+    setResending(true);
+    try {
+      await api.resendConfirmation(email.trim());
+      showToast({
+        message: 'Confirmation email re-sent. Give it a minute and check spam too.',
+        kind: 'success',
+        duration: 6000,
+      });
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? e.message : "Couldn't resend.",
+        kind: 'error',
+      });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -63,7 +91,7 @@ export default function SignInScreen() {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder="you@uci.edu"
+            placeholder="Your email"
             placeholderTextColor={t.ink3}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -92,6 +120,28 @@ export default function SignInScreen() {
           size="lg"
         />
       </View>
+
+      <View style={{ marginTop: 14, alignItems: 'center' }}>
+        <Pressable onPress={() => router.push('/auth/forgot-password' as never)}>
+          <SCText size={13} weight="600" color={t.primary}>Forgot password?</SCText>
+        </Pressable>
+      </View>
+
+      {needsConfirm && (
+        <View style={{ marginTop: 10, alignItems: 'center' }}>
+          <Pressable onPress={handleResend} disabled={resending}>
+            <SCText
+              variant="mono"
+              size={11}
+              weight="700"
+              color={resending ? t.ink3 : t.ink2}
+              style={{ letterSpacing: 1.2 }}
+            >
+              {resending ? 'RESENDING…' : 'RESEND CONFIRMATION EMAIL'}
+            </SCText>
+          </Pressable>
+        </View>
+      )}
 
       <View style={{ marginTop: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4 }}>
         <SCText size={13} color={t.ink3}>New here?</SCText>

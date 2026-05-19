@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **312/312** after the sign-up birthdate-picker swap landed alongside the post-migration hosted-swap. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked as chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **326/326** after the auth UX expansion (forgot-password + reset-password + resend-confirmation + change-email + change-password). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked as chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -116,8 +116,8 @@ restore the alternate values kept as comments in `.env`._
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 32 files (8 components + 17 screens + 7 hooks), 208 test cases |
-| **Total tests** | — | — | **312 tests, 44 suites** |
+| **Integration tests** | Required | ≥ 3 | 35 files (10 components + 18 screens + 7 hooks), 222 test cases |
+| **Total tests** | — | — | **326 tests, 47 suites** |
 
 ### 2.2 Migration note
 
@@ -183,6 +183,8 @@ scenecheck-expo/
     │   └── store.test.ts
     ├── components/                      # component-level rendering
     │   ├── AuthGate.test.tsx            # NEW (§2.10) — hard auth gate
+    │   ├── ChangeEmailSheet.test.tsx    # NEW — settings → email change
+    │   ├── ChangePasswordSheet.test.tsx # NEW — settings → password change
     │   ├── ConflictChip.test.tsx
     │   ├── EditEventSheet.test.tsx      # NEW (§2.8) — host-only edit modal
     │   ├── EditProfileSheet.test.tsx    # NEW (§2.10) — display-name edit
@@ -207,6 +209,7 @@ scenecheck-expo/
         ├── event-detail.test.tsx
         ├── event-published.test.tsx
         ├── events-list.test.tsx
+        ├── forgot-password.test.tsx     # NEW — password recovery
         ├── home.test.tsx
         ├── interest-detail.test.tsx
         ├── interests.test.tsx
@@ -259,10 +262,10 @@ Approximate run-times:
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
-| Component (8 files) | 35 | <1s | local + CI |
+| Component (10 files) | 43 | <1s | local + CI |
 | Hook (7 files) | 30 | <1s | local + CI |
-| Screen integration (24 files) | 143 | ~3s | local + CI |
-| **Total (Jest)** | **312** | **~5s** | local + CI |
+| Screen integration (25 files) | 149 | ~3s | local + CI |
+| **Total (Jest)** | **326** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved

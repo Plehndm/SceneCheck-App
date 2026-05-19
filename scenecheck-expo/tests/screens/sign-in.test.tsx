@@ -16,7 +16,7 @@ describe('SignInScreen', () => {
   test('renders the welcome chrome', () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignInScreen />);
     expect(getByText('Welcome back')).toBeTruthy();
-    expect(getByPlaceholderText('you@uci.edu')).toBeTruthy();
+    expect(getByPlaceholderText('Your email')).toBeTruthy();
     expect(getByPlaceholderText('••••••••')).toBeTruthy();
   });
 
@@ -30,7 +30,7 @@ describe('SignInScreen', () => {
 
   test('Sign in with credentials replaces to /(tabs) in mock mode', async () => {
     const { getByPlaceholderText, getByText } = renderScreen(<SignInScreen />);
-    fireEvent.changeText(getByPlaceholderText('you@uci.edu'), 'a@b.com');
+    fireEvent.changeText(getByPlaceholderText('Your email'), 'a@b.com');
     fireEvent.changeText(getByPlaceholderText('••••••••'), 'password');
     fireEvent.press(getByText('SIGN IN'));
     // api.signIn in mock mode resolves immediately; let microtasks flush.
@@ -47,5 +47,11 @@ describe('SignInScreen', () => {
   test('the guest-skip link is gone (hard auth gate, Phase 1)', () => {
     const { queryByText } = renderScreen(<SignInScreen />);
     expect(queryByText(/SKIP — EXPLORE AS GUEST/)).toBeNull();
+  });
+
+  test('"Forgot password?" link routes to /auth/forgot-password', () => {
+    const { getByText } = renderScreen(<SignInScreen />);
+    fireEvent.press(getByText('Forgot password?'));
+    expect(router.push).toHaveBeenCalledWith('/auth/forgot-password');
   });
 });
