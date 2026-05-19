@@ -11,7 +11,7 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_INTERESTS_SUGGESTED } from '@/data/mocks';
+import { useInterests } from '@/hooks/useInterests';
 import { RADIUS } from '@/theme/tokens';
 
 const COLLAPSE_THRESHOLD = 6;
@@ -23,9 +23,10 @@ export default function InterestsScreen() {
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
 
-  const list = SC_INTERESTS_SUGGESTED.filter(i =>
-    i.tag.toLowerCase().includes(query.toLowerCase())
-  );
+  // `useInterests(query)` hits the `interests` table in live mode and
+  // SC_INTERESTS_SUGGESTED in mock mode — substring filter happens on
+  // either side. The returned `list` shape is unchanged.
+  const { interests: list } = useInterests(query);
 
   const subsArr = Array.from(subscribed);
   const isTruncated = subsArr.length > COLLAPSE_THRESHOLD && !showAll;

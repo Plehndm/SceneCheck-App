@@ -18,7 +18,7 @@ import { SCTimePicker } from '@/components/SCTimePicker';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
-import { SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS } from '@/data/mocks';
+import { useInterests } from '@/hooks/useInterests';
 import { timeToMin } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { DraftForm, Visibility } from '@/types/domain';
@@ -81,14 +81,15 @@ export default function CreateEventScreen() {
       ? form.interests.filter(x => x !== tag)
       : [...form.interests, tag]);
 
-  // Catalog = curated suggestions + the user's own interests + any keys
-  // we have a details record for, deduped. Drives the "add more" list.
-  // When the user types in the search box we substring-match against
-  // the full catalog so they can find tags outside the suggested set.
+  // `useInterests(tagQuery)` returns the live `interests` table in
+  // live mode and `SC_INTERESTS_SUGGESTED` in mock mode — both
+  // pre-filtered by the search query. The "add more" list also
+  // includes any tag the user already has selected via `me.interests`
+  // (so a user with custom tags can still re-add them after removal).
+  const { interests: catalogResults } = useInterests(tagQuery);
   const addableTags = useMemo(() => {
     const catalog = new Set<string>([
-      ...SC_INTERESTS_SUGGESTED.map(i => i.tag),
-      ...Object.keys(SC_INTERESTS_DETAILS),
+      ...catalogResults.map(i => i.tag),
       ...meInterests,
     ]);
     const selected = new Set(form.interests);
@@ -96,8 +97,8 @@ export default function CreateEventScreen() {
     const all = Array.from(catalog).filter(tag => !selected.has(tag));
     return q
       ? all.filter(tag => tag.toLowerCase().includes(q))
-      : all.filter(tag => SC_INTERESTS_SUGGESTED.some(i => i.tag === tag));
-  }, [form.interests, tagQuery, meInterests]);
+      : all.filter(tag => catalogResults.some(i => i.tag === tag));
+  }, [form.interests, tagQuery, meInterests, catalogResults]);
 
   const timesInvalid = timeToMin(form.timeEnd) < timeToMin(form.timeStart);
   const titleValid = form.title.trim().length > 0;

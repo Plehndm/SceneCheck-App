@@ -42,6 +42,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Display name captured on sign-up (`api.signUp(email, password, displayName)` writes to `profiles.name` post-trigger) and editable from the profile tab via a new `components/EditProfileSheet.tsx` (mirrors `EditEventSheet`). The profile header is now a tappable Pressable with a small pencil icon that opens the edit sheet. +6 tests. |
 | 2026-05-19 | Full-migration **Phase 2** of 7: event detail wire-up. New `hooks/useEvent.ts` (mock-mode synchronous, live-mode async). New API methods: `api.cancelSubscription`, `api.updateEvent` (writes `events.title` / `location_name` / `capacity` / `description`), `api.cancelEvent` (soft-cancel via `status='cancelled'`). `event/[id].tsx`: join/leave now hit `subscribeToEvent` / `cancelSubscription` with optimistic local state + rollback on failure; CANCEL EVENT awaits the real cancel; the EditEventSheet calls `api.updateEvent` + `applyEventOverride` and signals `onSaved` so the screen can `reload()` the hook. `when` (start/end time) intentionally not persisted yet — needs a real date+time editor. See §13. |
 | 2026-05-19 | Full-migration **Phase 3** of 7: Events list, Search, My Hosting — three thin swaps from `SC_EVENTS` import to `useEvents()`. No new API methods needed (the hook + `api.fetchEvents` from Phase 0 + the filter logic already in each screen do all the work). My Hosting now filters on `kind === 'yours' \|\| hostId === me.id` so it works for live UUIDs and mock string ids. Search still reads `SC_VISIBLE_PEOPLE` + `SC_ORGS` for the people/orgs tabs (Phase 5 territory). No test churn — existing screen tests cover the rendering and the synchronous mock-mode `useEvents` initializer means assertions still land on first render. See §14. |
+| 2026-05-19 | Full-migration **Phase 4** of 7: Interests system. New `hooks/useInterests.ts` (catalog + search) and `hooks/useInterest.ts` (single-tag), both with mock-mode synchronous init. New API method `api.getInterest(tagName)` (returns `null` for unknown tags so the UI can fall back gracefully); fixed the existing `api.searchInterests` to translate DB columns (`name` / `subscriber_count` / `description` / `similar_tags`) → in-memory shape (`tag` / `others` / `desc` / `similar`) since the previous `data as Interest[]` cast was a bug (wrong key names in live mode). Wired `app/interests/index.tsx`, `app/interests/[tag].tsx`, and the create-event tag-search catalog through the new hooks. +5 hook tests. See §15. |
 
 ### Current layout
 
@@ -876,7 +877,52 @@ Eleven screens still import `SC_*` directly. Phase queue:
 
 ---
 
-## 15. How to re-snapshot this file
+## 15. Full migration — Phase 4: Interests system
+
+_Last updated: 2026-05-19_
+
+Phase 4 of the 7-phase plan. Migrates the `interests/` screens and
+the create-event tag catalog onto the live `public.interests` table.
+Bonus: fixes a latent column-mapping bug in `api.searchInterests`.
+
+### 15.1 What changed
+
+| File | Change |
+|---|---|
+| `lib/api.ts` | `searchInterests` now transforms the DB result. The previous `data as Interest[]` cast was a bug — DB columns are `name` / `description` / `subscriber_count` / `similar_tags` but the in-memory type uses `tag` / `desc` / `others` / `similar`. Anything reading `.tag` on a live row would have seen `undefined`. Also added `api.getInterest(tagName)` returning `Interest \| null`. |
+| `hooks/useInterests.ts` (new) | Wraps `api.searchInterests(query)`. Mock-mode `useState` initializer pulls from `SC_INTERESTS_SUGGESTED` and substring-filters synchronously, so existing screen tests keep working. Live mode hits the catalog and orders by `subscriber_count desc`. |
+| `hooks/useInterest.ts` (new) | Wraps `api.getInterest(tag)`. Mock-mode sync init from `SC_INTERESTS_DETAILS[tag]`. Returns `null` for unknown tags. |
+| `app/interests/index.tsx` | `SC_INTERESTS_SUGGESTED.filter(...)` → `useInterests(query)`. The screen's grouping + ADD/ADDED toggle is unchanged. |
+| `app/interests/[tag].tsx` | `SC_INTERESTS_DETAILS[tag]` lookup → `useInterest(tag)`. Fallback for hand-typed tags ("A user-created interest tag.") stays so unknown tags still render. |
+| `app/create-event.tsx` | The catalog union in `addableTags` now starts from `useInterests(tagQuery)` instead of `SC_INTERESTS_SUGGESTED` + `Object.keys(SC_INTERESTS_DETAILS)`. In live mode the search field now surfaces every row in `public.interests`, not just the 6 curated mocks. |
+
+### 15.2 What this section deliberately does NOT do
+
+- Wire `subscribeToInterest` from the UI. The Zustand store still
+  owns `subscribedInterests`; the api method exists but the
+  interests-screen ADD button only calls `toggleInterestSub` for
+  now. Live persistence of the subscription set lands when we
+  revisit profile sync in Phase 5.
+- Add `api.unsubscribeFromInterest`. Same reason — the store
+  toggle is local-only until Phase 5.
+- Test the live-mode column transform in `searchInterests`. The
+  jest-expo env doesn't have a Supabase client; the transform is
+  verified manually via Studio queries (the columns + select
+  string match the schema exactly).
+
+### 15.3 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 296 / 296, 41 suites (+5 over Phase 3's 291) |
+| `npm run web` HMR re-bundles clean | ✅ |
+| Live mode `/interests` shows every row in `public.interests` (not just the 6 curated mocks) | manually verifiable once you sign in against the local stack |
+| Live mode `/interests/cooking` shows the description + similar tags from the DB row | same |
+| Live mode Create Event tag-search surfaces matches across the full catalog | same |
+
+---
+
+## 16. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

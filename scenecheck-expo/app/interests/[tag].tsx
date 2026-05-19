@@ -11,13 +11,18 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { SCAddButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_INTERESTS_DETAILS } from '@/data/mocks';
+import { useInterest } from '@/hooks/useInterest';
 
 export default function InterestDetailScreen() {
   const t = useTokens();
   const { tag } = useLocalSearchParams<{ tag: string }>();
-  const i = (tag && SC_INTERESTS_DETAILS[tag])
-    || { tag: tag ?? '', others: 0, desc: 'A user-created interest tag.', similar: [] };
+  // `useInterest(tag)` hits the `interests` table in live mode and
+  // SC_INTERESTS_DETAILS in mock mode. When the tag isn't in the
+  // catalog (either mode), the fallback below keeps the screen
+  // rendering so the user can still subscribe to a hand-typed tag.
+  const { interest } = useInterest(tag);
+  const i = interest
+    ?? { tag: tag ?? '', others: 0, desc: 'A user-created interest tag.', similar: [] };
   const subscribed = useStore(s => s.subscribedInterests);
   const toggle = useStore(s => s.toggleInterestSub);
 

@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count holds at **291/291** through full-migration Phase 3 (§2.12 — Events list / Search / My Hosting; intentionally test-free because the swap is mechanical). Earlier deltas in §2.7 / §2.8 / §2.9 / §2.10 / §2.11._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **296/296** after full-migration Phase 4 (§2.13 — Interests system). Earlier deltas in §2.7 … §2.12._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 28 files (8 components + 17 screens + 3 hooks), 187 test cases |
-| **Total tests** | — | — | **291 tests, 40 suites** |
+| **Integration tests** | Required | ≥ 3 | 29 files (8 components + 17 screens + 4 hooks), 192 test cases |
+| **Total tests** | — | — | **296 tests, 41 suites** |
 
 ### 2.2 Migration note
 
@@ -185,7 +185,8 @@ scenecheck-expo/
     ├── hooks/
     │   ├── useEvent.test.ts             # NEW (§2.11) — single-event hook
     │   ├── useEvents.test.ts            # NEW (§2.9) — events data hook
-    │   └── useImagePicker.test.ts
+    │   ├── useImagePicker.test.ts
+    │   └── useInterests.test.ts         # NEW (§2.13) — interest catalog + single tag
     └── screens/                         # per-route integration tests
         ├── attendees.test.tsx
         ├── chat-tab.test.tsx
@@ -248,9 +249,9 @@ Approximate run-times:
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
 | Component (8 files) | 35 | <1s | local + CI |
-| Hook (3 files) | 10 | <1s | local + CI |
+| Hook (4 files) | 15 | <1s | local + CI |
 | Screen integration (24 files) | 142 | ~3s | local + CI |
-| **Total (Jest)** | **291** | **~5s** | local + CI |
+| **Total (Jest)** | **296** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -505,6 +506,37 @@ render — no test updates required.
   expectations match.
 - Re-snapshot the coverage table. Pure substitution — no new
   branches.
+
+### 2.13 Full-migration Phase 4: Interests system (post-§2.12 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §15._
+
+Phase 4 wires both the interests-list and interest-detail screens
+through `useInterests` / `useInterest`, and routes the create-event
+tag-search catalog through the same hook. The api wrapper for
+`searchInterests` also gained a column-mapping transform that was
+quietly broken before this commit (a stray `data as Interest[]`
+cast that left `tag` / `desc` / `others` / `similar` undefined on
+live rows).
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useInterests.test.ts` (new, 5 cases) | Catalog + substring filter (useInterests, 2 cases) and known / unknown / undefined tag (useInterest, 3 cases) | Synchronous mock-mode init for both hooks. The catalog matches `SC_INTERESTS_SUGGESTED`; the substring filter keeps tags that include the query; the single-tag hook returns `SC_INTERESTS_DETAILS[tag]` for known names and `null` otherwise. Live-mode coverage is deferred (no Supabase mock). |
+
+**Delivered count**: 296 / 296 (up from 291). 41 suites (up from 40).
+
+**What this section deliberately does NOT do:**
+
+- Test the column-mapping transform in `api.searchInterests` /
+  `api.getInterest`. Jest doesn't have a Supabase client; the
+  transform is verified by inspection (select columns match the
+  schema exactly) and end-to-end via Studio queries.
+- Test create-event's tag-search end-to-end against the live
+  catalog. The previous create-event tests already cover the
+  substring-match path; the difference now is just the catalog
+  source, which is exercised by the `useInterests` hook tests.
+- Re-snapshot the coverage table. Two new ~50-line hooks + ~30
+  added lines to `api.ts`; net below the 0.5pp threshold.
 
 ---
 

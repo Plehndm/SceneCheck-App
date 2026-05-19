@@ -16,7 +16,7 @@ import { supabase, isLiveBackendAvailable } from './supabase';
 import { isoToTime, isoToWhen } from './date-time';
 import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
-  SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED,
+  SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_CHATS, SC_THREADS,
 } from '@/data/mocks';
 import type { SCEvent, Account, Chat, Message, Interest } from '@/types/domain';
@@ -329,6 +329,10 @@ export const api = {
   },
 
   // ── Interests ──
+  // DB columns are `name` / `subscriber_count` / `description` /
+  // `similar_tags`; the in-memory Interest type uses `tag` / `others`
+  // / `desc` / `similar`. The transform here mirrors the shape the
+  // rest of the app already expects (see `data/mocks.ts`).
   async searchInterests(query: string): Promise<Interest[]> {
     if (isMock()) {
       return SC_INTERESTS_SUGGESTED.filter(i =>
@@ -336,13 +340,39 @@ export const api = {
       );
     }
     const sb = requireClient();
+    const q = sb.from('interests').select('name, description, subscriber_count, similar_tags');
+    const filtered = query.trim().length > 0
+      ? q.ilike('name', `%${query.trim()}%`)
+      : q;
+    const { data, error } = await filtered.order('subscriber_count', { ascending: false }).limit(50);
+    if (error) throw error;
+    return (data ?? []).map(row => ({
+      tag: row.name as string,
+      desc: (row.description as string) ?? '',
+      others: (row.subscriber_count as number) ?? 0,
+      similar: (row.similar_tags as string[]) ?? [],
+    }));
+  },
+
+  // Single-tag lookup for the interest-detail screen. Returns null if
+  // the tag isn't in the catalog (live mode) so the screen can show
+  // an "unknown tag" state without crashing.
+  async getInterest(tagName: string): Promise<Interest | null> {
+    if (isMock()) return SC_INTERESTS_DETAILS[tagName] ?? null;
+    const sb = requireClient();
     const { data, error } = await sb
       .from('interests')
-      .select('*')
-      .ilike('name', `%${query}%`)
-      .limit(20);
+      .select('name, description, subscriber_count, similar_tags')
+      .eq('name', tagName)
+      .maybeSingle();
     if (error) throw error;
-    return data as Interest[];
+    if (!data) return null;
+    return {
+      tag: data.name as string,
+      desc: (data.description as string) ?? '',
+      others: (data.subscriber_count as number) ?? 0,
+      similar: (data.similar_tags as string[]) ?? [],
+    };
   },
 
   async subscribeToInterest(interestId: string) {
