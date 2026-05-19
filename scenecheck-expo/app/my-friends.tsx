@@ -12,17 +12,19 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { useFriends } from '@/hooks/useFriends';
+import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 
 export default function MyFriendsScreen() {
   const t = useTokens();
-  const friends = useStore(s => s.friends);
-  const removeFriend = useStore(s => s.removeFriend);
+  const removeFriendStore = useStore(s => s.removeFriend);
   const showConfirm = useStore(s => s.showConfirm);
   const showToast = useStore(s => s.showToast);
-
-  const list = SC_VISIBLE_PEOPLE.filter(p => friends.has(p.id));
+  // useFriends() reads from the Zustand friends Set in mock mode and
+  // from `friendships ⨝ profiles` in live mode. `reload()` lets us
+  // re-fetch after an unfriend so the list updates without a remount.
+  const { friends: list, reload } = useFriends();
 
   const handleUnfriend = (id: string, name: string) => {
     showConfirm({
@@ -30,9 +32,22 @@ export default function MyFriendsScreen() {
       body: 'You can re-add them later by sending a new request.',
       confirmLabel: 'UNFRIEND',
       tone: 'danger',
-      onConfirm: () => {
-        removeFriend(id);
+      onConfirm: async () => {
+        // Optimistic local update first so the row disappears
+        // immediately, then commit to Supabase. On failure surface a
+        // toast — the Zustand mutation is local-only so we don't need
+        // a rollback unless the API call would have been authoritative.
+        removeFriendStore(id);
         showToast({ message: `Unfriended ${name}.`, kind: 'info' });
+        try {
+          await api.removeFriend(id);
+          reload();
+        } catch (e) {
+          showToast({
+            message: e instanceof Error ? `Couldn't unfriend: ${e.message}` : "Couldn't unfriend.",
+            kind: 'error',
+          });
+        }
       },
     });
   };

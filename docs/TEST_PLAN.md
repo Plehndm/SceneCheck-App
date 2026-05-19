@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **296/296** after full-migration Phase 4 (§2.13 — Interests system). Earlier deltas in §2.7 … §2.12._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **301/301** after full-migration Phase 5 (§2.14 — Profiles + Social). Earlier deltas in §2.7 … §2.13._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 29 files (8 components + 17 screens + 4 hooks), 192 test cases |
-| **Total tests** | — | — | **296 tests, 41 suites** |
+| **Integration tests** | Required | ≥ 3 | 30 files (8 components + 17 screens + 5 hooks), 197 test cases |
+| **Total tests** | — | — | **301 tests, 42 suites** |
 
 ### 2.2 Migration note
 
@@ -185,6 +185,7 @@ scenecheck-expo/
     ├── hooks/
     │   ├── useEvent.test.ts             # NEW (§2.11) — single-event hook
     │   ├── useEvents.test.ts            # NEW (§2.9) — events data hook
+    │   ├── useFriends.test.ts           # NEW (§2.14) — friends + requests + profile
     │   ├── useImagePicker.test.ts
     │   └── useInterests.test.ts         # NEW (§2.13) — interest catalog + single tag
     └── screens/                         # per-route integration tests
@@ -249,9 +250,9 @@ Approximate run-times:
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
 | Component (8 files) | 35 | <1s | local + CI |
-| Hook (4 files) | 15 | <1s | local + CI |
+| Hook (5 files) | 20 | <1s | local + CI |
 | Screen integration (24 files) | 142 | ~3s | local + CI |
-| **Total (Jest)** | **296** | **~5s** | local + CI |
+| **Total (Jest)** | **301** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -537,6 +538,33 @@ live rows).
   source, which is exercised by the `useInterests` hook tests.
 - Re-snapshot the coverage table. Two new ~50-line hooks + ~30
   added lines to `api.ts`; net below the 0.5pp threshold.
+
+### 2.14 Full-migration Phase 5: Profiles + Social (post-§2.13 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §16._
+
+Phase 5 wires three social screens (my-friends, requests, other-
+profile) through the three new hooks. Tests sit on the hooks; the
+screen tests stay green because the Zustand-derived mock-mode
+paths return the same shapes the screens already assert against.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useFriends.test.ts` (new, 5 cases) | useFriends (2), useFriendRequests (1), useProfile (2) | Friends list mirrors the Zustand `friends` Set + `SC_VISIBLE_PEOPLE` filter; reload is callable. Friend-requests list filters `SC_FRIEND_REQUESTS` by `incomingRequests` AND drops senders whose profiles aren't in `SC_VISIBLE_PERSON_BY_ID` (locks in the existing blocked-user behavior — fr2 is from blocked `p6` and gets dropped). useProfile returns the synced row for a known id and `null` for undefined. |
+
+**Delivered count**: 301 / 301 (up from 296). 42 suites (up from 41).
+
+**What this section deliberately does NOT do:**
+
+- Test the live-mode join paths in `api.fetchFriends` /
+  `api.fetchFriendRequests`. Jest doesn't have a Supabase client;
+  verification is via Studio + Phase 5's manual smoke section.
+- Test the optimistic accept / decline / unfriend mutations end-
+  to-end on the screens. Those already had screen-level tests
+  covering the Zustand store mutation in earlier phases; the new
+  awaited `api.*` calls are validated via the hook tests.
+- Add an integration test for `my-following.tsx`. Untouched in
+  Phase 5 (no `org_follows` table).
 
 ---
 

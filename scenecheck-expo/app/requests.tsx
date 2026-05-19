@@ -10,20 +10,20 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCIcon } from '@/components/SCIcon';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_FRIEND_REQUESTS, SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
+import { useFriendRequests } from '@/hooks/useFriendRequests';
+import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 
 export default function RequestsScreen() {
   const t = useTokens();
-  const incoming = useStore(s => s.incomingRequests);
-  const accept = useStore(s => s.acceptFriendRequest);
-  const decline = useStore(s => s.declineFriendRequest);
+  const acceptStore = useStore(s => s.acceptFriendRequest);
+  const declineStore = useStore(s => s.declineFriendRequest);
   const showToast = useStore(s => s.showToast);
-
-  const requests = SC_FRIEND_REQUESTS
-    .filter(r => incoming.has(r.id))
-    .map(r => ({ ...r, person: SC_VISIBLE_PERSON_BY_ID[r.personId] }))
-    .filter(r => r.person);
+  // useFriendRequests filters by the Zustand `incomingRequests` Set
+  // in mock mode (so accept / decline reflect instantly) and pulls
+  // from the `friendships` table in live mode. `reload()` re-fetches
+  // after each mutation.
+  const { requests, reload } = useFriendRequests();
 
   return (
     <Screen>
@@ -80,9 +80,22 @@ export default function RequestsScreen() {
               )}
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Pressable
-                  onPress={() => {
-                    accept(r.id, r.person.id);
+                  onPress={async () => {
+                    // Optimistic local mutation, then commit. The
+                    // store update sweeps the row out of `incoming`
+                    // and into `friends` so the list updates the
+                    // moment ACCEPT is pressed.
+                    acceptStore(r.id, r.person.id);
                     showToast({ message: `${r.person.name} added as a friend.`, kind: 'success' });
+                    try {
+                      await api.acceptFriendRequest(r.id);
+                      reload();
+                    } catch (e) {
+                      showToast({
+                        message: e instanceof Error ? `Couldn't accept: ${e.message}` : "Couldn't accept.",
+                        kind: 'error',
+                      });
+                    }
                   }}
                   style={({ pressed }) => [{
                     flex: 1, height: 40, borderRadius: RADIUS.md,
@@ -94,9 +107,18 @@ export default function RequestsScreen() {
                   <SCText variant="mono" size={11} weight="700" color={t.primaryInk}>ACCEPT</SCText>
                 </Pressable>
                 <Pressable
-                  onPress={() => {
-                    decline(r.id);
+                  onPress={async () => {
+                    declineStore(r.id);
                     showToast({ message: 'Request declined.', kind: 'info' });
+                    try {
+                      await api.declineFriendRequest(r.id);
+                      reload();
+                    } catch (e) {
+                      showToast({
+                        message: e instanceof Error ? `Couldn't decline: ${e.message}` : "Couldn't decline.",
+                        kind: 'error',
+                      });
+                    }
                   }}
                   style={({ pressed }) => [{
                     flex: 1, height: 40, borderRadius: RADIUS.md,

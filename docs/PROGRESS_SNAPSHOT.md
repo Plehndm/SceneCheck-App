@@ -43,6 +43,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Full-migration **Phase 2** of 7: event detail wire-up. New `hooks/useEvent.ts` (mock-mode synchronous, live-mode async). New API methods: `api.cancelSubscription`, `api.updateEvent` (writes `events.title` / `location_name` / `capacity` / `description`), `api.cancelEvent` (soft-cancel via `status='cancelled'`). `event/[id].tsx`: join/leave now hit `subscribeToEvent` / `cancelSubscription` with optimistic local state + rollback on failure; CANCEL EVENT awaits the real cancel; the EditEventSheet calls `api.updateEvent` + `applyEventOverride` and signals `onSaved` so the screen can `reload()` the hook. `when` (start/end time) intentionally not persisted yet — needs a real date+time editor. See §13. |
 | 2026-05-19 | Full-migration **Phase 3** of 7: Events list, Search, My Hosting — three thin swaps from `SC_EVENTS` import to `useEvents()`. No new API methods needed (the hook + `api.fetchEvents` from Phase 0 + the filter logic already in each screen do all the work). My Hosting now filters on `kind === 'yours' \|\| hostId === me.id` so it works for live UUIDs and mock string ids. Search still reads `SC_VISIBLE_PEOPLE` + `SC_ORGS` for the people/orgs tabs (Phase 5 territory). No test churn — existing screen tests cover the rendering and the synchronous mock-mode `useEvents` initializer means assertions still land on first render. See §14. |
 | 2026-05-19 | Full-migration **Phase 4** of 7: Interests system. New `hooks/useInterests.ts` (catalog + search) and `hooks/useInterest.ts` (single-tag), both with mock-mode synchronous init. New API method `api.getInterest(tagName)` (returns `null` for unknown tags so the UI can fall back gracefully); fixed the existing `api.searchInterests` to translate DB columns (`name` / `subscriber_count` / `description` / `similar_tags`) → in-memory shape (`tag` / `others` / `desc` / `similar`) since the previous `data as Interest[]` cast was a bug (wrong key names in live mode). Wired `app/interests/index.tsx`, `app/interests/[tag].tsx`, and the create-event tag-search catalog through the new hooks. +5 hook tests. See §15. |
+| 2026-05-19 | Full-migration **Phase 5** of 7: Profiles + Social. New API methods: `api.fetchFriends` (friendships ⨝ profiles, both directions, client-side union), `api.fetchFriendRequests` (returns the legacy `FriendRequest` shape), `api.declineFriendRequest`, `api.removeFriend`. Three new hooks: `useFriends`, `useFriendRequests`, `useProfile` — all mock-mode-synchronous via the Zustand `friends` / `incomingRequests` Sets, live-mode via the new API methods. Wired `my-friends.tsx`, `requests.tsx`, `profile/[id].tsx`. Accept / decline / unfriend now commit to Supabase with optimistic Zustand updates. `my-following.tsx` left untouched (no `org_follows` table in the schema yet). +5 hook tests. See §16. |
 
 ### Current layout
 
@@ -922,7 +923,69 @@ Bonus: fixes a latent column-mapping bug in `api.searchInterests`.
 
 ---
 
-## 16. How to re-snapshot this file
+## 16. Full migration — Phase 5: Profiles + Social
+
+_Last updated: 2026-05-19_
+
+Phase 5 of the 7-phase plan. Biggest API delta so far — 4 new
+methods on `lib/api.ts` + 3 new hooks — but the screen wiring is
+mostly mechanical because the existing screens were already using
+the Zustand friend graph as the source of truth.
+
+### 16.1 New API methods (`lib/api.ts`)
+
+| Method | DB effect | Notes |
+|---|---|---|
+| `fetchFriends()` | Two `select` queries on `friendships` joined to `profiles`, one for each direction (`from_id = me`, `to_id = me`), unioned client-side. | Mock returns the full `SC_VISIBLE_PEOPLE` array; the hook narrows by the Zustand `friends` Set. |
+| `fetchFriendRequests()` | `select id, from_id, created_at from friendships where to_id = me and status = 'pending'` | Returns the legacy `FriendRequest` shape (`{ id, personId, when, note }`); the hook stitches in profile data via per-row `api.getProfile` calls. |
+| `declineFriendRequest(id)` | `update friendships set status='declined' where id = …` | Soft-delete so dispatch-notification can still find the row. |
+| `removeFriend(otherUserId)` | `delete from friendships where (from_id=me and to_id=other) or (from_id=other and to_id=me)` | Hard-delete; RLS allows either side to remove. |
+
+### 16.2 New hooks (`hooks/`)
+
+| Hook | Mock mode | Live mode |
+|---|---|---|
+| `useFriends()` | Filters `SC_VISIBLE_PEOPLE` by the Zustand `friends` Set; re-derives on Set change. | Calls `api.fetchFriends()`. Returns `reload()` for re-fetching after a remove. |
+| `useFriendRequests()` | Filters `SC_FRIEND_REQUESTS` by `incomingRequests` Set + drops blocked senders. | `api.fetchFriendRequests()` → per-row `api.getProfile` to stitch in the requester's profile. Returns `reload()`. |
+| `useProfile(id)` | Synchronous `SC_ACCOUNT_BY_ID[id]` lookup. | `api.getProfile(id)`. |
+
+### 16.3 Screen wiring
+
+- `app/my-friends.tsx` — `SC_VISIBLE_PEOPLE.filter(...)` → `useFriends()`. Unfriend is now optimistic: `removeFriendStore(id)` updates the Zustand Set immediately, then `await api.removeFriend(id)` commits, then `reload()` re-fetches. Errors surface via toast.
+- `app/requests.tsx` — `useFriendRequests()` replaces the manual filter. Accept / decline both run the Zustand mutation first (so the row disappears), then await the api call, then `reload()`.
+- `app/profile/[id].tsx` — `SC_ACCOUNT_BY_ID[id]` lookup → `useProfile(id)`. The `isVisible` gate still consults `SC_VISIBLE_PERSON_BY_ID` in mock mode; in live mode RLS already enforces visibility, so anything `useProfile` returns is implicitly visible.
+
+### 16.4 Following — deliberately not migrated
+
+`app/my-following.tsx` stays on the Zustand `following` Set + mock
+data because the schema has no `org_follows` table. Adding one is
+its own migration; out of scope for Phase 5 unless org-follow
+becomes a priority.
+
+### 16.5 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 301 / 301, 42 suites (+5 over Phase 4's 296) |
+| `npm run web` HMR re-bundles clean | ✅ |
+| Sign-in as A → send friend request to B → sign-in as B → B sees the row in `/requests`; ACCEPT updates `friendships.status='accepted'` in `public.friendships`; both `/my-friends` lists show the other | manually verifiable once you have two users locally |
+| Unfriend in `/my-friends` → friendship row deleted from `public.friendships`; list updates instantly | same |
+
+### 16.6 What this section deliberately does NOT do
+
+- Live `api.subscribeToInterest` wiring. The interests ADD button
+  still only toggles the Zustand `subscribedInterests` Set. Deferred
+  to whenever we revisit profile preferences end-to-end.
+- A `useProfileEvents(hostId)` hook for "events posted by this
+  org". The profile screen still filters `SC_EVENTS` client-side;
+  Phase 7 (Attendees + Ratings) will revisit if a dedicated
+  endpoint becomes useful.
+- Replace `SC_REVIEWS` on the profile screen with live ratings.
+  That's Phase 7.
+
+---
+
+## 17. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

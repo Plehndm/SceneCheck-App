@@ -20,8 +20,10 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCButton } from '@/components/SCAddButton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
+import { useProfile } from '@/hooks/useProfile';
+import { api } from '@/lib/api';
 import {
-  SC_ACCOUNT_BY_ID, SC_EVENTS, SC_VISIBLE_PERSON_BY_ID, SC_REVIEWS, SC_MY_ACCOUNTS,
+  SC_EVENTS, SC_VISIBLE_PERSON_BY_ID, SC_REVIEWS, SC_MY_ACCOUNTS,
 } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
@@ -29,9 +31,14 @@ import { RADIUS } from '@/theme/tokens';
 export default function OtherProfileScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const person = id ? SC_ACCOUNT_BY_ID[id] : null;
+  // `useProfile(id)` hits `profiles` in live mode and `SC_ACCOUNT_BY_ID`
+  // in mock mode. The visibility gate still consults the mock
+  // `VISIBLE_PERSON_BY_ID` table — in live mode the RLS layer
+  // already enforces visibility, so anything `useProfile` returns
+  // is implicitly visible.
+  const { profile: person } = useProfile(id);
   const isVisible = id
-    ? person?.type === 'org' || !!SC_VISIBLE_PERSON_BY_ID[id]
+    ? person?.type === 'org' || !!SC_VISIBLE_PERSON_BY_ID[id] || !api.isMock()
     : false;
 
   const friends = useStore(s => s.friends);

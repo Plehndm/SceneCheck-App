@@ -18,6 +18,7 @@ import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_CHATS, SC_THREADS,
+  SC_VISIBLE_PEOPLE, SC_FRIEND_REQUESTS,
 } from '@/data/mocks';
 import type { SCEvent, Account, Chat, Message, Interest } from '@/types/domain';
 
@@ -326,6 +327,89 @@ export const api = {
       .insert({ blocker_id: user.id, blocked_id: toUUID(targetId) });
     if (error) throw error;
     return { blocked: true as const };
+  },
+
+  // Decline a pending friend request. Soft-delete via status flip
+  // (vs row delete) so dispatch-notification keeps a record. Pairs
+  // with the existing acceptFriendRequest above.
+  async declineFriendRequest(friendshipId: string) {
+    if (isMock()) return { status: 'declined' as const };
+    const sb = requireClient();
+    const { error } = await sb
+      .from('friendships')
+      .update({ status: 'declined' })
+      .eq('id', friendshipId);
+    if (error) throw error;
+    return { status: 'declined' as const };
+  },
+
+  // Drop a friendship row entirely. Either side can remove (RLS
+  // policy 00011_create_rls_policies allows it where from_id =
+  // auth.uid() OR to_id = auth.uid()).
+  async removeFriend(otherUserId: string) {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const me = user.id;
+    const other = toUUID(otherUserId);
+    const { error } = await sb
+      .from('friendships')
+      .delete()
+      .or(`and(from_id.eq.${me},to_id.eq.${other}),and(from_id.eq.${other},to_id.eq.${me})`);
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // Fetch the caller's accepted friends as full profile rows. In
+  // mock mode returns SC_VISIBLE_PEOPLE unfiltered — the hook
+  // narrows by the Zustand `friends` Set so the screen can stay
+  // reactive to unfriend operations. In live mode does the
+  // friendships ↔ profiles join in both directions and unions
+  // client-side (Supabase doesn't have a built-in UNION through
+  // PostgREST).
+  async fetchFriends(): Promise<Account[]> {
+    if (isMock()) return SC_VISIBLE_PEOPLE;
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const me = user.id;
+    const [{ data: outRows }, { data: inRows }] = await Promise.all([
+      sb.from('friendships')
+        .select('to:profiles!friendships_to_id_fkey(*)')
+        .eq('from_id', me)
+        .eq('status', 'accepted'),
+      sb.from('friendships')
+        .select('from:profiles!friendships_from_id_fkey(*)')
+        .eq('to_id', me)
+        .eq('status', 'accepted'),
+    ]);
+    const out = (outRows ?? []).map((r: { to?: Account | null }) => r.to).filter(Boolean) as Account[];
+    const inn = (inRows ?? []).map((r: { from?: Account | null }) => r.from).filter(Boolean) as Account[];
+    return [...out, ...inn];
+  },
+
+  // Pending incoming friend requests. Returns the legacy FriendRequest
+  // shape (`{ id, personId, when, note }`) so the existing requests
+  // screen stays as-is. Mock mode returns SC_FRIEND_REQUESTS; the
+  // hook narrows by the store's `incomingRequests` Set.
+  async fetchFriendRequests(): Promise<import('@/types/domain').FriendRequest[]> {
+    if (isMock()) return SC_FRIEND_REQUESTS;
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { data, error } = await sb
+      .from('friendships')
+      .select('id, from_id, created_at')
+      .eq('to_id', user.id)
+      .eq('status', 'pending');
+    if (error) throw error;
+    return (data ?? []).map(r => ({
+      id: r.id as string,
+      personId: r.from_id as string,
+      when: new Date(r.created_at as string).toLocaleDateString(),
+      note: null,
+    }));
   },
 
   // ── Interests ──
