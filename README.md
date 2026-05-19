@@ -3,6 +3,39 @@
 ## Title: SceneCheck
 ## Tag Line: Trying to get as many people on and as many people off
 
+## 📁 Project structure
+
+| Path | What it is |
+|---|---|
+| `scenecheck-expo/` | **Active project.** Expo SDK 54 + TypeScript + React Native Web port. Cross-platform (iOS / Android / Web) per the architecture document. Run with `npm start` from inside. |
+| `supabase/` | Database migrations, Edge Functions, pgTAP tests. Backend is shared between the legacy prototype and the new Expo project. |
+| `docs/` | Code review report, test plan, and other project documentation. |
+| `legacy/` | **Archived.** Original browser-based prototype (Babel-Standalone + plain JSX) from HW2 / HW3. Kept for reference / comparison. See `legacy/README.md`. |
+| `assets/` | Static assets (UI draft images) referenced by the requirements doc. |
+| `IN4MATX 43 Architecture Document.md` | The architecture deliverable. |
+| `IN4MATX-43-Requirements-Document.md` | The requirements deliverable. |
+| `user_flow_traces.md` | User flow traces document. |
+
+### Quick start (active project)
+
+```bash
+cd scenecheck-expo
+npm install
+npm start          # interactive — press w for web, scan QR for iOS/Android
+npm test           # 259 tests, ~4s
+```
+
+### Quick start (legacy prototype)
+
+```bash
+cd legacy
+npm install
+npm run dev        # serves on http://localhost:5173
+npm test           # original prototype tests
+```
+
+---
+
 # 📋 Team Meeting Log
 
 > This file documents all team meetings. Update after every meeting.

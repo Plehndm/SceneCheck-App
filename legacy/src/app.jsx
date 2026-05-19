@@ -548,7 +548,7 @@ function App() {
       if (route.name === 'chat-thread') return <SCChatThread go={go} back={back} chatId={route.chatId} personId={route.personId} personIds={route.personIds} offline={tweaks.offline} {...friendCtx}/>;
       if (route.name === 'new-chat') return <SCNewChat go={go} back={back} {...friendCtx}/>;
       if (route.name === 'create-event') return <SCCreateEvent go={go} back={back} requestDiscardDraft={requestDiscardDraft} offline={tweaks.offline} draftId={route.draftId} drafts={drafts} saveDraft={saveDraft} removeDraft={removeDraft} {...accountCtx}/>;
-      if (route.name === 'event-published') return <SCEventPublished go={go} back={back} form={route.form}/>;
+      if (route.name === 'event-published') return <SCEventPublished go={go} back={back} form={route.form} eventId={route.eventId}/>;
       if (route.name === 'ratings') return <SCRatingsScreen go={go} back={back} hostId={route.hostId}/>;
       if (route.name === 'map') return <SCMapScreen go={go} back={back} joined={joined} pendingLeave={pendingLeave} toggleJoin={toggleJoin} focusEventId={route.focusEventId}/>;
     }

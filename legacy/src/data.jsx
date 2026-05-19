@@ -149,14 +149,8 @@ const SC_DRAFTS_SEED = [
   },
 ];
 
-// Format an event's time range — returns "Sat May 9 · 7:00 AM – 9:00 AM"
-// if the event has an endTime, or just the start otherwise. All display
-// surfaces (cards, lists, detail, chat chips) call this.
-function scWhenRange(e) {
-  if (!e) return '';
-  if (e.endTime) return `${e.when} – ${e.endTime}`;
-  return e.when;
-}
+// scWhenRange lives in src/date-time.jsx (exposed on window before this file
+// loads). Kept there so the date/time helpers stay co-located.
 
 // Past events that are no longer live but still appear in ratings/history.
 // Same shape as SC_EVENTS but without join state. The reviews below reference
@@ -338,5 +332,5 @@ Object.assign(window, {
   SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_EVENTS, SC_EVENT_BY_ID, SC_PAST_EVENTS, SC_ANY_EVENT_BY_ID, SC_REVIEWS,
   SC_CHATS, SC_THREAD_E1, SC_THREADS, SC_ACCOUNT_BY_ID,
-  SC_DRAFTS_SEED, scWhenRange,
+  SC_DRAFTS_SEED,
 });

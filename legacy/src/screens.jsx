@@ -20,7 +20,7 @@ function SCHomeScreen({ go, joined, pendingLeave, toggleJoin, offline, showSkele
             What's the<br/>scene?
           </div>
         </div>
-        <button onClick={() => go('search')} className="press" style={{
+        <button onClick={() => go('search')} className="press" aria-label="Search events" style={{
           width: 40, height: 40, borderRadius: 12, border: '1px solid var(--line)',
           background: 'var(--card)', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -421,8 +421,10 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
 
   // `tracking` = pointer is down but we haven't crossed the drag threshold yet,
   // so we let the underlying pin receive the click. `active` = real drag in
-  // progress, pointer captured by the pan surface.
+  // progress, pointer captured by the pan surface. The ref drives per-frame
+  // pointer math; the mirror state below drives styling so React re-renders.
   const dragRef = React.useRef({ tracking: false, active: false, sx: 0, sy: 0, ox: 0, oy: 0, pointerId: null });
+  const [dragActive, setDragActive] = useStateS(false);
   const onPointerDown = (e) => {
     dragRef.current = { tracking: true, active: false, sx: e.clientX, sy: e.clientY, ox: tx, oy: ty, pointerId: e.pointerId };
   };
@@ -437,6 +439,7 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
       // capture on the outer pan surface.
       if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
       d.active = true;
+      setDragActive(true);
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     }
     // Clamp pan so map stays roughly in view. Search-pan can briefly push the
@@ -454,6 +457,7 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
     }
     d.tracking = false;
     d.active = false;
+    setDragActive(false);
   };
   const reset = () => { setTx(0); setTy(0); setZoom(1); setFocusedId(null); };
   // Wheel/trackpad zoom — anchors on the cursor so the point under the
@@ -486,12 +490,12 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onWheel={onWheel}
-        style={{ position: 'absolute', inset: 0, background: 'var(--map-land)', overflow: 'hidden', cursor: dragRef.current.active ? 'grabbing' : 'grab', touchAction: 'none' }}>
+        style={{ position: 'absolute', inset: 0, background: 'var(--map-land)', overflow: 'hidden', cursor: dragActive ? 'grabbing' : 'grab', touchAction: 'none' }}>
         <div style={{
           position: 'absolute', left: '50%', top: '50%',
           transform: `translate(-50%, -50%) translate(${tx}px, ${ty}px) scale(${zoom})`,
           transformOrigin: 'center center',
-          transition: dragRef.current.active ? 'none' : 'transform 360ms cubic-bezier(.2,.7,.2,1)',
+          transition: dragActive ? 'none' : 'transform 360ms cubic-bezier(.2,.7,.2,1)',
         }}>
           <SCMap width={MAP_W} height={MAP_H}
             pins={filtered}
@@ -514,15 +518,15 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
 
       {/* zoom controls */}
       <div style={{ position: 'absolute', right: 14, top: 110, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <button onClick={() => setZoom(z => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="press" style={zoomBtn}><SCIcon name="plus" size={16}/></button>
-        <button onClick={() => setZoom(z => Math.max(0.6, +(z - 0.25).toFixed(2)))} className="press" style={zoomBtn}><span style={{ fontWeight:700, fontSize:18, lineHeight:1 }}>−</span></button>
+        <button onClick={() => setZoom(z => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="press" aria-label="Zoom in" style={zoomBtn}><SCIcon name="plus" size={16}/></button>
+        <button onClick={() => setZoom(z => Math.max(0.6, +(z - 0.25).toFixed(2)))} className="press" aria-label="Zoom out" style={zoomBtn}><span style={{ fontWeight:700, fontSize:18, lineHeight:1 }}>−</span></button>
         <button onClick={reset} className="press" style={zoomBtn} aria-label="Recenter map"><SCIcon name="crosshair" size={16}/></button>
       </div>
 
       {/* top overlay */}
       <div style={{ position: 'relative', zIndex: 10, padding: '10px 14px 0' }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => back ? back() : go('home')} className="press" style={{
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => back ? back() : go('home')} className="press" aria-label="Go back" style={{
             width: 42, height: 42, borderRadius: 14, background: 'var(--card)',
             border: '1px solid var(--line)', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -602,7 +606,7 @@ function SCMapScreen({ go, back, joined, pendingLeave, toggleJoin, focusEventId 
               </div>
             )}
           </div>
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => go({ name:'create-event' })} className="press" style={{
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => go({ name:'create-event' })} className="press" aria-label="Create a new event" style={{
             width: 42, height: 42, borderRadius: 14, background: 'var(--ink)',
             color: 'var(--card)', border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -779,46 +783,9 @@ const zoomBtn = {
 // Helpers for parsing & formatting the friendly strings we keep on the form
 // ("Sat May 16" and "7:00 AM"). State lives as plain strings/Dates; the popouts
 // just translate user gestures into them.
-const SC_DOW_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const SC_MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const SC_MON_LONG  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-function scFmtDate(d) {
-  return `${SC_DOW_SHORT[d.getDay()]} ${SC_MON_SHORT[d.getMonth()]} ${d.getDate()}`;
-}
-function scParseDate(s) {
-  // Match e.g. "Sat May 16" — falls back to today if it can't parse.
-  const m = (s || '').match(/([A-Za-z]+)\s+(\d+)/);
-  const now = new Date();
-  if (!m) return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const monIdx = SC_MON_SHORT.indexOf(m[1].slice(0,3));
-  const day = parseInt(m[2], 10);
-  const year = now.getFullYear() + (monIdx < now.getMonth() ? 1 : 0); // bump to next year if month already passed
-  return new Date(year, Math.max(0, monIdx), day);
-}
-function scParseTime(t) {
-  const m = (t || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return { h: 12, m: 0, ap: 'AM' };
-  return { h: parseInt(m[1], 10), m: parseInt(m[2], 10), ap: m[3].toUpperCase() };
-}
-function scFmtTime(parts) {
-  return `${parts.h}:${String(parts.m).padStart(2,'0')} ${parts.ap}`;
-}
-// Time math helpers for guardrails (start < end). Times are stored as the
-// friendly strings like "7:00 AM" but compared as minutes-since-midnight.
-function scTimeToMin(t) {
-  const { h, m, ap } = scParseTime(t);
-  let hr = h % 12;
-  if (ap === 'PM') hr += 12;
-  return hr * 60 + m;
-}
-function scMinToTime(min) {
-  const total = ((min % (24*60)) + 24*60) % (24*60);
-  let h = Math.floor(total / 60);
-  const m = total % 60;
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return scFmtTime({ h, m, ap });
-}
+// Date/time utilities (scFmtDate, scParseDate, scParseTime, scFmtTime,
+// scTimeToMin, scMinToTime) and month/day constants live in src/date-time.jsx
+// and are exposed on window before this file loads.
 
 // Calendar popover — month grid with prev/next.
 function SCDatePicker({ value, onChange }) {
@@ -1116,7 +1083,9 @@ function SCCreateEvent({ go, activeAccount, setAccountSwitcherOpen, picture, org
   const endMin   = scTimeToMin(form.timeEnd);
   const timesInvalid = endMin < startMin;
 
-  // Conflict warning per use case alt-flow (same time/place as another event)
+  // DEMO ONLY — hardcoded so the conflict-warning state is reachable during
+  // walkthroughs. A real implementation would check overlapping windows in
+  // SC_EVENTS / the events table for the chosen location and date.
   const conflict = form.location.toLowerCase().includes('aldrich') && form.date.includes('May 16');
 
   const steps = ['Basics', 'When & Where', 'Tags & Limits', 'Review'];
@@ -1173,21 +1142,37 @@ function SCCreateEvent({ go, activeAccount, setAccountSwitcherOpen, picture, org
     if (step === 0) { handleCancel(); return; }
     setStep(step - 1);
   };
-  const handlePublish = () => {
+  const handlePublish = async () => {
     setPublishError(false);
     setPublishing(true);
-    setTimeout(() => {
+    // Short-circuit offline state before hitting the API — the UI was already
+    // built around this and the API layer doesn't yet model offline failure.
+    if (offline) {
       setPublishing(false);
-      if (offline) {
-        setPublishError(true);
-        window.scToast && window.scToast({ message: "Couldn't publish — you're offline.", kind: 'error' });
-        return;
-      }
+      setPublishError(true);
+      window.scToast && window.scToast({ message: "Couldn't publish — you're offline.", kind: 'error' });
+      return;
+    }
+    try {
+      const result = await window.SC_API.createEvent({
+        title: form.title,
+        description: form.desc,
+        location_name: form.location,
+        capacity: form.cap,
+        interests: form.interests,
+        visibility: form.visibility,
+      });
+      const newEventId = result && result.event_id;
       // If we were resuming a draft, remove it from the store on success.
       if (draftRefId.current && removeDraft) removeDraft(draftRefId.current);
       window.scToast && window.scToast({ message: `"${form.title}" is live.`, kind: 'success' });
-      go({ name: 'event-published', form });
-    }, 700);
+      go({ name: 'event-published', form, eventId: newEventId });
+    } catch (err) {
+      setPublishError(true);
+      window.scToast && window.scToast({ message: "Couldn't publish — try again.", kind: 'error' });
+    } finally {
+      setPublishing(false);
+    }
   };
   // Save the in-progress form to the drafts store and exit. Used by the
   // publish-failure recovery flow ("SAVE DRAFT" button on the error card)
@@ -1629,11 +1614,23 @@ function Segmented({ value, options, onChange }) {
 }
 
 function RowToggle({ label, v, onChange }) {
+  const handleKey = (e) => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!v); }
+  };
   return (
-    <div onClick={() => onChange(!v)} className="press" style={{
-      display:'flex', alignItems:'center', justifyContent:'space-between', gap: 12,
-      padding: 14, borderRadius: 14, background:'var(--card)', border:'1px solid var(--line)', cursor:'pointer',
-    }}>
+    <div
+      role="switch"
+      aria-checked={v}
+      aria-label={label}
+      tabIndex={0}
+      onClick={() => onChange(!v)}
+      onKeyDown={handleKey}
+      className="press"
+      style={{
+        display:'flex', alignItems:'center', justifyContent:'space-between', gap: 12,
+        padding: 14, borderRadius: 14, background:'var(--card)', border:'1px solid var(--line)', cursor:'pointer',
+      }}
+    >
       <span style={{ fontSize: 14, flex: 1, minWidth: 0 }}>{label}</span>
       {/* iOS-style switch — matches NotifToggleRow */}
       <div style={{
@@ -1653,7 +1650,7 @@ function RowToggle({ label, v, onChange }) {
 }
 
 // ── EVENT PUBLISHED (success) ────────────────────────────────
-function SCEventPublished({ go, form }) {
+function SCEventPublished({ go, form, eventId }) {
   return (
     <div className="fade-in" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding: 28, textAlign:'center', gap: 18 }}>
       <div style={{
@@ -1674,7 +1671,7 @@ function SCEventPublished({ go, form }) {
           flex: 1, height: 48, borderRadius: 14, border:'1px solid var(--line)', background:'var(--card)', cursor:'pointer',
           fontFamily:'var(--mono)', fontSize: 12, fontWeight: 600, letterSpacing:'0.14em',
         }}>HOME</button>
-        <button onClick={() => go({ name:'event', eventId:'e1' })} className="press" style={{
+        <button onClick={() => go({ name:'event', eventId: eventId || 'e1' })} className="press" style={{
           flex: 1, height: 48, borderRadius: 14, border:'none', background:'var(--ink)', color:'var(--card)', cursor:'pointer',
           fontFamily:'var(--mono)', fontSize: 12, fontWeight: 600, letterSpacing:'0.14em',
         }}>VIEW EVENT</button>
@@ -2541,7 +2538,8 @@ function SCInterestDetail({ go, back, tag, subscribed, toggleSub }) {
 }
 
 function ActivityBar() {
-  // Random-but-stable bars
+  // DEMO ONLY — static placeholder bars. Replace with a real
+  // per-hour activity rollup once the analytics endpoint exists.
   const bars = [3,5,4,6,7,8,9,11,9,7,5,4];
   const max = 12;
   return (
@@ -2762,7 +2760,7 @@ function SCChatList({ go }) {
           <div className="label-cap">{SC_CHATS.length} active</div>
           <div className="display-tight" style={{ fontSize: 36, lineHeight: 0.95, marginTop: 4 }}>Chats</div>
         </div>
-        <button onClick={() => go({ name:'new-chat' })} className="press" style={btnIcon}><SCIcon name="edit" size={16}/></button>
+        <button onClick={() => go({ name:'new-chat' })} className="press" aria-label="Start a new chat" style={btnIcon}><SCIcon name="edit" size={16}/></button>
       </div>
 
       <div style={{ padding: '0 14px' }}>
@@ -4873,4 +4871,5 @@ Object.assign(window, {
   SCRatingsScreen,
   SCOrgProfile,
   SCDraftsScreen,
+  SCEventCard,
 });
