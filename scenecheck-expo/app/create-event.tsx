@@ -18,25 +18,35 @@ import { SCTimePicker } from '@/components/SCTimePicker';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
-import { SC_INTERESTS_SUGGESTED } from '@/data/mocks';
+import { SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS } from '@/data/mocks';
 import { timeToMin } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { DraftForm, Visibility } from '@/types/domain';
 
-const EMPTY_FORM: DraftForm = {
-  title: '',
-  desc: '',
-  date: 'Sat May 16',
-  timeStart: '7:00 AM',
-  timeEnd: '9:00 AM',
-  location: 'Anteater Plaza',
-  cap: 12,
-  interests: ['biking'],
-  visibility: 'public',
-  minSubs: 3,
-  addToCalendar: true,
-  autoGroupChat: true,
-};
+// Empty-form template used as a fallback when there's no draft to resume
+// and the user has no interests on file. New events auto-fill their tag
+// chips from `me.interests` (see makeEmptyForm below) so the host
+// doesn't have to re-tag every event with the same things.
+const FALLBACK_INTERESTS = ['biking'] as const;
+
+function makeEmptyForm(meInterests: readonly string[]): DraftForm {
+  return {
+    title: '',
+    desc: '',
+    date: 'Sat May 16',
+    timeStart: '7:00 AM',
+    timeEnd: '9:00 AM',
+    location: 'Anteater Plaza',
+    cap: 12,
+    interests: meInterests.length > 0
+      ? [...meInterests]
+      : [...FALLBACK_INTERESTS],
+    visibility: 'public',
+    minSubs: 3,
+    addToCalendar: true,
+    autoGroupChat: true,
+  };
+}
 
 export default function CreateEventScreen() {
   const t = useTokens();
@@ -47,13 +57,20 @@ export default function CreateEventScreen() {
   const removeDraft = useStore(s => s.removeDraft);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
+  const meInterests = useStore(s => s.me.interests ?? []);
 
   const initialDraft = useMemo(
     () => (draftId ? drafts.find(d => d.id === draftId) : null),
     [draftId, drafts],
   );
 
-  const [form, setForm] = useState<DraftForm>(initialDraft?.form ?? EMPTY_FORM);
+  // Lazy initializer — pulls me.interests at mount-time so a host's
+  // current interests pre-fill the tags chip set. Drafts win when
+  // present (the user already picked tags they care about for that draft).
+  const [form, setForm] = useState<DraftForm>(
+    () => initialDraft?.form ?? makeEmptyForm(meInterests),
+  );
+  const [tagQuery, setTagQuery] = useState('');
   const [publishing, setPublishing] = useState(false);
 
   const set = <K extends keyof DraftForm>(k: K, v: DraftForm[K]) =>
@@ -63,6 +80,24 @@ export default function CreateEventScreen() {
     set('interests', form.interests.includes(tag)
       ? form.interests.filter(x => x !== tag)
       : [...form.interests, tag]);
+
+  // Catalog = curated suggestions + the user's own interests + any keys
+  // we have a details record for, deduped. Drives the "add more" list.
+  // When the user types in the search box we substring-match against
+  // the full catalog so they can find tags outside the suggested set.
+  const addableTags = useMemo(() => {
+    const catalog = new Set<string>([
+      ...SC_INTERESTS_SUGGESTED.map(i => i.tag),
+      ...Object.keys(SC_INTERESTS_DETAILS),
+      ...meInterests,
+    ]);
+    const selected = new Set(form.interests);
+    const q = tagQuery.trim().toLowerCase();
+    const all = Array.from(catalog).filter(tag => !selected.has(tag));
+    return q
+      ? all.filter(tag => tag.toLowerCase().includes(q))
+      : all.filter(tag => SC_INTERESTS_SUGGESTED.some(i => i.tag === tag));
+  }, [form.interests, tagQuery, meInterests]);
 
   const timesInvalid = timeToMin(form.timeEnd) < timeToMin(form.timeStart);
   const titleValid = form.title.trim().length > 0;
@@ -208,16 +243,75 @@ export default function CreateEventScreen() {
           </View>
         </Field>
 
-        {/* Interests */}
-        <Field label="Tags">
+        {/* Interests — auto-filled from me.interests on a new event; user
+            can remove tags by tapping them, or search the catalog below
+            to add more. */}
+        <Field label={`Tags · ${form.interests.length}`}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {form.interests.length === 0 ? (
+              <SCText size={12} color={t.ink3}>
+                No tags yet — search and tap to add.
+              </SCText>
+            ) : form.interests.map(tag => (
+              <Pressable
+                key={tag}
+                onPress={() => toggleInterest(tag)}
+                accessibilityLabel={`Remove tag ${tag}`}
+                style={({ pressed }) => [{
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
+                  backgroundColor: t.primary,
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCText variant="mono" size={11} weight="700" color={t.primaryInk}>
+                  #{tag}
+                </SCText>
+                <SCIcon name="x" size={10} color={t.primaryInk} />
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Search */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            paddingHorizontal: 12, marginBottom: 8,
+            backgroundColor: t.subtle, borderRadius: RADIUS.md, height: 40,
+          }}>
+            <SCIcon name="search" size={14} color={t.ink3} />
+            <TextInput
+              value={tagQuery}
+              onChangeText={setTagQuery}
+              placeholder="Search tags to add…"
+              placeholderTextColor={t.ink3}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={{ flex: 1, color: t.ink, fontSize: 13 }}
+            />
+            {tagQuery.length > 0 && (
+              <Pressable onPress={() => setTagQuery('')} accessibilityLabel="Clear tag search">
+                <SCIcon name="x" size={12} color={t.ink3} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Catalog results — tags not yet selected. With no query we show
+              the curated suggested list; with a query we show every catalog
+              match that survives the substring filter. */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {SC_INTERESTS_SUGGESTED.map(i => (
+            {addableTags.length === 0 ? (
+              <SCText variant="mono" size={11} color={t.ink3}>
+                {tagQuery.length > 0 ? 'No tags match that search.' : 'All suggested tags are already added.'}
+              </SCText>
+            ) : addableTags.map(tag => (
               <SCTag
-                key={i.tag}
-                tag={i.tag}
+                key={tag}
+                tag={tag}
                 size="sm"
-                tone={form.interests.includes(i.tag) ? 'primary' : 'soft'}
-                onPress={() => toggleInterest(i.tag)}
+                tone="soft"
+                onPress={() => {
+                  toggleInterest(tag);
+                  setTagQuery('');
+                }}
               />
             ))}
           </View>

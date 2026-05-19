@@ -59,4 +59,38 @@ describe('CreateEventScreen', () => {
     expect(getByText('Edit draft')).toBeTruthy();
     expect(getByDisplayValue('Resumed')).toBeTruthy();
   });
+
+  test('Tags field auto-fills with the user\'s interests on a new event', () => {
+    // SC_ME.interests includes 'biking' and 'climbing' among others.
+    const me = useStore.getState().me;
+    const { getByText } = renderScreen(<CreateEventScreen />);
+    // Header reflects the count of pre-selected tags.
+    expect(getByText(`Tags · ${me.interests.length}`)).toBeTruthy();
+    // The selected-tag chip renders with a '#' prefix.
+    expect(getByText('#biking')).toBeTruthy();
+    expect(getByText('#climbing')).toBeTruthy();
+  });
+
+  test('tapping a selected tag chip removes it from form.interests', () => {
+    const { getByText, queryByText } = renderScreen(<CreateEventScreen />);
+    // 'biking' is in SC_ME.interests so it's selected by default.
+    fireEvent.press(getByText('#biking'));
+    expect(queryByText('#biking')).toBeNull();
+  });
+
+  test('search filters the catalog and tapping an unselected tag adds it', () => {
+    // Drop a known-not-in-me tag back into the catalog. 'cooking' is in
+    // SC_INTERESTS_SUGGESTED but not in SC_ME.interests, so it lives in
+    // the "addable" list. We need to remove it from selection first if
+    // it ever ends up there — it won't, but the test types `cook` so
+    // only `cooking` survives the filter.
+    const { getByPlaceholderText, getByText } = renderScreen(<CreateEventScreen />);
+    fireEvent.changeText(getByPlaceholderText('Search tags to add…'), 'cook');
+    // Suggested-only filter is bypassed once a query is set, so we get
+    // every catalog match.
+    expect(getByText('cooking')).toBeTruthy();
+    fireEvent.press(getByText('cooking'));
+    // Now it appears as a selected chip with the '#' prefix.
+    expect(getByText('#cooking')).toBeTruthy();
+  });
 });
