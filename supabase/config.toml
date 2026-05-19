@@ -1,5 +1,7 @@
-[project]
-id = "scenecheck"
+# Newer Supabase CLI versions expect `project_id` as a top-level key
+# instead of an `[project]` table with `id`. The old `[project]` block
+# is rejected as "invalid keys: project".
+project_id = "scenecheck"
 
 [api]
 enabled = true
