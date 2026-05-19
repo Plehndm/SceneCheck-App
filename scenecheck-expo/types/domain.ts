@@ -1,0 +1,124 @@
+// Domain types shared across the app. These are the in-memory shapes the
+// UI consumes; `lib/api.ts` is responsible for translating Supabase rows
+// into these shapes (mock-mode returns them directly).
+
+export type EventKind = 'yours' | 'friend' | 'org' | 'recommended';
+export type Visibility = 'public' | 'private';
+export type AccountType = 'person' | 'org';
+
+export interface Account {
+  id: string;
+  type: AccountType;
+  name: string;
+  handle?: string;
+  username?: string;
+  age?: number;
+  bio?: string;
+  interests?: string[];
+  rating?: number;
+  events_hosted?: number;
+  events_attended?: number;
+  city?: string;
+  picture?: string | null;
+  privacy?: Visibility;
+  followers?: number;
+  // person-only
+  dist?: number;
+  mutual?: number;
+  color1?: string;
+  color2?: string;
+  blockedYou?: boolean;
+}
+
+export interface Interest {
+  tag: string;
+  others: number;
+  desc: string;
+  similar: string[];
+}
+
+export interface SCEvent {
+  id: string;
+  kind: EventKind;
+  hostId: string | null;
+  title: string;
+  host?: string;
+  interests: string[];
+  when: string;
+  endTime?: string;
+  where: string;
+  attendees: number;
+  cap: number;
+  rating: number | null;
+  x: number;
+  y: number;
+  desc?: string;
+}
+
+export interface PastEvent {
+  id: string;
+  hostId: string;
+  title: string;
+  when: string;
+  interests: string[];
+}
+
+export interface Review {
+  id: string;
+  eventId: string;
+  hostId: string;
+  reviewerId: string;
+  rating: number;
+  when: string;
+  text: string;
+}
+
+export type ChatKind = 'event' | 'dm';
+
+export interface Chat {
+  id: string;
+  kind: ChatKind;
+  eventId?: string;
+  personId?: string;
+  title?: string;
+  last: string;
+  time: string;
+  unread: number;
+}
+
+export interface Message {
+  from: 'host' | 'them';
+  who: string;
+  text: string;
+  time: string;
+  id?: string;
+}
+
+export interface FriendRequest {
+  id: string;
+  personId: string;
+  when: string;
+  note: string | null;
+}
+
+export interface DraftForm {
+  title: string;
+  desc: string;
+  date: string;
+  timeStart: string;
+  timeEnd: string;
+  location: string;
+  cap: number;
+  interests: string[];
+  visibility: Visibility;
+  minSubs: number;
+  addToCalendar: boolean;
+  autoGroupChat: boolean;
+}
+
+export interface Draft {
+  id: string;
+  savedAt: string;
+  lastStep: number;
+  form: DraftForm;
+}

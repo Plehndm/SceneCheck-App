@@ -1,0 +1,67 @@
+// Native map implementation — iOS uses Apple Maps, Android uses Google
+// Maps (requires GOOGLE_MAPS_API_KEY in app.json's `android.config`
+// block to render tiles; we leave that as a deploy-time concern).
+//
+// Metro auto-selects this file on iOS/Android via the `.native.tsx`
+// suffix; the TS-only Map.tsx is the fallback the typechecker resolves.
+
+import { Platform, View, type ViewStyle, type StyleProp } from 'react-native';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useTokens } from '@/theme/ThemeProvider';
+import { useStore } from '@/store/useStore';
+import {
+  DEFAULT_REGION, DEFAULT_RADIUS_M,
+  eventLatLng, pinColor, type MapProps,
+} from './types';
+
+export function Map({
+  events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
+  onPinPress, onRegionChange, style,
+}: MapProps) {
+  const t = useTokens();
+  const meInterests = useStore(s => s.me.interests ?? []);
+  const center = user ?? initialCenter;
+
+  return (
+    <View style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}>
+      <MapView
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        style={{ flex: 1 }}
+        initialRegion={{
+          latitude: center.latitude,
+          longitude: center.longitude,
+          latitudeDelta: 0.04,
+          longitudeDelta: 0.04,
+        }}
+        onRegionChangeComplete={(region) => {
+          onRegionChange?.({ latitude: region.latitude, longitude: region.longitude });
+        }}
+        showsUserLocation={!!user}
+      >
+        {user && radiusM > 0 && (
+          <Circle
+            center={user}
+            radius={radiusM}
+            fillColor={t.accentBlue + '1A'}
+            strokeColor={t.accentBlue + '99'}
+            strokeWidth={1}
+          />
+        )}
+        {events.map(e => {
+          const ll = eventLatLng(e);
+          const color = pinColor(e, t, meInterests);
+          return (
+            <Marker
+              key={e.id}
+              coordinate={ll}
+              title={e.title}
+              description={e.where}
+              pinColor={color}
+              onPress={() => onPinPress?.(e)}
+            />
+          );
+        })}
+      </MapView>
+    </View>
+  );
+}
