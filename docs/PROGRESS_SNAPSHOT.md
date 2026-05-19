@@ -33,6 +33,9 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | `supabase/config.toml` schema fix: the legacy `[project] / id = "scenecheck"` table is rejected by current Supabase CLI versions (`'config.config' has invalid keys: project`). Replaced with the new top-level `project_id = "scenecheck"` so `supabase start`, `supabase status`, etc. parse the file cleanly. |
 | 2026-05-19 | `supabase start` runs cleanly via `npx supabase`. All 15 migrations apply (`00001` → `00015`), `roles.sql` seeds, all containers come up. Local stack reachable at Studio `:54323` / REST `:54321` / DB `:54322`. |
 | 2026-05-19 | `npm run web` ran for the first time end-to-end and hit a 3-step compatibility chain with Expo SDK 54's static SSR (`web.output: "static"`). Fixed by adding `lib/storage.ts` (SSR-safe Platform-aware k/v adapter), splitting `components/Map/Map.web.tsx` into a client-only Suspense wrapper + `Map.web.impl.tsx` (defers `leaflet` to post-mount), and adding `metro.config.js` to force Zustand to its CJS build on web (the ESM build's `devtools` middleware emits `import.meta.env` which Metro serves as a classic script → `SyntaxError`). See §9. |
+| 2026-05-19 | Web design parity pass: added `app/+html.tsx` (the SSR HTML shell) to load Bricolage Grotesque / DM Sans / JetBrains Mono from Google Fonts and paint the cream `pageBg` + two radial-gradient glows from the legacy `index.html`. Previously the web build fell through to default sans-serif on a white viewport. |
+| 2026-05-19 | Built the two missing input controls from the legacy Create Event screen: `components/SCDatePicker.tsx` (calendar popover, past dates greyed + line-through + disabled, today outlined in primary, selected filled in ink) and `components/SCTimePicker.tsx` (three iPhone-clock-style snap-scroll wheels: hours, 5-min minutes, AM/PM). Both replace the placeholder `TextInput`s in `app/create-event.tsx`. Cosmetic fix in the same commit: moved `pointerEvents="..."` to `style.pointerEvents` in `ToastHost.tsx` + `SCTimePicker.tsx` to silence the RN Web deprecation warning. See §10. |
+| 2026-05-19 | Wired the missing host-only event editor and added create-event entry points on Home + Map. `EditEventSheet.tsx` (new) is a bottom-sheet modal that writes `applyEventOverride(id, patch)` and emits the legacy "Saved · attendees notified" toast; before this the EDIT EVENT button on `event/[id].tsx` set local state but no modal consumed it. Added a `+` button in both the Home tab header (next to Search) and the Map tab header, both routing to `/create-event`. CANCEL EVENT (already wired) untouched. See §10. |
 
 ### Current layout
 
@@ -413,7 +416,130 @@ updated to note the re-verification.
 
 ---
 
-## 10. How to re-snapshot this file
+## 10. Web design parity + Create-flow port
+
+_Last updated: 2026-05-19_
+
+A second pass after §9 brought three pieces of the legacy design and
+flow back from the prototype into the Expo port. None of these need a
+backend; everything lives in the frontend tree and the Zustand store.
+
+### 10.1 Web design parity (`app/+html.tsx`)
+
+After the SDK 54 web bundle finally booted in §9, the page rendered on
+a default white viewport in the browser's fallback sans-serif — none
+of the legacy's cream `pageBg`, radial-gradient glows, or
+Bricolage / DM Sans / JetBrains Mono showed up. They were defined in
+`theme/tokens.ts` but no code path consumed `pageGlow1` / `pageGlow2`,
+and `expo-font` was never invoked.
+
+`app/+html.tsx` (new — Expo Router's custom SSR HTML shell, web-only
+by convention) closes both gaps:
+
+- **Google Fonts `<link>`** for all three families at all weights
+  referenced by `FONT.display` / `FONT.body` / `FONT.mono`.
+- **Inline `<style>`** painting the `body` with the Sunset Coral
+  *light* `pageBg` plus the two radial-gradient glows from the legacy
+  `index.html` (`pageGlow1` at top-left, `pageGlow2` at bottom-right),
+  the `-webkit-font-smoothing: antialiased` + `text-rendering`
+  rules, and a `#root { display:flex; min-height:100vh }` so the
+  React tree fills the viewport.
+
+Color values are hardcoded to the store's default palette+mode (also
+documented in the file header) — the inner React tree paints its own
+theme-aware backgrounds, so this only matters for the pre-hydration
+paint and the area outside the React root (browser scrollbar gutter,
+etc).
+
+### 10.2 Date + time pickers on Create Event
+
+The legacy Create Event screen used two custom popouts that had been
+flagged in `docs/PROGRESS_SNAPSHOT.md` §7 #4 as "would benefit from a
+real picker" — they had been carried over as placeholder `TextInput`s
+in the migration. Ported to React Native:
+
+| Component | Mirrors legacy | Behavior |
+|---|---|---|
+| `components/SCDatePicker.tsx` | `SCDatePicker` in `legacy/src/screens.jsx:791` | Modal-anchored calendar grid, prev/next month navigation, **past dates greyed + line-through + disabled**, today outlined in `primary`, selected filled with `ink`. Reads/writes the friendly `"Sat May 16"` string already used everywhere else. |
+| `components/SCTimePicker.tsx` | `SCTimePicker` + `SCWheel` in `legacy/src/screens.jsx:992` | Modal with three snap-scrolling wheels (hours 1–12, minutes 0–55 by 5s, AM/PM). Center row is highlighted with a `subtle` band; rows further from center are depth-styled (smaller + dimmer). Reads/writes the friendly `"7:00 AM"` string. |
+
+Both use `Modal` (not absolute-positioned overlays) so they're not
+clipped by `Screen`'s outer `ScrollView`. The cross-platform Modal
+backdrop dismisses on outside-press.
+
+`app/create-event.tsx` now uses these in place of the three TextInputs
+for Date / Start / End. Title, description, location, capacity stepper,
+tag chips, visibility, and the save-draft / publish CTAs are
+unchanged.
+
+### 10.3 Host-only edit sheet + new create-event entry points
+
+`components/EditEventSheet.tsx` (new — ported from the legacy
+`EditEventSheet` in `legacy/src/heuristic-fixes.jsx:174`) is a
+bottom-sheet `Modal` that lets the host edit title / when / where /
+capacity. On SAVE CHANGES it calls
+`useStore.applyEventOverride(id, patch)` (the slice that replaced the
+legacy `window.SC_EVENT_OVERRIDES` global) and emits the legacy
+"Saved · attendees notified of changes" success toast. Before this,
+the EDIT EVENT button on `app/event/[id].tsx` toggled a local
+`editOpen` state but no modal consumed it — the button was effectively
+dead.
+
+CANCEL EVENT was already wired (it uses the existing `showConfirm`
+flow and emits a `cancelled · attendees notified` info toast), so no
+changes were needed there.
+
+The migration's earlier audit also showed that the only create-event
+entry points outside Profile / Drafts / My-Hosting were on the
+Profile tab. Two new ones land in this pass, both routing to
+`/create-event`:
+
+- **Home tab** — `+` button placed next to the existing Search button
+  in the top-right of the header. Accessibility label
+  `"Create a new event"`.
+- **Map tab** — `+` button anchored to the top-right of the Map
+  header, mirroring `legacy/src/screens.jsx:609`. Same a11y label.
+
+### 10.4 What this section deliberately does NOT do
+
+- Touch native font loading. `expo-font` + bundled `.ttf`s is the
+  right answer on iOS/Android; web parity ships first because that's
+  where the design gap was visible.
+- Move palette tokens out of hardcoded color in `+html.tsx`. The
+  body-background value is bound to the *default* palette+mode by
+  hand and won't follow a palette swap from the Zustand store — the
+  inner React tree handles the visible chrome, so this only matters
+  for the pre-hydration paint. A future palette-aware client-side
+  effect that syncs `document.body.style.background` to
+  `useStore.getState().palette` is the polish path if it becomes a
+  real concern.
+- Touch the native picker dependency. `@react-native-community/
+  datetimepicker` would give iOS/Android their platform-native
+  spinner/calendar; the in-app pickers here render identically on
+  both platforms and match the legacy design.
+- Implement true event-cancel persistence. The legacy was also
+  toast-only (no row deletion); a Phase 7-style backend wire-up
+  (`cancel-event` Edge Function + `events.cancelled_at` column) is
+  the natural follow-up and is out of scope here.
+
+### 10.5 Verification
+
+| Check | Result |
+|---|---|
+| Native test suite | ✅ 274/274, 36 suites, ~4.8s (+15 new tests on top of §9's 259) |
+| Web SSR + client bundles still compile | ✅ |
+| Google Fonts present in served HTML | ✅ confirmed via `curl http://localhost:8081/ \| grep -oE "Bricolage\|DM\+Sans\|JetBrains"` |
+| `#ECE3D2` / `#F8E3CC` / `#F4D8C3` palette hex codes in served HTML body CSS | ✅ |
+| `props.pointerEvents is deprecated` warning from our code | ✅ silenced (moved to `style.pointerEvents` in `ToastHost.tsx`, `SCTimePicker.tsx`) |
+| EDIT EVENT button on hosted events opens the sheet + writes override + toasts | ✅ covered by `tests/screens/event-detail.test.tsx` and `tests/components/EditEventSheet.test.tsx` |
+| Home + Map `+` buttons route to `/create-event` | ✅ covered by `tests/screens/{home,map-tab}.test.tsx` |
+
+See `docs/TEST_PLAN.md` §2.8 for the per-file test additions that
+landed alongside this work.
+
+---
+
+## 11. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

@@ -17,10 +17,10 @@ export function ToastHost() {
   if (toasts.length === 0) return null;
   return (
     <View
-      pointerEvents="box-none"
       style={{
         position: 'absolute', left: 12, right: 12, bottom: 120,
         gap: 8, zIndex: 90,
+        pointerEvents: 'box-none',
       }}
     >
       {toasts.map(toast => {

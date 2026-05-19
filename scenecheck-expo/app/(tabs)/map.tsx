@@ -13,6 +13,7 @@ import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
 import { SCButton } from '@/components/SCAddButton';
+import { SCIcon } from '@/components/SCIcon';
 import { LegendDot } from '@/components/LegendDot';
 import { Map } from '@/components/Map';
 import { useLocation } from '@/hooks/useLocation';
@@ -34,25 +35,42 @@ export default function MapTab() {
 
   return (
     <Screen scroll={false}>
-      <View style={{ paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12 }}>
-        <SCText variant="labelCap">{fmtDate(new Date())} · Irvine</SCText>
-        <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Map</SCText>
-        {isFallback && (
-          <Pressable
-            onPress={request}
-            style={({ pressed }) => [{
-              marginTop: 8, alignSelf: 'flex-start',
-              paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
-              backgroundColor: t.primarySoft,
-            }, pressed && { opacity: 0.85 }]}
-          >
-            <SCText variant="mono" size={10} weight="600" color={t.primary}>
-              {status === 'denied' ? 'LOCATION DENIED · USING UCI DEFAULT' :
-               status === 'unavailable' ? 'LOCATION UNAVAILABLE · USING UCI DEFAULT' :
-               'TAP TO ENABLE LOCATION'}
-            </SCText>
-          </Pressable>
-        )}
+      <View style={{
+        paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12,
+        flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+      }}>
+        <View style={{ flex: 1 }}>
+          <SCText variant="labelCap">{fmtDate(new Date())} · Irvine</SCText>
+          <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Map</SCText>
+          {isFallback && (
+            <Pressable
+              onPress={request}
+              style={({ pressed }) => [{
+                marginTop: 8, alignSelf: 'flex-start',
+                paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+                backgroundColor: t.primarySoft,
+              }, pressed && { opacity: 0.85 }]}
+            >
+              <SCText variant="mono" size={10} weight="600" color={t.primary}>
+                {status === 'denied' ? 'LOCATION DENIED · USING UCI DEFAULT' :
+                 status === 'unavailable' ? 'LOCATION UNAVAILABLE · USING UCI DEFAULT' :
+                 'TAP TO ENABLE LOCATION'}
+              </SCText>
+            </Pressable>
+          )}
+        </View>
+        <Pressable
+          onPress={() => router.push('/create-event' as never)}
+          accessibilityLabel="Create a new event"
+          style={({ pressed }) => [{
+            width: 42, height: 42, borderRadius: RADIUS.lg,
+            backgroundColor: t.ink,
+            alignItems: 'center', justifyContent: 'center',
+            marginTop: 6,
+          }, pressed && { opacity: 0.85 }]}
+        >
+          <SCIcon name="plus" size={18} color={t.card} />
+        </Pressable>
       </View>
 
       {/* Real map */}

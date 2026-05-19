@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Re-verified after the web-bundle compatibility work: all 259/259 tests still pass (§2.7)._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **274/274** after the web design-parity + create-flow pass (§2.8). Re-verified after the web-bundle compatibility work in §2.7._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 101 test cases |
-| **Integration tests** | Required | ≥ 3 | 21 files (3 components + 17 screens + 1 hook), 158 test cases |
-| **Total tests** | — | — | **259 tests, 33 suites** |
+| **Integration tests** | Required | ≥ 3 | 24 files (6 components + 17 screens + 1 hook), 173 test cases |
+| **Total tests** | — | — | **274 tests, 36 suites** |
 
 ### 2.2 Migration note
 
@@ -175,8 +175,11 @@ scenecheck-expo/
     │   └── store.test.ts
     ├── components/                      # component-level rendering
     │   ├── ConflictChip.test.tsx
+    │   ├── EditEventSheet.test.tsx      # NEW (§2.8) — host-only edit modal
     │   ├── SCAvatar.test.tsx
-    │   └── SCEventCard.test.tsx
+    │   ├── SCDatePicker.test.tsx        # NEW (§2.8) — calendar popover
+    │   ├── SCEventCard.test.tsx
+    │   └── SCTimePicker.test.tsx        # NEW (§2.8) — three-wheel time picker
     ├── hooks/
     │   └── useImagePicker.test.ts
     └── screens/                         # per-route integration tests
@@ -240,10 +243,10 @@ Approximate run-times:
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
 | Unit (5 files) | 101 | <1s | local + CI |
-| Component (3 files) | 18 | <1s | local + CI |
+| Component (6 files) | 28 | <1s | local + CI |
 | Hook (1 file) | 5 | <1s | local + CI |
-| Screen integration (24 files) | 135 | ~3s | local + CI |
-| **Total (Jest)** | **259** | **~4s** | local + CI |
+| Screen integration (24 files) | 140 | ~3s | local + CI |
+| **Total (Jest)** | **274** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -320,6 +323,47 @@ builds. The fixes landed in:
 - Re-snapshot the coverage table (§2.5). The net change in covered statements is dominated by the new `lib/storage.ts` (a ~28-line file with two untested branches), which would move the all-files percentage by less than 0.5pp and isn't worth a full `--coverage` rerun to capture. The next coverage snapshot — likely when Phase 8 adds the live-mode `api.ts` tests or the `ConfirmDialog`/`ToastHost` render tests — should subsume this delta.
 - Backdate the §2.3 counts. No new test files were added; the 259 number stands.
 - Claim test coverage for the Metro resolver override. It's a build-time config; the right "test" is `npm run web` end-to-end, which is captured in the verification table above and in `docs/PROGRESS_SNAPSHOT.md` §9.
+
+### 2.8 Web design parity + Create-flow tests (post-§2.7 delta)
+
+_Captured 2026-05-19 after the work documented in
+`docs/PROGRESS_SNAPSHOT.md` §10._
+
+Three new components landed (`SCDatePicker`, `SCTimePicker`,
+`EditEventSheet`) plus two new entry points to `/create-event` (Home
+and Map tab headers). Each is covered by direct or indirect Jest
+tests. Coverage of pre-existing tests was not disturbed.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/components/SCDatePicker.test.tsx` (new, 3 cases) | render of trigger / open of popover / fallback-to-today behavior | The friendly value (`"Sat May 16"`) appears in the trigger; opening reveals a `MonthName YYYY` label inside the popover; malformed input still renders today's friendly form. Selecting a specific cell is not asserted because the calendar contents shift with the machine's wall clock — the shared `fmtDate` / `parseDate` paths are covered in `tests/unit/date-time.test.ts`. |
+| `tests/components/SCTimePicker.test.tsx` (new, 3 cases) | render of trigger / open of three-wheel popover / `onChange` fires with reformatted string | The friendly value (`"7:00 AM"`) appears in the trigger; opening reveals the colon separator and both AM/PM labels; tapping `PM` (a stable, low-touch row in the wheel) fires `onChange('7:00 PM')`. Snap-scroll mechanics are not driven by jsdom and so are left to manual web verification. |
+| `tests/components/EditEventSheet.test.tsx` (new, 4 cases) | invisible-when-closed / pre-fill / save writes override + toast / cancel closes without mutation | Headline `"EDIT EVENT"` and `"SAVE CHANGES"` are not in the tree until `visible` is true; the form pre-fills `title` + `cap` from the event; `SAVE CHANGES` writes a patch through `useStore.applyEventOverride(id, patch)` and emits the legacy "Saved · attendees notified" success toast; `CANCEL` only triggers `onClose` (no override). |
+| `tests/screens/home.test.tsx` (updated, +1 case) | `+` button routes correctly | Tapping the accessibility-labeled "Create a new event" button on the Home header pushes `/create-event`. |
+| `tests/screens/map-tab.test.tsx` (updated, +1 case) | `+` button routes correctly | Same assertion on the Map tab — verifies the new header button mirrors the legacy `screens.jsx:609` behavior. |
+| `tests/screens/event-detail.test.tsx` (updated, +3 cases) | EDIT EVENT opens the sheet / saving writes override + toast / CANCEL EVENT opens a danger-toned confirm | These close the previously-dangling `editOpen` state and double-check the host-only host-action chrome that was already in place. |
+
+**Delivered count**: 274 / 274 (up from 259). 36 suites (up from 33).
+Runtime delta: negligible (~5.0s vs ~4.8s).
+
+**What this section deliberately does NOT do:**
+
+- Add E2E coverage of the Date / Time picker's actual scroll snapping
+  on the wheel. That mechanic is browser-side and would need
+  Playwright; the unit tests cover the `onChange` callback and
+  formatting paths instead.
+- Add a test for `app/+html.tsx`. It's a web-only SSR shell with no
+  React behavior — its output is verified by `curl http://localhost
+  :8081/ | grep` against the served HTML, captured in
+  `docs/PROGRESS_SNAPSHOT.md` §10.5.
+- Add a test for the Metro resolver override (`metro.config.js`).
+  Build-time config, not Jest-testable; verified end-to-end by
+  `npm run web` succeeding.
+- Re-snapshot the coverage table (§2.5). The three new components add
+  ~480 LOC combined, but they're entirely covered by the new tests
+  in this section (excluding the wheel-scroll mechanics noted above)
+  and the all-files percentage should move modestly upward. A full
+  rerun is deferred to the next milestone snapshot.
 
 ---
 

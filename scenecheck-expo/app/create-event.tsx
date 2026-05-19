@@ -13,6 +13,8 @@ import { SCTag } from '@/components/SCTag';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCButton } from '@/components/SCAddButton';
+import { SCDatePicker } from '@/components/SCDatePicker';
+import { SCTimePicker } from '@/components/SCTimePicker';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
@@ -147,36 +149,18 @@ export default function CreateEventScreen() {
 
         {/* Date + times */}
         <Field label="Date">
-          <TextInput
-            value={form.date}
-            onChangeText={(v) => set('date', v)}
-            placeholder="Sat May 16"
-            placeholderTextColor={t.ink3}
-            style={inputStyle(t)}
-          />
+          <SCDatePicker value={form.date} onChange={(v) => set('date', v)} />
         </Field>
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Field label="Start">
-              <TextInput
-                value={form.timeStart}
-                onChangeText={(v) => set('timeStart', v)}
-                placeholder="7:00 AM"
-                placeholderTextColor={t.ink3}
-                style={inputStyle(t)}
-              />
+              <SCTimePicker value={form.timeStart} onChange={(v) => set('timeStart', v)} />
             </Field>
           </View>
           <View style={{ flex: 1 }}>
             <Field label="End">
-              <TextInput
-                value={form.timeEnd}
-                onChangeText={(v) => set('timeEnd', v)}
-                placeholder="9:00 AM"
-                placeholderTextColor={t.ink3}
-                style={inputStyle(t)}
-              />
+              <SCTimePicker value={form.timeEnd} onChange={(v) => set('timeEnd', v)} />
             </Field>
           </View>
         </View>

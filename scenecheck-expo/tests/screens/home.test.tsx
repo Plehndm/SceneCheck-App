@@ -57,4 +57,10 @@ describe('HomeScreen', () => {
     fireEvent.press(getByText(SC_EVENTS[0].title));
     expect(router.push).toHaveBeenCalledWith(`/event/${SC_EVENTS[0].id}`);
   });
+
+  test('+ button (a11y label "Create a new event") routes to /create-event', () => {
+    const { getByLabelText } = renderScreen(<HomeScreen />);
+    fireEvent.press(getByLabelText('Create a new event'));
+    expect(router.push).toHaveBeenCalledWith('/create-event');
+  });
 });

@@ -18,6 +18,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { SCTag } from '@/components/SCTag';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCAddButton } from '@/components/SCAddButton';
+import { EditEventSheet } from '@/components/EditEventSheet';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { SC_EVENT_BY_ID, SC_CHATS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
@@ -308,6 +309,12 @@ export default function EventDetailScreen() {
           />
         </View>
       </View>
+
+      <EditEventSheet
+        visible={editOpen}
+        event={e}
+        onClose={() => setEditOpen(false)}
+      />
     </Screen>
   );
 }

@@ -48,16 +48,29 @@ export default function HomeScreen() {
             What&apos;s the{'\n'}scene?
           </SCText>
         </View>
-        <Pressable
-          onPress={() => router.push('/search' as never)}
-          style={({ pressed }) => [{
-            width: 40, height: 40, borderRadius: RADIUS.md,
-            borderWidth: 1, borderColor: t.line, backgroundColor: t.card,
-            alignItems: 'center', justifyContent: 'center',
-          }, pressed && { opacity: 0.85 }]}
-        >
-          <SCIcon name="search" size={18} color={t.ink} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={() => router.push('/search' as never)}
+            style={({ pressed }) => [{
+              width: 40, height: 40, borderRadius: RADIUS.md,
+              borderWidth: 1, borderColor: t.line, backgroundColor: t.card,
+              alignItems: 'center', justifyContent: 'center',
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon name="search" size={18} color={t.ink} />
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/create-event' as never)}
+            accessibilityLabel="Create a new event"
+            style={({ pressed }) => [{
+              width: 40, height: 40, borderRadius: RADIUS.md,
+              backgroundColor: t.ink,
+              alignItems: 'center', justifyContent: 'center',
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon name="plus" size={18} color={t.card} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Map preview card */}

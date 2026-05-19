@@ -72,4 +72,33 @@ describe('EventDetailScreen', () => {
     const { getByText } = renderScreen(<EventDetailScreen />);
     expect(getByText('This event is gone')).toBeTruthy();
   });
+
+  test('EDIT EVENT button opens the edit sheet (SAVE CHANGES becomes visible)', () => {
+    setRouteParams({ id: 'e1' });
+    const { getByText, queryByText } = renderScreen(<EventDetailScreen />);
+    // Sheet body is not in the tree until the button is pressed.
+    expect(queryByText('SAVE CHANGES')).toBeNull();
+    fireEvent.press(getByText('EDIT EVENT'));
+    expect(getByText('SAVE CHANGES')).toBeTruthy();
+  });
+
+  test('saving the edit sheet writes an override + emits toast', () => {
+    setRouteParams({ id: 'e1' });
+    const { getByText } = renderScreen(<EventDetailScreen />);
+    fireEvent.press(getByText('EDIT EVENT'));
+    fireEvent.press(getByText('SAVE CHANGES'));
+    expect(useStore.getState().eventOverrides.e1).toBeTruthy();
+    const toasts = useStore.getState().toasts;
+    expect(toasts.some(t => /attendees notified/i.test(t.message))).toBe(true);
+  });
+
+  test('CANCEL EVENT opens the destructive confirm dialog', () => {
+    setRouteParams({ id: 'e1' });
+    const { getByText } = renderScreen(<EventDetailScreen />);
+    fireEvent.press(getByText('CANCEL EVENT'));
+    const confirm = useStore.getState().confirm;
+    expect(confirm).toBeTruthy();
+    expect(confirm?.tone).toBe('danger');
+    expect(confirm?.confirmLabel).toBe('CANCEL EVENT');
+  });
 });
