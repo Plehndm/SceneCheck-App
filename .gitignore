@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Test output
+coverage/
+
+# Local env / secrets — never commit real Supabase keys.
+.env
+.env.local
+.env.*.local
+src/config.js
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.log
