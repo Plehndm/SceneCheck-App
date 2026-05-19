@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **279/279** after the Supabase live wire-up pass (§2.9). Earlier deltas in §2.7 (web-bundle compatibility) and §2.8 (design-parity + create-flow)._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **282/282** after full-migration Phase 1 (§2.10 — hard auth gate). Earlier deltas in §2.7 (web-bundle compatibility), §2.8 (design-parity + create-flow), and §2.9 (Supabase live wire-up Phase 0)._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 25 files (6 components + 17 screens + 2 hooks), 175 test cases |
-| **Total tests** | — | — | **279 tests, 37 suites** |
+| **Integration tests** | Required | ≥ 3 | 26 files (7 components + 17 screens + 2 hooks), 178 test cases |
+| **Total tests** | — | — | **282 tests, 38 suites** |
 
 ### 2.2 Migration note
 
@@ -174,6 +174,7 @@ scenecheck-expo/
     │   ├── map-types.test.ts
     │   └── store.test.ts
     ├── components/                      # component-level rendering
+    │   ├── AuthGate.test.tsx            # NEW (§2.10) — hard auth gate
     │   ├── ConflictChip.test.tsx
     │   ├── EditEventSheet.test.tsx      # NEW (§2.8) — host-only edit modal
     │   ├── SCAvatar.test.tsx
@@ -244,10 +245,10 @@ Approximate run-times:
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
-| Component (6 files) | 28 | <1s | local + CI |
+| Component (7 files) | 31 | <1s | local + CI |
 | Hook (2 files) | 7 | <1s | local + CI |
 | Screen integration (24 files) | 140 | ~3s | local + CI |
-| **Total (Jest)** | **279** | **~5s** | local + CI |
+| **Total (Jest)** | **282** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -407,6 +408,42 @@ is modest because both modules short-circuit gracefully in mock mode:
   In mock mode `SC_EVENTS` is non-empty so the branch is unreachable
   from tests; live-mode coverage requires a Supabase client mock that
   returns `[]`. Deferred to the full migration.
+
+### 2.10 Full-migration Phase 1: Hard auth gate (post-§2.9 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §12._
+
+Phase 1 of the 7-phase plan adds the auth gate every subsequent
+phase relies on, plus expanded `AuthBootstrap` hydration of the
+social slices. Test impact is concentrated in one new component-
+test file + one existing screen test that's been updated.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/components/AuthGate.test.tsx` (new, 3 cases) | render-children with session / pass-through in mock mode / blocks-render in live mode with `session=null` | The gate renders its `children` when the store has a session (the new `resetStore` default). It also renders children when `session=null` if `api.isMock()` is true — needed so the existing 277 screen / hook tests don't have to mock auth. When `api.isMock()` is monkey-patched to false AND `session=null`, the protected child is absent from the tree (Jest's `Redirect` mock returns null, so the `queryByText(CHILD)` lookup is null). |
+
+| File updated | Change | Why |
+|---|---|---|
+| `tests/screens/sign-in.test.tsx` | Replaced "SKIP — EXPLORE AS GUEST replaces to /(tabs)" with "the guest-skip link is gone". | The link was removed as part of Phase 1; the new assertion locks in the removal so a future re-add would fail the test. |
+| `tests/test-utils.tsx` | `resetStore` now defaults to a stub signed-in session (`{ userId: SC_ME.id, email: ... }`). | Without this every prior screen test that wraps a `(tabs)` route would land on the redirect path; one-line default keeps the 277 tests green. |
+
+**Delivered count**: 282 / 282 (up from 279). 38 suites (up from 37).
+
+**What this section deliberately does NOT do:**
+
+- Test `AuthBootstrap`'s expanded hydration (joined / friends /
+  outgoingRequests / incomingRequests / subscribedInterests). Same
+  rationale as §2.9 — the component is a no-op in mock mode and
+  live-mode coverage would require a heavyweight Supabase mock.
+  End-to-end verification lives in `PROGRESS_SNAPSHOT.md` §12.4.
+- Add an integration test for the `(tabs)/_layout.tsx` wrap. The
+  wrap is one line and is exercised by every screen test that
+  renders a tab; `AuthGate.test.tsx` covers the gate's three states
+  in isolation.
+- Re-snapshot the coverage table. Net change is a ~10-line new
+  component (`AuthGate.tsx`, fully covered) + ~50 added lines in
+  `AuthBootstrap.tsx` (intentionally uncovered). Below the 0.5pp
+  threshold.
 
 ---
 

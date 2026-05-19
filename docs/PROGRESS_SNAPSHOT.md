@@ -38,6 +38,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Wired the missing host-only event editor and added create-event entry points on Home + Map. `EditEventSheet.tsx` (new) is a bottom-sheet modal that writes `applyEventOverride(id, patch)` and emits the legacy "Saved · attendees notified" toast; before this the EDIT EVENT button on `event/[id].tsx` set local state but no modal consumed it. Added a `+` button in both the Home tab header (next to Search) and the Map tab header, both routing to `/create-event`. CANCEL EVENT (already wired) untouched. See §10. |
 | 2026-05-19 | Create Event tag chips now auto-fill from `me.interests` and gained a tag-search input that matches against the union of `SC_INTERESTS_SUGGESTED` + `Object.keys(SC_INTERESTS_DETAILS)` + `me.interests`. Draft hydration still wins. +3 tests on `create-event.test.tsx`. |
 | 2026-05-19 | First Supabase live wire-up: switched `.env` from the hosted project to the local stack (`http://127.0.0.1:54321` + `sb_publishable_AC…`), built `components/AuthBootstrap.tsx` to subscribe to `supabase.auth.onAuthStateChange` + hydrate `me` from the `profiles` + `user_interests` tables, added `hooks/useEvents.ts` that calls `api.fetchEvents()` (initializes synchronously with `SC_EVENTS` in mock mode so existing screen tests stay green), and wired the Home tab + Map tab through it. Settings sign-out now actually calls `api.signOut()` instead of toasting a mock message. The other 17 screens still import `SC_*` from `data/mocks.ts`; a screen-by-screen plan for the full migration is queued. See §11. |
+| 2026-05-19 | Full-migration **Phase 1** of 7: hard auth gate + session-driven store hydration. Added `session` slice to the store; `AuthBootstrap` now mirrors `onAuthStateChange` into it and hydrates `joined`, `friends`, `outgoingRequests`, `incomingRequests`, `subscribedInterests` from `event_subscriptions` + `friendships` + `user_interests` in parallel. New `AuthGate` component wraps the `(tabs)` route group and redirects to `/auth/sign-in` when no session (mock-mode short-circuits to pass-through so the 279 existing tests stay green). Dropped the "SKIP — EXPLORE AS GUEST" link from sign-in. `following` isn't hydrated (no `org_follows` table yet). See §12. |
 
 ### Current layout
 
@@ -647,7 +648,75 @@ alongside this work.
 
 ---
 
-## 12. How to re-snapshot this file
+## 12. Full migration — Phase 1: Hard auth gate + session hydration
+
+_Last updated: 2026-05-19_
+
+Phase 1 of the 7-phase plan in
+`C:\Users\david\.claude\plans\parsed-gliding-micali.md`. Builds the
+auth surface every subsequent phase depends on: a hard gate that
+forces sign-in for the `(tabs)` route group, plus expanded
+`AuthBootstrap` hydration that loads the user's joined events +
+friend graph + interest subscriptions from the matching tables.
+
+### 12.1 What changed
+
+| File | Change |
+|---|---|
+| `scenecheck-expo/store/useStore.ts` | Added `session: { userId: string; email: string \| null } \| null` slice + `setSession(...)`. `session` is the single source of truth that `AuthGate` reads to decide whether to redirect. Defaults to `null` (signed out). |
+| `scenecheck-expo/components/AuthBootstrap.tsx` | Reworked. Now mirrors `onAuthStateChange` into `session`, and hydrates `joined`, `friends`, `outgoingRequests`, `incomingRequests`, `subscribedInterests` in parallel with the existing profile read. On `SIGNED_OUT` it resets `session=null` and clears every social Set back to empty. In mock mode it remains a no-op (no Supabase client). |
+| `scenecheck-expo/components/AuthGate.tsx` (new) | Reads `session` from the store. When `!api.isMock() && !session` it returns `<Redirect href="/auth/sign-in" />` (expo-router 6). Otherwise it renders children. In mock mode it's a transparent pass-through — required so the 277 pre-Phase-1 tests don't need an auth fixture. |
+| `scenecheck-expo/app/(tabs)/_layout.tsx` | Wraps the `<Tabs>` in `<AuthGate>`. The four tab routes (Home / Map / Chat / Profile) and everything they push to are now behind the gate. |
+| `scenecheck-expo/app/auth/sign-in.tsx` | Dropped the "SKIP — EXPLORE AS GUEST" link. Sign-in is the only way into the tabs in live mode now. `SCIcon` import removed (no longer used). |
+| `scenecheck-expo/tests/test-utils.tsx` | `resetStore` defaults to a stub signed-in `session`. Tests that need the signed-out branch pass `session: null` via `overrides`. |
+| `scenecheck-expo/tests/screens/sign-in.test.tsx` | Replaced the "SKIP — EXPLORE AS GUEST replaces to /(tabs)" case with the inverse — "the guest-skip link is gone" — to lock in the removal. |
+
+### 12.2 What the hydration queries do
+
+All four reads fire in parallel from `AuthBootstrap.hydrate(userId,
+email)`:
+
+1. `profiles` — basic name / username / bio / visibility / avatar.
+2. `user_interests` joined to `interests(name)` — populates both
+   `me.interests` and the `subscribedInterests` Set.
+3. `event_subscriptions` where `user_id = me AND status =
+   'confirmed'` — populates `joined`. Waitlisted / removed /
+   cancelled rows are intentionally excluded.
+4. `friendships` where `from_id = me OR to_id = me` — split client-
+   side into three Sets:
+   - `friends` = accepted, key = the *other* user's id
+   - `outgoingRequests` = pending where `from_id = me`, key = `to_id`
+   - `incomingRequests` = pending where `to_id = me`, key = the
+     row's `friendships.id` so the accept/decline UI has a stable
+     handle (matches the legacy mocks).
+
+### 12.3 What this section deliberately does NOT do
+
+- Hydrate `following`. There's no `org_follows` (or equivalent)
+  table in the schema yet. Adding one is its own migration; for now
+  the `following` Set stays whatever the store has from mock mode.
+  Phase 5 (Profiles + Social) will revisit if a table lands.
+- Mock `@supabase/supabase-js` for AuthBootstrap. The component is
+  a no-op in mock mode (the only mode Jest uses); the live-mode
+  hydration path is exercised end-to-end in the dev server.
+- Wire any of the 17 remaining screens to live data. That's Phase 2
+  onward.
+
+### 12.4 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 282 / 282, 38 suites, ~5s (+3 over Phase 0's 279) |
+| SSR + web bundles compile cleanly with AuthGate in the tree | ✅ |
+| Anonymous visitor hitting `localhost:8081` → redirected to `/auth/sign-in` | ✅ |
+| Sign up with a fresh email → `handle_new_user` trigger creates the profile → `AuthBootstrap` loads it, lands on `/(tabs)` with `me.id` set to the new UUID | ✅ |
+| Settings → SIGN OUT → returns to `/auth/sign-in`, store `session` is null, friend graph + joined Sets are cleared | ✅ |
+
+See `docs/TEST_PLAN.md` §2.10 for the test additions.
+
+---
+
+## 13. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

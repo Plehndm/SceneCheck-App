@@ -43,6 +43,10 @@ export function resetStore(overrides: Partial<ReturnType<typeof useStore.getStat
     following: new Set(['orgA', 'orgD']),
     subscribedInterests: new Set(['biking', 'coffee', 'climbing']),
     me: SC_ME,
+    // Default to "signed in" in tests so AuthGate-wrapped routes render
+    // without a redirect. Tests that exercise the signed-out branch
+    // pass `session: null` via the `overrides` argument.
+    session: { userId: SC_ME.id, email: 'me@scenecheck.test' },
     toasts: [],
     confirm: null,
     _toastIdCounter: 0,

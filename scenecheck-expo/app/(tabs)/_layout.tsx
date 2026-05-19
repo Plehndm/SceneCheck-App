@@ -5,6 +5,7 @@
 import { Tabs } from 'expo-router';
 import { useTokens } from '@/theme/ThemeProvider';
 import { SCIcon, type IconName } from '@/components/SCIcon';
+import { AuthGate } from '@/components/AuthGate';
 
 const tabIcon = (name: IconName) =>
   ({ color, size }: { color: string; size: number }) => (
@@ -14,6 +15,7 @@ const tabIcon = (name: IconName) =>
 export default function TabsLayout() {
   const t = useTokens();
   return (
+    <AuthGate>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -33,5 +35,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="chat" options={{ title: 'CHAT', tabBarIcon: tabIcon('chat') }} />
       <Tabs.Screen name="profile" options={{ title: 'PROFILE', tabBarIcon: tabIcon('profile') }} />
     </Tabs>
+    </AuthGate>
   );
 }

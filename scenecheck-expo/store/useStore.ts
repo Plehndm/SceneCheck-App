@@ -142,11 +142,18 @@ interface State {
 
   // ── auth ──
   me: Account;
+  // Tracks the active Supabase session. `null` when signed out (or in
+  // mock mode where there's no Supabase client at all). Managed by
+  // `components/AuthBootstrap.tsx` from `onAuthStateChange`. Used by
+  // `components/AuthGate.tsx` to redirect unauthenticated visitors to
+  // /auth/sign-in.
+  session: { userId: string; email: string | null } | null;
   picture: string | null;        // user-selected profile photo data URL
   orgPictures: Record<string, string>;
   setPicture: (dataUrl: string | null) => void;
   setOrgPicture: (orgId: string, dataUrl: string | null) => void;
   setMe: (patch: Partial<Account>) => void;
+  setSession: (s: { userId: string; email: string | null } | null) => void;
 
   // ── drafts ──
   drafts: import('@/types/domain').Draft[];
@@ -262,6 +269,7 @@ export const useStore = create<State>()(
 
       // ── auth ──
       me: SC_ME,
+      session: null,
       picture: null,
       orgPictures: {},
       setPicture: (dataUrl) => set({ picture: dataUrl }),
@@ -272,6 +280,7 @@ export const useStore = create<State>()(
         return { orgPictures: next };
       }),
       setMe: (patch) => set(s => ({ me: { ...s.me, ...patch } })),
+      setSession: (next) => set({ session: next }),
 
       // ── drafts ──
       drafts: [],

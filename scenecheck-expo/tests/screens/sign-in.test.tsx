@@ -44,9 +44,8 @@ describe('SignInScreen', () => {
     expect(router.push).toHaveBeenCalledWith('/auth/sign-up');
   });
 
-  test('SKIP — EXPLORE AS GUEST replaces to /(tabs)', () => {
-    const { getByText } = renderScreen(<SignInScreen />);
-    fireEvent.press(getByText('SKIP — EXPLORE AS GUEST'));
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
+  test('the guest-skip link is gone (hard auth gate, Phase 1)', () => {
+    const { queryByText } = renderScreen(<SignInScreen />);
+    expect(queryByText(/SKIP — EXPLORE AS GUEST/)).toBeNull();
   });
 });

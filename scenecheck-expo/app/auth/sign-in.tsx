@@ -7,7 +7,6 @@ import { Pressable, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
-import { SCIcon } from '@/components/SCIcon';
 import { SCButton } from '@/components/SCAddButton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
@@ -94,17 +93,6 @@ export default function SignInScreen() {
         <SCText size={13} color={t.ink3}>New here?</SCText>
         <Pressable onPress={() => router.push('/auth/sign-up' as never)}>
           <SCText size={13} weight="600" color={t.primary}>Create an account</SCText>
-        </Pressable>
-      </View>
-
-      <View style={{ marginTop: 32, alignItems: 'center' }}>
-        <Pressable onPress={() => router.replace('/(tabs)' as never)} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <SCIcon name="chevron-right" size={12} color={t.ink3} />
-            <SCText variant="mono" size={11} weight="600" color={t.ink3}>
-              SKIP — EXPLORE AS GUEST
-            </SCText>
-          </View>
         </Pressable>
       </View>
     </Screen>
