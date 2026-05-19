@@ -13,7 +13,10 @@ beforeEach(() => resetStore());
 describe('MapTab', () => {
   test('renders the date label and "Map" headline', () => {
     const { getByText } = renderScreen(<MapTab />);
-    expect(getByText('Sat May 9 · Irvine')).toBeTruthy();
+    // The date string is now built from `fmtDate(new Date())` (round-2
+    // code-review fix) — assert on the trailing constant instead of a
+    // frozen May-9 literal.
+    expect(getByText(/· Irvine$/)).toBeTruthy();
     expect(getByText('Map')).toBeTruthy();
   });
 

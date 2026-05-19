@@ -28,7 +28,8 @@ _Last updated: 2026-05-19 (commit ____)_
 | 2026-05-19 | Original prototype moved into `legacy/`. Root is now: `scenecheck-expo/` + `supabase/` + `docs/` + `legacy/` + root markdown deliverables. |
 | 2026-05-19 | Env-var renamed from `EXPO_PUBLIC_SUPABASE_ANON_KEY` to `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Supabase 2025 key-system update). Legacy var kept as fallback. |
 | 2026-05-19 | Four logical commits land on `main` (`59d5583` backend, `b38f70b` Expo project, `3b03664` archive, `48bae88` docs). Working tree clean. |
-| 2026-05-19 | Second code review (`docs/CODE_REVIEW_REPORT_2.md`) confirms all 7 original findings resolved. Flags one new navigation bug + two carryover concerns (mocks-in-screens, mock data in store init). |
+| 2026-05-19 | Second code review (`docs/CODE_REVIEW_REPORT_2.md`) lands as commit `c0432bf`. Confirms all 7 first-review findings resolved. Flags one new navigation bug + 7 smaller post-migration issues. |
+| 2026-05-19 | Second-review patch batch (8 fixes) lands as commit `____`. Navigation 404, `isHost` literal-string bug, hardcoded date, `toastIdCounter` module-scope leak, dead `x/y` coordinate roundtrip, `fmtWhen`/`fmtTime` duplication, mock data leaking into live-mode store init, and `Map` coupling to `useStore` all addressed. |
 
 ### Current layout
 
@@ -51,7 +52,7 @@ In4matx-43-Project/
 
 ## 2. Codebase metrics
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit c0432bf)_
 
 ### Legacy prototype (now in `legacy/src/`)
 
@@ -95,7 +96,7 @@ _Last updated: 2026-05-19 (commit ____)_
 
 ## 3. Phase-by-phase progress log
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit c0432bf)_
 
 This is the same 16-task plan that was used to drive the migration. Each
 task represents a discrete, verifiable unit of work; status reflects
@@ -174,7 +175,7 @@ final state as of the snapshot date.
 
 ## 4. Test counts
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit c0432bf)_
 
 ```
 Test Suites: 33 passed, 33 total
@@ -209,7 +210,7 @@ Time:        ~4 s (cold), ~2 s (warm cache)
 
 ## 5. Coverage numbers
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit c0432bf)_
 
 Source: `cd scenecheck-expo && npm run test:coverage`
 
@@ -259,7 +260,7 @@ Source: `cd scenecheck-expo && npm run test:coverage`
 
 ## 6. Validation status
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit c0432bf)_
 
 | Check | Command | Result |
 |---|---|---|
@@ -276,23 +277,36 @@ _Last updated: 2026-05-19 (commit ____)_
 
 _Last updated: 2026-05-19 (commit ____)_
 
-Ordered roughly by impact. **Items 1–3 are new findings from the second
-code review** (`docs/CODE_REVIEW_REPORT_2.md`).
+Eight bug-level findings from the second code review
+(`docs/CODE_REVIEW_REPORT_2.md`) have been patched in commit `____`.
+One architectural recommendation remains (item 1 below). Ordered
+roughly by remaining impact.
 
-1. **Fix the event → attendees navigation 404.** `scenecheck-expo/app/event/[id].tsx:249` calls `router.push(\`/event/${e.id}/attendees\`)` but the actual route file is at `app/attendees/[id].tsx`. Tap-to-view-attendees from event detail is broken at runtime. One-line fix to `/attendees/${e.id}`.
-2. **Route screens through `lib/api.ts` instead of importing mocks directly.** 10 of 24 screens (`app/(tabs)/index.tsx`, `app/events.tsx`, `app/search.tsx`, etc.) `import { SC_EVENTS, SC_CHATS } from '@/data/mocks'` instead of calling `api.fetchEvents()`. Live mode currently has no effect on those screens until each one is refactored to use the api client.
-3. **Stop seeding the production Zustand store with mock-data IDs.** `scenecheck-expo/store/useStore.ts` initial state includes hardcoded mock blocked users (`b1`, `b2`), friend IDs (`p1`, `p3`, `p5`), and joined event `e1`. In live mode these survive until AsyncStorage rehydrates; new installs see fake data on first launch.
-4. **Run the pgTAP suite + add a regression test for the RLS leak** (Phase 7 ships the fix; the regression test that asserts a stranger cannot SELECT a private profile is the natural next test). Requires Docker.
-5. **Deno tests for the 9 Edge Functions**, especially the 4 touched in Phase 7 (atomic-subscribe, friend-request notification dispatch, CORS, RLS). Edge Function logic currently relies on the typed shape only.
-6. **Date/time pickers in `app/create-event.tsx`** — currently uses `TextInput`s with format hints; would benefit from `@react-native-community/datetimepicker`. The legacy version had a 4-step wizard with native-feeling pickers.
-7. **`ConfirmDialog.tsx` / `ToastHost.tsx` direct render tests** — both at 0% line coverage. Screen tests verify the *trigger* (`showConfirm`/`showToast` writes to the store) but not the modal render. Easy 8-10 additional tests.
-8. **Strengthen screen-test assertions.** Round-2 review noted that ~50% of the 135 screen tests are render-only; they smoke-test that nothing crashes but don't exercise state transitions or downstream effects. Targeted addition of interaction assertions would close meaningful coverage gaps without much new code.
-9. **Set up CI** (GitHub Actions: lint + typecheck + test on push). The architecture doc prescribes this; nothing exists yet.
-10. **Long-press → edit/delete on chat messages** — needs `react-native-gesture-handler` wiring on RN. Legacy did this via `onPointerDown` + a setTimeout.
-11. **Account switcher (Instagram-style)** — profile tab currently shows only the personal account. Legacy had org-account swap; needs a sheet UI + store slice.
-12. **Welcome onboarding tour** — legacy `SCOnboarding`. Components exist (`SCText`, `SCButton`); needs a step state machine + skippable overlay.
-13. **Delete Expo template leftovers** — `themed-text.tsx`, `themed-view.tsx`, `parallax-scroll-view.tsx`, `hello-wave.tsx`, `haptic-tab.tsx`, the `ui/` directory. None imported by SceneCheck; ~7 files, ~150 lines.
-14. **E2E on web via Playwright** — drive the deployed Expo Web build through sign-in → home → join → chat → leave.
+### Resolved by the second-review patch batch (commit `____`)
+
+- ✅ **Navigation 404** — `event/[id].tsx:249` now routes to `/attendees/${e.id}` (matches the actual route file)
+- ✅ **`isHost` broken in live mode** — `event/[id].tsx:101` now compares `e.hostId` against `me.id` from the store instead of the literal string `'me'`
+- ✅ **Hardcoded date** — `(tabs)/map.tsx` now uses `fmtDate(new Date())`; the `map-tab.test.tsx` assertion was relaxed to a regex tail-match
+- ✅ **`toastIdCounter` module-scope leak** — moved into store state as `_toastIdCounter`; reset to 0 in both `test-utils.tsx` and the store unit test's `resetStore`
+- ✅ **Mock data in live-mode store init** — `store/useStore.ts` now gates `joined`, `friends`, `outgoing/incomingRequests`, `following`, `subscribedInterests`, and `blocked` behind `isLiveBackendAvailable()`; live mode starts empty
+- ✅ **Dead `x/y` coordinate roundtrip** — `SCEvent` gained optional `lat`/`lng`; `lib/api.ts:transformEventRow` populates them directly from the database row; `eventLatLng` prefers them when present, falls back to x/y for mock fixtures
+- ✅ **`fmtWhen`/`fmtTime` duplication** — `lib/api.ts` now uses `isoToTime`/`isoToWhen` from `lib/date-time.ts` (the canonical formatters added in the same patch)
+- ✅ **`Map` coupling to `useStore`** — both `Map.native.tsx` and `Map.web.tsx` now accept `meInterests` as a prop; `(tabs)/map.tsx` reads from the store and passes it down
+
+### Still outstanding
+
+1. **Route screens through `lib/api.ts` instead of importing mocks directly.** 10 of 24 screens (`app/(tabs)/index.tsx`, `app/events.tsx`, `app/search.tsx`, etc.) `import { SC_EVENTS, SC_CHATS } from '@/data/mocks'` instead of calling `api.fetchEvents()`. Live mode currently has no effect on those screens until each one is refactored to use the api client. This is a multi-file architectural change rather than a bug patch.
+2. **Run the pgTAP suite + add a regression test for the RLS leak** (Phase 7 ships the fix; the regression test that asserts a stranger cannot SELECT a private profile is the natural next test). Requires Docker.
+3. **Deno tests for the 9 Edge Functions**, especially the 4 touched in Phase 7 (atomic-subscribe, friend-request notification dispatch, CORS, RLS). Edge Function logic currently relies on the typed shape only.
+4. **Date/time pickers in `app/create-event.tsx`** — currently uses `TextInput`s with format hints; would benefit from `@react-native-community/datetimepicker`. The legacy version had a 4-step wizard with native-feeling pickers.
+5. **`ConfirmDialog.tsx` / `ToastHost.tsx` direct render tests** — both at 0% line coverage. Screen tests verify the *trigger* (`showConfirm`/`showToast` writes to the store) but not the modal render. Easy 8-10 additional tests.
+6. **Strengthen screen-test assertions.** Round-2 review noted that ~50% of the 135 screen tests are render-only; they smoke-test that nothing crashes but don't exercise state transitions or downstream effects. Targeted addition of interaction assertions would close meaningful coverage gaps without much new code.
+7. **Set up CI** (GitHub Actions: lint + typecheck + test on push). The architecture doc prescribes this; nothing exists yet.
+8. **Long-press → edit/delete on chat messages** — needs `react-native-gesture-handler` wiring on RN. Legacy did this via `onPointerDown` + a setTimeout.
+9. **Account switcher (Instagram-style)** — profile tab currently shows only the personal account. Legacy had org-account swap; needs a sheet UI + store slice.
+10. **Welcome onboarding tour** — legacy `SCOnboarding`. Components exist (`SCText`, `SCButton`); needs a step state machine + skippable overlay.
+11. **Delete Expo template leftovers** — `themed-text.tsx`, `themed-view.tsx`, `parallax-scroll-view.tsx`, `hello-wave.tsx`, `haptic-tab.tsx`, the `ui/` directory. None imported by SceneCheck; ~7 files, ~150 lines.
+12. **E2E on web via Playwright** — drive the deployed Expo Web build through sign-in → home → join → chat → leave.
 
 ---
 
@@ -302,8 +316,8 @@ _Last updated: 2026-05-19 (commit ____)_
 
 | # | Date | File | Scope | Headline |
 |---|---|---|---|---|
-| 1 | 2026-05-18 | `docs/CODE_REVIEW_REPORT.md` | Pre-migration audit of the legacy prototype + Supabase backend | 4 backend bugs (RLS, CORS, race, missing notif dispatch), god-component `app.jsx`, duplicate conflict logic, stack deviation from the architecture doc |
-| 2 | 2026-05-19 | `docs/CODE_REVIEW_REPORT_2.md` | Post-migration delta review of the current state | All 7 first-review findings resolved. One new navigation bug introduced (`event/[id].tsx:249`). Two carryover concerns (screens import mocks directly; store initial state contains mock IDs) |
+| 1 | 2026-05-18 | `docs/CODE_REVIEW_REPORT.md` | Pre-migration audit of the legacy prototype + Supabase backend | 4 backend bugs (RLS, CORS, race, missing notif dispatch), god-component `app.jsx`, duplicate conflict logic, stack deviation from the architecture doc — **all 7 fixed in commits `59d5583` + `b38f70b`** |
+| 2 | 2026-05-19 | `docs/CODE_REVIEW_REPORT_2.md` | Post-migration delta review of the current state | All 7 first-review findings confirmed resolved. Flagged 1 new navigation bug + 7 smaller post-migration issues — **all 8 patched in commit `____`** (this commit; see §7) |
 
 The second review is structured as a delta — every original finding has
 a ✅ / ⚠️ / ❌ status line with file:line citations, plus standalone

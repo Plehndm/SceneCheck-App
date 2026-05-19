@@ -50,8 +50,14 @@ export interface SCEvent {
   attendees: number;
   cap: number;
   rating: number | null;
+  // Normalized 0–1 coords used by the legacy SVG map fixtures (mock-mode).
+  // Live mode populates lat/lng directly and leaves these at sensible defaults.
   x: number;
   y: number;
+  // Real-world coordinates from the database; preferred by the Map component
+  // when present. Optional because the mock fixtures only have x/y.
+  lat?: number;
+  lng?: number;
   desc?: string;
 }
 

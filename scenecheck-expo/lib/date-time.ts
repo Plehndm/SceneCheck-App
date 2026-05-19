@@ -61,3 +61,24 @@ export function whenRange(e: Pick<SCEvent, 'when' | 'endTime'> | null | undefine
   if (e.endTime) return `${e.when} – ${e.endTime}`;
   return e.when;
 }
+
+// Convert an ISO timestamp (or null) into the prototype's "7:00 AM" format.
+// Used by lib/api.ts when transforming database rows; lives here so the
+// formatting logic exists in exactly one place.
+export function isoToTime(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ap: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return fmtTime({ h, m, ap });
+}
+
+// Convert an ISO timestamp into the prototype's full "Sat May 9 · 7:00 AM"
+// label that the UI uses for the `event.when` string.
+export function isoToWhen(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  return `${fmtDate(d)} · ${isoToTime(isoStr)}`;
+}

@@ -29,6 +29,7 @@ function resetStore() {
     subscribedInterests: new Set(['biking', 'coffee', 'climbing']),
     toasts: [],
     confirm: null,
+    _toastIdCounter: 0,
   });
 }
 

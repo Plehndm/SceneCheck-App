@@ -72,9 +72,9 @@ export default function EventDetailScreen() {
   const joinEvent = useStore(s => s.joinEvent);
   const schedulePendingLeave = useStore(s => s.schedulePendingLeave);
   const cancelPendingLeave = useStore(s => s.cancelPendingLeave);
-  const pendingLeave = useStore(s => s.pendingLeave);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
+  const meId = useStore(s => s.me.id);
 
   if (!baseEvent) {
     return (
@@ -98,7 +98,11 @@ export default function EventDetailScreen() {
   }
 
   const e = { ...baseEvent, ...(override ?? {}) };
-  const isHost = e.kind === 'yours' || e.hostId === 'me';
+  // `kind === 'yours'` is the canonical signal from transformEventRow;
+  // hostId comparison falls back to me.id (not the literal string 'me')
+  // so host actions also appear in live mode where hostId is a UUID.
+  // Round-2 code-review finding §2 Important.
+  const isHost = e.kind === 'yours' || e.hostId === meId;
   const accent =
     e.kind === 'yours' ? t.primary :
     e.kind === 'friend' ? t.accentFriend :
@@ -246,7 +250,7 @@ export default function EventDetailScreen() {
 
       {/* Attendees preview */}
       <Pressable
-        onPress={() => router.push(`/event/${e.id}/attendees` as never)}
+        onPress={() => router.push(`/attendees/${e.id}` as never)}
         style={({ pressed }) => [{
           marginHorizontal: 18, marginTop: 18, padding: 14,
           backgroundColor: t.card, borderWidth: 1, borderColor: t.line,

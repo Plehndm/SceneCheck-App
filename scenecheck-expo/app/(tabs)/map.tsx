@@ -17,8 +17,9 @@ import { LegendDot } from '@/components/LegendDot';
 import { Map } from '@/components/Map';
 import { useLocation } from '@/hooks/useLocation';
 import { useTokens } from '@/theme/ThemeProvider';
+import { useStore } from '@/store/useStore';
 import { SC_EVENTS } from '@/data/mocks';
-import { whenRange } from '@/lib/date-time';
+import { fmtDate, whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -27,13 +28,14 @@ const RADIUS_OPTIONS_M = [1600, 4828, 8047, 16093]; // 1, 3, 5, 10 miles
 export default function MapTab() {
   const t = useTokens();
   const { coords, status, isFallback, request } = useLocation();
+  const meInterests = useStore(s => s.me.interests ?? []);
   const [radius, setRadius] = useState<number>(RADIUS_OPTIONS_M[2]);
   const [focused, setFocused] = useState<SCEvent | null>(null);
 
   return (
     <Screen scroll={false}>
       <View style={{ paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12 }}>
-        <SCText variant="labelCap">Sat May 9 · Irvine</SCText>
+        <SCText variant="labelCap">{fmtDate(new Date())} · Irvine</SCText>
         <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Map</SCText>
         {isFallback && (
           <Pressable
@@ -63,6 +65,7 @@ export default function MapTab() {
             events={SC_EVENTS}
             user={coords}
             radiusM={radius}
+            meInterests={meInterests}
             onPinPress={(e) => setFocused(e)}
             style={{ width: '100%', height: '100%' }}
           />

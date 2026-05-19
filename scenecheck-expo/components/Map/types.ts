@@ -19,6 +19,11 @@ export interface MapProps {
   initialCenter?: LatLng;
   // Search radius in meters — drawn as a translucent circle around `user`.
   radiusM?: number;
+  // Interest tags the current user has subscribed to. Used by pinColor to
+  // mark recommended events. Passed as a prop instead of read from the
+  // global store so the Map component stays prop-driven and testable
+  // without a Zustand provider.
+  meInterests?: string[];
   // Pin tap callback. Native uses the marker's onPress; web uses the marker click.
   onPinPress?: (event: SCEvent) => void;
   // Optional callback when the user pans/zooms — Phase 5.x will use this
@@ -32,13 +37,17 @@ export interface MapProps {
 export const DEFAULT_REGION: LatLng = { latitude: 33.6461, longitude: -117.8427 };
 export const DEFAULT_RADIUS_M = 8047; // 5 miles, matches api.fetchEvents default
 
-// Derive a real lat/lng from the prototype's normalized x/y when the
-// event row doesn't have explicit coordinates. The forward transform in
-// the legacy api.js was:
+// Real-world coordinates for an event. Prefer `lat`/`lng` from the database
+// row; fall back to the prototype's normalized x/y transform for fixtures
+// that don't have explicit coordinates. The forward transform in the
+// legacy api.js was:
 //   x = (lng + 117.88) / 0.12
 //   y = (lat - 33.62)  / 0.06
-// so the inverse is:
+// so the inverse used for x/y fallback is:
 export function eventLatLng(e: SCEvent): LatLng {
+  if (e.lat != null && e.lng != null) {
+    return { latitude: e.lat, longitude: e.lng };
+  }
   return {
     latitude:  33.62 + e.y * 0.06,
     longitude: -117.88 + e.x * 0.12,

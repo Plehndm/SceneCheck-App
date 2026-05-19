@@ -45,6 +45,7 @@ export function resetStore(overrides: Partial<ReturnType<typeof useStore.getStat
     me: SC_ME,
     toasts: [],
     confirm: null,
+    _toastIdCounter: 0,
     ...overrides,
   });
 }

@@ -19,6 +19,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PaletteName, Mode } from '@/theme/tokens';
 import type { SCEvent, Account, Visibility } from '@/types/domain';
 import { SC_ME, SC_FRIEND_REQUESTS } from '@/data/mocks';
+import { isLiveBackendAvailable } from '@/lib/supabase';
+
+// In live mode (Supabase env vars present), the store starts with empty
+// fixtures so real users don't see fake friends, fake blocked users, or a
+// hardcoded "joined event e1" on first launch. The data is hydrated by the
+// API client after auth. In mock mode the prototype's fixtures are seeded
+// directly so the UI is browsable without a backend. Round-2 code-review
+// finding §7 / §2 Important.
+const isMockSeed = !isLiveBackendAvailable();
 
 export interface Tweaks {
   showFAB: boolean;
@@ -167,9 +176,11 @@ interface State {
   dismissToast: (id: number) => void;
   showConfirm: (config: ConfirmConfig) => void;
   dismissConfirm: () => void;
+  // Internal: monotonic id source for toasts. Lives in store state (not at
+  // module scope) so it doesn't leak across tests when Jest caches modules
+  // between test files. Round-2 code-review finding §2 Critical.
+  _toastIdCounter: number;
 }
-
-let toastIdCounter = 0;
 
 export const useStore = create<State>()(
   persist(
@@ -185,7 +196,7 @@ export const useStore = create<State>()(
       resetTweaks: () => set({ tweaks: DEFAULT_TWEAKS }),
 
       // ── events ──
-      joined: new Set(['e1']),
+      joined: isMockSeed ? new Set(['e1']) : new Set<string>(),
       pendingLeave: new Set(),
       conflictPrompt: null,
       eventOverrides: {},
@@ -222,9 +233,11 @@ export const useStore = create<State>()(
       })),
 
       // ── social ──
-      friends: new Set(['p1', 'p3', 'p5']),
-      outgoingRequests: new Set(['p2']),
-      incomingRequests: new Set(SC_FRIEND_REQUESTS.map(r => r.id)),
+      friends: isMockSeed ? new Set(['p1', 'p3', 'p5']) : new Set<string>(),
+      outgoingRequests: isMockSeed ? new Set(['p2']) : new Set<string>(),
+      incomingRequests: isMockSeed
+        ? new Set(SC_FRIEND_REQUESTS.map(r => r.id))
+        : new Set<string>(),
       addFriend: (personId) => set(s => {
         const next = new Set(s.friends); next.add(personId);
         return { friends: next };
@@ -284,12 +297,16 @@ export const useStore = create<State>()(
       visibility: 'public',
       notifPrefs: DEFAULT_NOTIF_PREFS,
       linkedCalendar: 'google',
-      blocked: [
-        { id: 'b1', name: 'Casey Morgan', username: 'casey_m', reason: 'Blocked Mar 14' },
-        { id: 'b2', name: 'Riley Tanaka', username: 'rileyt', reason: 'Blocked Feb 02' },
-      ],
-      following: new Set(['orgA', 'orgD']),
-      subscribedInterests: new Set(['biking', 'coffee', 'climbing']),
+      blocked: isMockSeed
+        ? [
+            { id: 'b1', name: 'Casey Morgan', username: 'casey_m', reason: 'Blocked Mar 14' },
+            { id: 'b2', name: 'Riley Tanaka', username: 'rileyt', reason: 'Blocked Feb 02' },
+          ]
+        : [],
+      following: isMockSeed ? new Set(['orgA', 'orgD']) : new Set<string>(),
+      subscribedInterests: isMockSeed
+        ? new Set(['biking', 'coffee', 'climbing'])
+        : new Set<string>(),
       setRadius: (mi) => set({ radius: mi }),
       setVisibility: (v) => set({ visibility: v }),
       setNotifPref: (key, value) => set(s => ({ notifPrefs: { ...s.notifPrefs, [key]: value } })),
@@ -309,14 +326,21 @@ export const useStore = create<State>()(
       // ── overlays ──
       toasts: [],
       confirm: null,
+      _toastIdCounter: 0,
       showToast: (opts) => {
-        const id = ++toastIdCounter;
         const duration = opts.duration ?? 3600;
-        const toast: Toast = {
-          id, message: opts.message, kind: opts.kind ?? 'info',
-          action: opts.action, duration,
-        };
-        set(s => ({ toasts: [...s.toasts, toast] }));
+        let id = 0;
+        set(s => {
+          id = s._toastIdCounter + 1;
+          const toast: Toast = {
+            id, message: opts.message, kind: opts.kind ?? 'info',
+            action: opts.action, duration,
+          };
+          return {
+            _toastIdCounter: id,
+            toasts: [...s.toasts, toast],
+          };
+        });
         if (duration > 0) {
           setTimeout(() => {
             set(s => ({ toasts: s.toasts.filter(t => t.id !== id) }));

@@ -13,6 +13,7 @@
 // be developed before Supabase is provisioned.
 
 import { supabase, isLiveBackendAvailable } from './supabase';
+import { isoToTime, isoToWhen } from './date-time';
 import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED,
@@ -54,27 +55,8 @@ export const toUUID = (mockId: string): string => ID_MAP[mockId] || mockId;
 export const toMockId = (uuid: string): string => REVERSE_ID[uuid] || uuid;
 
 // ── Row transforms (DB → in-memory shape) ─────────────────────
-function fmtWhen(startAt: string | null): string {
-  if (!startAt) return '';
-  const d = new Date(startAt);
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  let h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()} · ${h}:${m} ${ap}`;
-}
-
-function fmtTime(isoStr: string | null): string {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  let h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${m} ${ap}`;
-}
+// Formatting is delegated to lib/date-time.ts so the legacy duplication
+// between this module and the date helpers is eliminated.
 
 interface EventRow {
   id: string;
@@ -108,14 +90,19 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
     interests: (row.event_interests || []).map(ei =>
       (typeof ei === 'string' ? ei : ei.interest_id?.name || ei.name || '') as string
     ),
-    when: fmtWhen(row.start_at),
-    endTime: fmtTime(row.end_at),
+    when: isoToWhen(row.start_at),
+    endTime: isoToTime(row.end_at),
     where: row.location_name || '',
     attendees: row.subscriber_count || 0,
     cap: row.capacity || 0,
     rating: null,
-    x: row.lng != null ? (row.lng + 117.88) / 0.12 : 0.5, // normalize for SVG map
-    y: row.lat != null ? (row.lat - 33.62) / 0.06 : 0.5,
+    // Pass real coordinates through directly. components/Map/types.ts:eventLatLng
+    // prefers `lat`/`lng` when present; x/y stay at a centered default so any
+    // legacy fixture/consumer still gets a valid number.
+    lat: row.lat ?? undefined,
+    lng: row.lng ?? undefined,
+    x: 0.5,
+    y: 0.5,
   };
 }
 

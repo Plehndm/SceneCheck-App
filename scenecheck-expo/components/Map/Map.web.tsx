@@ -13,7 +13,6 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, Circle, useMap, useMapE
 import { useEffect } from 'react';
 import { View, type ViewStyle, type StyleProp } from 'react-native';
 import { useTokens } from '@/theme/ThemeProvider';
-import { useStore } from '@/store/useStore';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
   eventLatLng, pinColor, type MapProps, type LatLng,
@@ -39,10 +38,10 @@ function RegionChangeReporter({ onChange }: { onChange?: (c: LatLng) => void }) 
 
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
+  meInterests = [],
   onPinPress, onRegionChange, style,
 }: MapProps) {
   const t = useTokens();
-  const meInterests = useStore(s => s.me.interests ?? []);
   const center = user ?? initialCenter;
 
   return (
