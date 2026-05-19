@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **274/274** after the web design-parity + create-flow pass (§2.8). Re-verified after the web-bundle compatibility work in §2.7._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **279/279** after the Supabase live wire-up pass (§2.9). Earlier deltas in §2.7 (web-bundle compatibility) and §2.8 (design-parity + create-flow)._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -107,9 +107,9 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
-| **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 101 test cases |
-| **Integration tests** | Required | ≥ 3 | 24 files (6 components + 17 screens + 1 hook), 173 test cases |
-| **Total tests** | — | — | **274 tests, 36 suites** |
+| **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
+| **Integration tests** | Required | ≥ 3 | 25 files (6 components + 17 screens + 2 hooks), 175 test cases |
+| **Total tests** | — | — | **279 tests, 37 suites** |
 
 ### 2.2 Migration note
 
@@ -181,6 +181,7 @@ scenecheck-expo/
     │   ├── SCEventCard.test.tsx
     │   └── SCTimePicker.test.tsx        # NEW (§2.8) — three-wheel time picker
     ├── hooks/
+    │   ├── useEvents.test.ts           # NEW (§2.9) — events data hook
     │   └── useImagePicker.test.ts
     └── screens/                         # per-route integration tests
         ├── attendees.test.tsx
@@ -242,11 +243,11 @@ Approximate run-times:
 
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
-| Unit (5 files) | 101 | <1s | local + CI |
+| Unit (5 files) | 104 | <1s | local + CI |
 | Component (6 files) | 28 | <1s | local + CI |
-| Hook (1 file) | 5 | <1s | local + CI |
+| Hook (2 files) | 7 | <1s | local + CI |
 | Screen integration (24 files) | 140 | ~3s | local + CI |
-| **Total (Jest)** | **274** | **~5s** | local + CI |
+| **Total (Jest)** | **279** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -364,6 +365,48 @@ Runtime delta: negligible (~5.0s vs ~4.8s).
   in this section (excluding the wheel-scroll mechanics noted above)
   and the all-files percentage should move modestly upward. A full
   rerun is deferred to the next milestone snapshot.
+
+### 2.9 Supabase live wire-up tests (post-§2.8 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §11._
+
+The Home + Map tabs now pull from `api.fetchEvents()` via a new
+`useEvents` hook, and the root layout mounts `AuthBootstrap` to keep
+the Zustand `me` slice in sync with the Supabase session. Test impact
+is modest because both modules short-circuit gracefully in mock mode:
+`useEvents` initializes synchronously with `SC_EVENTS`,
+`AuthBootstrap` is a no-op when `supabase` is null.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useEvents.test.ts` (new, 2 cases) | Sync mock-mode init + reload affordance | `renderHook(() => useEvents())` returns `events === SC_EVENTS` and `loading === false` on the first render (mock mode means the `useState` initializer fills it synchronously); the returned `reload` function is callable. Live-mode behavior is covered indirectly by the Home + Map screen tests that already exercise the hook end-to-end. |
+
+| File preserved | Why no new tests | Note |
+|---|---|---|
+| `tests/screens/home.test.tsx` | The mock-mode synchronous initializer in `useEvents` means the existing assertions (`getByText(SC_EVENTS[0].title)`, etc.) still pass without `findByText` / `waitFor`. | If/when we add a live-mode test we'll need a Supabase client mock. |
+| `tests/screens/map-tab.test.tsx` | Same — Map tab's `useEvents` call resolves synchronously under jest, so the existing chip + legend assertions are unchanged. | |
+| `tests/screens/settings.test.tsx` | The existing "sign out opens a confirm dialog" test stops at confirm-open — it never actually presses the destructive button, so the new `api.signOut()` invocation isn't reached. | A future test could press the confirm button + assert `api.signOut` was called via a `jest.spyOn(api, 'signOut')`; deferred. |
+| `tests/components/AuthBootstrap.test.tsx` | Not added. `AuthBootstrap` is a no-op in mock mode (the only mode jest-expo provides), and live-mode behavior would require mocking the entire Supabase client. | Live-mode coverage will live in an E2E layer (Playwright) once it exists. |
+
+**Delivered count**: 279 / 279 (up from 277). 37 suites (up from 36).
+
+**What this section deliberately does NOT do:**
+
+- Mock `@supabase/supabase-js` to exercise the live paths of
+  `api.fetchEvents` / `api.signIn` / `api.signOut` / `AuthBootstrap`.
+  Brittle and limited value compared to real end-to-end verification
+  with a local Supabase container. Verification of the live path
+  lives in `docs/PROGRESS_SNAPSHOT.md` §11.6 (`curl` + dev-server
+  bundle pass).
+- Re-snapshot the coverage table (§2.5). One new ~28-line module
+  (`components/AuthBootstrap.tsx`) is intentionally uncovered;
+  `useEvents` gains ~70% coverage from the two new tests + indirect
+  use by Home and Map. Net movement is below the 0.5pp threshold
+  worth a full `--coverage` rerun.
+- Test the Home tab's empty-state branch (`events.length === 0`).
+  In mock mode `SC_EVENTS` is non-empty so the branch is unreachable
+  from tests; live-mode coverage requires a Supabase client mock that
+  returns `[]`. Deferred to the full migration.
 
 ---
 

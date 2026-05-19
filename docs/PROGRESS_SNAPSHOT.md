@@ -36,6 +36,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Web design parity pass: added `app/+html.tsx` (the SSR HTML shell) to load Bricolage Grotesque / DM Sans / JetBrains Mono from Google Fonts and paint the cream `pageBg` + two radial-gradient glows from the legacy `index.html`. Previously the web build fell through to default sans-serif on a white viewport. |
 | 2026-05-19 | Built the two missing input controls from the legacy Create Event screen: `components/SCDatePicker.tsx` (calendar popover, past dates greyed + line-through + disabled, today outlined in primary, selected filled in ink) and `components/SCTimePicker.tsx` (three iPhone-clock-style snap-scroll wheels: hours, 5-min minutes, AM/PM). Both replace the placeholder `TextInput`s in `app/create-event.tsx`. Cosmetic fix in the same commit: moved `pointerEvents="..."` to `style.pointerEvents` in `ToastHost.tsx` + `SCTimePicker.tsx` to silence the RN Web deprecation warning. See §10. |
 | 2026-05-19 | Wired the missing host-only event editor and added create-event entry points on Home + Map. `EditEventSheet.tsx` (new) is a bottom-sheet modal that writes `applyEventOverride(id, patch)` and emits the legacy "Saved · attendees notified" toast; before this the EDIT EVENT button on `event/[id].tsx` set local state but no modal consumed it. Added a `+` button in both the Home tab header (next to Search) and the Map tab header, both routing to `/create-event`. CANCEL EVENT (already wired) untouched. See §10. |
+| 2026-05-19 | Create Event tag chips now auto-fill from `me.interests` and gained a tag-search input that matches against the union of `SC_INTERESTS_SUGGESTED` + `Object.keys(SC_INTERESTS_DETAILS)` + `me.interests`. Draft hydration still wins. +3 tests on `create-event.test.tsx`. |
+| 2026-05-19 | First Supabase live wire-up: switched `.env` from the hosted project to the local stack (`http://127.0.0.1:54321` + `sb_publishable_AC…`), built `components/AuthBootstrap.tsx` to subscribe to `supabase.auth.onAuthStateChange` + hydrate `me` from the `profiles` + `user_interests` tables, added `hooks/useEvents.ts` that calls `api.fetchEvents()` (initializes synchronously with `SC_EVENTS` in mock mode so existing screen tests stay green), and wired the Home tab + Map tab through it. Settings sign-out now actually calls `api.signOut()` instead of toasting a mock message. The other 17 screens still import `SC_*` from `data/mocks.ts`; a screen-by-screen plan for the full migration is queued. See §11. |
 
 ### Current layout
 
@@ -539,7 +541,113 @@ landed alongside this work.
 
 ---
 
-## 11. How to re-snapshot this file
+## 11. Supabase live wire-up (Home + Map, Auth bootstrap)
+
+_Last updated: 2026-05-19_
+
+The frontend now actually talks to Supabase on two visible surfaces
+(Home tab event rail + Map tab pins) and keeps the authenticated user's
+profile in sync with the `profiles` table. The other 17 screens still
+read from `data/mocks.ts` directly and are queued for the full
+migration documented in the project plan.
+
+### 11.1 Backend target swap (`.env`)
+
+The previous `.env` pointed at a hosted Supabase project
+(`kmlecodmifljbtzaqahm.supabase.co`); we swapped it to the local stack
+started by `npx supabase start`:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+```
+
+Both projects have the same 15-migration schema applied. The hosted
+project is empty (no rows); the local project is pre-seeded by
+`supabase/seed.sql` with five events centered on UCI (`Morning Ride`,
+`Cooking Club: Dumpling Night`, `Climbing — Beginner Night`,
+`Pickup Soccer @ Aldrich`, `Open Mic — Common Room`), 15 interests, and
+the relations the `rank_events_query` PostGIS function needs. Studio
+is at `http://127.0.0.1:54323`.
+
+### 11.2 `AuthBootstrap` (new — `components/AuthBootstrap.tsx`)
+
+Mounted once from `app/_layout.tsx`. Responsibilities:
+
+1. On mount: calls `supabase.auth.getSession()`. supabase-js's
+   `persistSession` is already wired through our SSR-safe `kvStorage`
+   (§9), so a page reload re-hydrates from localStorage on web /
+   AsyncStorage on native; this just reacts to it.
+2. Subscribes to `onAuthStateChange`. On `INITIAL_SESSION` /
+   `SIGNED_IN` / `TOKEN_REFRESHED` it fetches the `profiles` row and a
+   joined `user_interests` row set, then writes both into the Zustand
+   `me` slice via `setMe(patch)`. On `SIGNED_OUT` it resets `me` to
+   the anonymous `SC_ME` placeholder so the rest of the app keeps
+   rendering without crashing.
+3. In mock mode (no Supabase env vars) the entire component is a
+   no-op — short-circuits at `if (!supabase) return;`.
+
+The `handle_new_user` trigger in migration `00002_create_profiles.sql`
+auto-inserts a `profiles` skeleton row whenever a new `auth.users` row
+appears, so sign-up needs no client-side bootstrap.
+
+### 11.3 `useEvents` (new — `hooks/useEvents.ts`)
+
+Thin data hook around `api.fetchEvents(lat, lng, radiusM)`. Returns
+`{ events, loading, error, reload }`. Key design call:
+
+> In mock mode it initializes `events` synchronously with `SC_EVENTS`
+> via a `useState` initializer. Live mode starts empty + loading,
+> resolves on the first microtask.
+
+Why synchronous in mock: every existing screen integration test runs
+under jest-expo without Supabase env vars, so `api.isMock()` is true
+during tests. Without the synchronous init path, all existing Home
+tab tests that assert event titles by name would have to switch to
+`findByText` / `waitFor`. The synchronous init keeps them as-is.
+
+### 11.4 Wired screens
+
+| Screen | Before | After |
+|---|---|---|
+| `app/(tabs)/index.tsx` (Home) | Imported `SC_EVENTS` directly, sliced first 5 into the rail | Calls `useEvents()`. Empty-state card renders when `events.length === 0 && !loading` with a NEW EVENT button. People rail still reads `SC_VISIBLE_PEOPLE` from mocks (queued for full migration). |
+| `app/(tabs)/map.tsx` (Map) | Imported `SC_EVENTS`, passed all to `<Map>` | Calls `useEvents({ lat, lng, radiusM })` so pins follow the discovery-radius chips and the user's resolved location. |
+| `app/settings.tsx` (Settings) | `handleSignOut` toasted "Signed out (mock)" and pushed `/(tabs)` | Now awaits `api.signOut()` (clears Supabase session in live mode), then routes to `/auth/sign-in`. AuthBootstrap's listener resets `me` on the SIGNED_OUT event. |
+
+### 11.5 What this section deliberately does NOT do
+
+- Migrate the other 17 screens (`event/[id].tsx`, `chat/*`,
+  `profile/*`, `attendees/[id]`, `events.tsx`, `search.tsx`,
+  `interests/*`, `requests.tsx`, `my-*.tsx`, `(tabs)/profile.tsx`,
+  `(tabs)/chat.tsx`, `new-chat.tsx`, `ratings/[hostId]`,
+  `create-event.tsx` create-side, `event/[id]` join-side) through
+  the API client. Each has its own migration story — events you
+  fetch are live but everything else (chats, friends, attendees) is
+  still mock fixtures.
+- Add a hard auth gate that forces sign-in. The sign-in screen exists
+  at `/auth/sign-in` and routes via `api.signIn()` → Supabase auth;
+  unauthenticated users can still browse public events (RLS on the
+  `events` table allows anonymous reads). Adding a hard redirect to
+  `/auth/sign-in` is part of the full migration's first phase.
+- Seed any extra test data. `supabase/seed.sql` already inserts five
+  events; create-event UI can append more once you sign in.
+
+### 11.6 Verification
+
+| Check | Result |
+|---|---|
+| Local Supabase REST reachable | ✅ `curl -H "apikey: sb_publishable_AC…" "http://127.0.0.1:54321/rest/v1/events?select=id,title&limit=5"` returns the seeded rows |
+| SSR + web bundles still compile after `.env` swap | ✅ |
+| `npm test` | ✅ 279 / 279, 37 suites, ~4.5s (+2 over previous: new `useEvents` hook tests) |
+| Sign-in / sign-up screens reachable | ✅ `/auth/sign-in`, `/auth/sign-up` — already wired to `api.signIn()` / `api.signUp()` |
+| Settings → SIGN OUT triggers a real `supabase.auth.signOut()` | ✅ |
+
+See `docs/TEST_PLAN.md` §2.9 for the test additions that landed
+alongside this work.
+
+---
+
+## 12. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

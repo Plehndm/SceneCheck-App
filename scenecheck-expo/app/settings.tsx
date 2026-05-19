@@ -13,6 +13,7 @@ import { SCSection } from '@/components/SCSection';
 import { SCButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
+import { api } from '@/lib/api';
 import { PALETTES, RADIUS, type PaletteName } from '@/theme/tokens';
 import type { Tweaks } from '@/store/useStore';
 import type { Visibility } from '@/types/domain';
@@ -68,9 +69,23 @@ export default function SettingsScreen() {
       confirmLabel: 'SIGN OUT',
       tone: 'danger',
       icon: 'logout',
-      onConfirm: () => {
-        showToast({ message: 'Signed out (mock).', kind: 'info' });
-        router.replace('/(tabs)' as never);
+      onConfirm: async () => {
+        try {
+          // In live mode this clears the Supabase session + storage; the
+          // AuthBootstrap listener resets `me` to SC_ME on the SIGNED_OUT
+          // event. In mock mode signOut is a no-op.
+          await api.signOut();
+          showToast({
+            message: api.isMock() ? 'Signed out (mock).' : 'Signed out.',
+            kind: 'info',
+          });
+          router.replace('/auth/sign-in' as never);
+        } catch (e) {
+          showToast({
+            message: e instanceof Error ? e.message : 'Sign-out failed.',
+            kind: 'error',
+          });
+        }
       },
     });
   };

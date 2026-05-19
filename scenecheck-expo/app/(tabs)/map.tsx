@@ -19,7 +19,7 @@ import { Map } from '@/components/Map';
 import { useLocation } from '@/hooks/useLocation';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
-import { SC_EVENTS } from '@/data/mocks';
+import { useEvents } from '@/hooks/useEvents';
 import { fmtDate, whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
@@ -32,6 +32,13 @@ export default function MapTab() {
   const meInterests = useStore(s => s.me.interests ?? []);
   const [radius, setRadius] = useState<number>(RADIUS_OPTIONS_M[2]);
   const [focused, setFocused] = useState<SCEvent | null>(null);
+  // Pull pins from the API. In live mode this hits the rank_events_query
+  // RPC against PostGIS; in mock mode it returns SC_EVENTS synchronously.
+  const { events } = useEvents({
+    lat: coords?.latitude,
+    lng: coords?.longitude,
+    radiusM: radius,
+  });
 
   return (
     <Screen scroll={false}>
@@ -80,7 +87,7 @@ export default function MapTab() {
           borderWidth: 1, borderColor: t.line,
         }}>
           <Map
-            events={SC_EVENTS}
+            events={events}
             user={coords}
             radiusM={radius}
             meInterests={meInterests}

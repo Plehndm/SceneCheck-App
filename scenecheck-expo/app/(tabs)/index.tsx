@@ -25,7 +25,8 @@ import { LegendDot } from '@/components/LegendDot';
 
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_EVENTS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { useEvents } from '@/hooks/useEvents';
+import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
 
@@ -34,6 +35,8 @@ export default function HomeScreen() {
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
   const isJoinedNow = (id: string) => joined.has(id) && !pendingLeave.has(id);
+  // Live in live mode, fixture array in mock mode — see hooks/useEvents.
+  const { events, loading } = useEvents();
 
   return (
     <Screen>
@@ -76,7 +79,7 @@ export default function HomeScreen() {
       {/* Map preview card */}
       <View style={{ paddingHorizontal: 14, paddingTop: 18 }}>
         <SCCard style={{ overflow: 'hidden', padding: 0 }}>
-          <MapPreview events={SC_EVENTS} onPress={() => router.push('/map' as never)} />
+          <MapPreview events={events} onPress={() => router.push('/map' as never)} />
           {/* Legend strip */}
           <View style={{
             flexDirection: 'row', gap: 14, paddingHorizontal: 14, paddingVertical: 12,
@@ -99,21 +102,39 @@ export default function HomeScreen() {
           </Pressable>
         }
       >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 10, paddingBottom: 4 }}
-        >
-          {SC_EVENTS.slice(0, 5).map(e => (
-            <SCEventCard
-              key={e.id}
-              event={e}
-              joined={isJoinedNow(e.id)}
-              showConflict
-              onPress={() => router.push(`/event/${e.id}` as never)}
-            />
-          ))}
-        </ScrollView>
+        {events.length === 0 && !loading ? (
+          <SCCard style={{ padding: 16, alignItems: 'center', gap: 6 }}>
+            <SCText size={13} color={t.ink2} weight="600">No events nearby yet</SCText>
+            <SCText size={11} color={t.ink3} style={{ textAlign: 'center', lineHeight: 16 }}>
+              Be the first to host something.
+            </SCText>
+            <Pressable
+              onPress={() => router.push('/create-event' as never)}
+              style={({ pressed }) => [{
+                marginTop: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+                backgroundColor: t.ink,
+              }, pressed && { opacity: 0.85 }]}
+            >
+              <SCText variant="mono" size={11} weight="700" color={t.card}>NEW EVENT</SCText>
+            </Pressable>
+          </SCCard>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingBottom: 4 }}
+          >
+            {events.slice(0, 5).map(e => (
+              <SCEventCard
+                key={e.id}
+                event={e}
+                joined={isJoinedNow(e.id)}
+                showConflict
+                onPress={() => router.push(`/event/${e.id}` as never)}
+              />
+            ))}
+          </ScrollView>
+        )}
       </SCSection>
 
       {/* Nearby people */}

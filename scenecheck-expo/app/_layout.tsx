@@ -12,6 +12,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { ToastHost } from '@/components/ToastHost';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { AuthBootstrap } from '@/components/AuthBootstrap';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -49,6 +50,7 @@ export default function RootLayout() {
           <Stack.Screen name="auth/sign-in" options={{ presentation: 'modal' }} />
           <Stack.Screen name="auth/sign-up" options={{ presentation: 'modal' }} />
         </Stack>
+        <AuthBootstrap />
         <ToastHost />
         <ConfirmDialog />
         <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
