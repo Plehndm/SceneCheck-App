@@ -79,7 +79,7 @@ export default function SignInScreen() {
         }}>
           <SCText variant="displayTight" size={28} color={t.primaryInk}>SC</SCText>
         </View>
-        <SCText variant="displayTight" size={32} style={{ marginTop: 18 }}>Welcome back</SCText>
+        <SCText variant="displayTight" size={32} style={{ marginTop: 18 }}>SceneCheck</SCText>
         <SCText size={13} color={t.ink3} style={{ marginTop: 6 }}>
           {api.isMock() ? 'Mock-mode: any credentials work' : 'Sign in to continue'}
         </SCText>

@@ -15,7 +15,7 @@ beforeEach(() => {
 describe('SignInScreen', () => {
   test('renders the welcome chrome', () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignInScreen />);
-    expect(getByText('Welcome back')).toBeTruthy();
+    expect(getByText('SceneCheck')).toBeTruthy();
     expect(getByPlaceholderText('Your email')).toBeTruthy();
     expect(getByPlaceholderText('Your password')).toBeTruthy();
   });
