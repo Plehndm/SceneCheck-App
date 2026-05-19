@@ -15,7 +15,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { kvStorage } from '@/lib/storage';
 import type { PaletteName, Mode } from '@/theme/tokens';
 import type { SCEvent, Account, Visibility } from '@/types/domain';
 import { SC_ME, SC_FRIEND_REQUESTS } from '@/data/mocks';
@@ -354,7 +354,7 @@ export const useStore = create<State>()(
     }),
     {
       name: 'scenecheck-store',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => kvStorage),
       // Persist only what should survive reloads. Set/Map need custom
       // (de)serialization since JSON.stringify drops them silently.
       partialize: (s) => ({

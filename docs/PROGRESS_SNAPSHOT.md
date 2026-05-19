@@ -31,6 +31,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Second code review (`docs/CODE_REVIEW_REPORT_2.md`) lands as commit `c0432bf`. Confirms all 7 first-review findings resolved. Flags one new navigation bug + 7 smaller post-migration issues. |
 | 2026-05-19 | Second-review patch batch (8 fixes) lands as commit `325bbd4`. Navigation 404, `isHost` literal-string bug, hardcoded date, `toastIdCounter` module-scope leak, dead `x/y` coordinate roundtrip, `fmtWhen`/`fmtTime` duplication, mock data leaking into live-mode store init, and `Map` coupling to `useStore` all addressed. |
 | 2026-05-19 | `supabase/config.toml` schema fix: the legacy `[project] / id = "scenecheck"` table is rejected by current Supabase CLI versions (`'config.config' has invalid keys: project`). Replaced with the new top-level `project_id = "scenecheck"` so `supabase start`, `supabase status`, etc. parse the file cleanly. |
+| 2026-05-19 | `supabase start` runs cleanly via `npx supabase`. All 15 migrations apply (`00001` → `00015`), `roles.sql` seeds, all containers come up. Local stack reachable at Studio `:54323` / REST `:54321` / DB `:54322`. |
+| 2026-05-19 | `npm run web` ran for the first time end-to-end and hit a 3-step compatibility chain with Expo SDK 54's static SSR (`web.output: "static"`). Fixed by adding `lib/storage.ts` (SSR-safe Platform-aware k/v adapter), splitting `components/Map/Map.web.tsx` into a client-only Suspense wrapper + `Map.web.impl.tsx` (defers `leaflet` to post-mount), and adding `metro.config.js` to force Zustand to its CJS build on web (the ESM build's `devtools` middleware emits `import.meta.env` which Metro serves as a classic script → `SyntaxError`). See §9. |
 
 ### Current layout
 
@@ -329,7 +331,89 @@ source for items 1–3 in §7 above.
 
 ---
 
-## 9. How to re-snapshot this file
+## 9. Web-bundle compatibility (Expo SDK 54 web)
+
+_Last updated: 2026-05-19_
+
+`npm run web` now boots cleanly and the page hydrates / is interactive.
+Getting there from the first try required three targeted fixes against
+specific incompatibilities between Expo SDK 54's static-SSR web output
+(`app.json` has `web.output: "static"`) and our dependency set. Each
+fix is intentionally narrow so native builds are unaffected.
+
+### Root causes (in the order they surfaced)
+
+1. **AsyncStorage + Zustand persist hydration touched `window` during
+   the SSR pass.** Static export renders every route to HTML in Node
+   first; `@react-native-async-storage/async-storage` on web is a thin
+   wrapper around `window.localStorage` and threw `ReferenceError:
+   window is not defined` from `SupabaseAuthClient._recoverAndRefresh`
+   (auth eagerly reads the persisted session at `createClient` time)
+   and would have hit the Zustand persist middleware next.
+2. **`leaflet` touches `window` at module load.** It's imported
+   statically by `components/Map/Map.web.tsx`. Even though the map
+   tab isn't the landing page, Metro resolves all reachable imports
+   during the SSR bundle, so the leaflet IIFE ran in Node.
+3. **Zustand v5's ESM `middleware.mjs` uses `import.meta.env`.** Metro
+   served the dev bundle as a classic script, so the browser parser
+   rejected the whole file with `SyntaxError: Cannot use 'import.meta'
+   outside a module` *before* any JS ran — which is why the page
+   rendered (SSR HTML) but every button was dead (no hydration). The
+   CJS variant of the same file uses `process.env.NODE_ENV` and parses
+   fine.
+
+### Fixes landed
+
+| # | File | Change | Why it's safe for native |
+|---|---|---|---|
+| 1 | `scenecheck-expo/lib/storage.ts` (new) | Platform-aware `kvStorage`: AsyncStorage on iOS/Android, a `localStorage` wrapper with `typeof window` guards on web. | Native takes the AsyncStorage branch unchanged. |
+| 2 | `scenecheck-expo/lib/supabase.ts` | Auth uses `kvStorage` instead of importing AsyncStorage directly. | Native gets AsyncStorage via `kvStorage`; behavior identical. |
+| 3 | `scenecheck-expo/store/useStore.ts` | Zustand persist uses `createJSONStorage(() => kvStorage)`. | Same — persistence still goes through AsyncStorage on native. |
+| 4 | `scenecheck-expo/components/Map/Map.web.tsx` (rewritten as wrapper) + `Map.web.impl.tsx` (renamed from old `Map.web.tsx`) | Web map is now `useEffect`-gated + `React.lazy()`. Leaflet only loads after first client render. SSR renders an empty placeholder `<View>`. | Native uses `Map.native.tsx` via Metro's platform extension; this file isn't touched. |
+| 5 | `scenecheck-expo/metro.config.js` (new) | Resolver override routes `zustand`, `zustand/middleware`, and four sibling entries to their CJS files when `platform === 'web'`. | The override is fenced by `platform === 'web'`, so iOS/Android resolve via the normal exports map. |
+
+### Verification
+
+| Check | Result |
+|---|---|
+| SSR bundle compiles | ✅ `Bundled … node_modules\expo-router\node\render.js` |
+| Web bundle compiles | ✅ `Web Bundled … node_modules\expo-router\entry.js` (1380 modules) |
+| No `ReferenceError: window is not defined` in server log | ✅ |
+| No `SyntaxError: Cannot use 'import.meta' outside a module` in browser | ✅ |
+| Bundle uses CJS Zustand devtools shim | ✅ Confirmed via `curl` — bundle contains `process.env.NODE_ENV !== "production"` not `import.meta.env.MODE` |
+| Page interactive after hydration | ✅ |
+
+### Remaining console noise (cosmetic; non-blocking)
+
+These were captured after the page loaded successfully. None prevent
+interaction; each is recorded here so the next snapshot can decide
+whether to chase them.
+
+- **`CSP report: script-src blocked — eval() / new Function() / setTimeout(string)`.** Metro's dev bundle and React Refresh use `Function(...)` for HMR boundary updates. The browser's DevTools shows a CSP advisory because no explicit policy is set. Dev-only; the production export (`expo export -p web`) doesn't use `Function`-based eval. **Action when needed:** add a `meta http-equiv="Content-Security-Policy"` to the static HTML template if/when the deployed bundle reports the same.
+- **`props.pointerEvents is deprecated. Use style.pointerEvents`** (react-native-web warnOnce). Emitted from `react-native-web`'s `createDOMProps`, triggered by some library passing the legacy prop form. Our own code uses `pointerEvents="box-none"` on `ToastHost.tsx:20` — the canonical fix is to move it under `style.pointerEvents`. **Action when needed:** one-line edit in `ToastHost.tsx`. Will silence the warning on every render of the toast host.
+- **`Blocked aria-hidden on an element because its descendant retained focus`** (browser a11y warning, multiple occurrences on `/map`). Comes from react-navigation's stack/tabs marking inactive route containers with `aria-hidden="true"` while a Pressable inside still holds focus. The modern recommendation is to use the `inert` attribute. **Action when needed:** track upstream — `@react-navigation/native` issue for `aria-hidden → inert` migration is open as of this snapshot. Not something we patch locally.
+
+### Why the dev-server log shows ~30 HMR rebuild events
+
+Each save triggers Metro's incremental rebuilder, which emits one
+`Web Bundled … (N modules)` line per platform/bundle (often N=1 for
+fast deltas). These are healthy — they're how HMR works in dev. The
+two lines that matter for "did we actually rebuild" are the ones with
+>1000 modules; everything else is a delta refresh.
+
+### TEST_PLAN.md updates landed alongside
+
+`docs/TEST_PLAN.md` gained a new §2.7 "Web-bundle compatibility fixes
+(post-Phase 6 delta)" that records per-file the testing implications
+of each change above, the unchanged 259/259 test count, and the
+deliberate decision to skip a full `--coverage` rerun (the net
+movement from the ~28-line new `lib/storage.ts` is below the 0.5pp
+threshold worth a re-snapshot). The header `_Last updated_` line was
+updated to note the re-verification.
+
+---
+
+## 10. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Re-verified after the web-bundle compatibility work: all 259/259 tests still pass (§2.7)._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -286,6 +286,40 @@ _Snapshot from `npm test -- --coverage --forceExit` on 2026-05-19._
 | Per-screen integration tests | **17 screen files, 109 cases — all passing** (this milestone's main delivery) | Done |
 | Store slice tests | **25 cases across 7 slices, ~90% coverage on useStore.ts** | Done |
 | Update RLS test for renamed policy | **Done** (`supabase/tests/rls.test.sql` references the new `'Profile visibility respects privacy and blocks'` policy) | Done |
+
+### 2.7 Web-bundle compatibility fixes (post-Phase 6 delta)
+
+_Captured 2026-05-19 after the `npm run web` triage session
+documented in `docs/PROGRESS_SNAPSHOT.md` §9._
+
+Three SSR/web-bundle incompatibilities surfaced when running the Expo
+SDK 54 web build end-to-end for the first time. None affected native
+builds. The fixes landed in:
+
+| File | Change | Test impact |
+|---|---|---|
+| `scenecheck-expo/lib/storage.ts` (new) | Platform-aware k/v adapter (AsyncStorage on native, SSR-safe `localStorage` wrapper on web). | **Not unit-tested directly.** The native branch is exercised transitively by every store test (Zustand persist) and every supabase auth test path that runs under jest-expo (which sets `Platform.OS === 'ios'`). The web branch — `typeof window` guard + `window.localStorage` calls — has no Jest test; jest-expo doesn't simulate a DOM, so adding one would require a separate `@testing-library/jest-dom` setup. Listed as item under §3.3 / "next test to add". |
+| `scenecheck-expo/lib/supabase.ts` | Swapped `AsyncStorage` import for `kvStorage`. | Behavior identical on native; coverage for this file (previously 100/50/100/100) is unchanged because the swap is a one-line import substitution. |
+| `scenecheck-expo/store/useStore.ts` | `createJSONStorage(() => kvStorage)` instead of `() => AsyncStorage`. | Store tests pass unchanged (25/25). Coverage on `store/useStore.ts` (previously 89.5/61.1/86.6/90.7) is unchanged for the same reason. |
+| `scenecheck-expo/components/Map/Map.web.tsx` (rewritten) + `Map.web.impl.tsx` (renamed from old `Map.web.tsx`) | Split the leaflet implementation behind a `useEffect`-gated `React.lazy()` boundary so leaflet only loads in the browser after first client render. | Both files are excluded from Jest coverage just like the prior `Map.web.tsx` was — they only execute under a real DOM. The shared `pinColor`/`eventLatLng` helpers in `Map/types.ts` remain 100% covered and are still the right boundary for unit testing. The `__mocks__/react-leaflet.ts` + `__mocks__/leaflet.ts` stubs were already in place and continue to short-circuit any transitive import on native test runs. |
+| `scenecheck-expo/metro.config.js` (new) | Resolver override forcing `zustand` + sub-paths to the CJS build on web (because the ESM build's `devtools` middleware emits `import.meta.env`, which Metro serves as a classic script and the browser rejects with `SyntaxError`). | **Not unit-tested.** Metro configs are typically validated by the act of running `expo start --web` (which we did). The override is gated by `platform === 'web'`, so Jest's resolution (which runs as native) is untouched — and that's confirmed by the unchanged store-test results. |
+
+**Verification:**
+
+| Check | Command | Result |
+|---|---|---|
+| Native test suite still green | `cd scenecheck-expo && npm test` | ✅ 259/259, 33 suites, ~5.2s |
+| Web SSR bundle compiles | `npm run web` → server log | ✅ `Bundled … node_modules\expo-router\node\render.js (1432 modules)` |
+| Web client bundle compiles | `npm run web` → server log | ✅ `Web Bundled … node_modules\expo-router\entry.js (1380 modules)` |
+| No `ReferenceError: window is not defined` in SSR | Server log | ✅ |
+| No `SyntaxError: Cannot use 'import.meta' outside a module` in browser | Browser console | ✅ |
+| Page hydrates and is interactive | Manual click-through at `localhost:8081` | ✅ |
+
+**What this section deliberately does NOT do:**
+
+- Re-snapshot the coverage table (§2.5). The net change in covered statements is dominated by the new `lib/storage.ts` (a ~28-line file with two untested branches), which would move the all-files percentage by less than 0.5pp and isn't worth a full `--coverage` rerun to capture. The next coverage snapshot — likely when Phase 8 adds the live-mode `api.ts` tests or the `ConfirmDialog`/`ToastHost` render tests — should subsume this delta.
+- Backdate the §2.3 counts. No new test files were added; the 259 number stands.
+- Claim test coverage for the Metro resolver override. It's a build-time config; the right "test" is `npm run web` end-to-end, which is captured in the verification table above and in `docs/PROGRESS_SNAPSHOT.md` §9.
 
 ---
 

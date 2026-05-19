@@ -1,8 +1,13 @@
-// Supabase client, configured for React Native.
+// Supabase client, configured for React Native + Expo web.
 //
 // - URL polyfill is required because React Native's URL constructor doesn't
 //   support some of what supabase-js expects.
-// - AsyncStorage is the auth-session store so login survives app restarts.
+// - Storage adapter: AsyncStorage on native, an SSR-safe localStorage wrapper
+//   on web. With `web.output: "static"` Expo Router pre-renders pages in
+//   Node, where `window` is undefined — AsyncStorage's web implementation
+//   touches `window.localStorage` and crashes during SSR. The wrapper
+//   below no-ops when `window` is missing so the static render succeeds,
+//   then real reads/writes happen on the client after hydration.
 // - detectSessionInUrl is disabled because RN doesn't have a URL bar (the
 //   OAuth deep-link path goes through expo-linking instead, wired later
 //   in Phase 5).
@@ -18,7 +23,7 @@
 
 import 'react-native-url-polyfill/auto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { kvStorage } from './storage';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const publishableKey =
@@ -38,7 +43,7 @@ const configured = !forceMock && !isPlaceholder(url) && !isPlaceholder(publishab
 export const supabase: SupabaseClient | null = configured
   ? createClient(url!, publishableKey!, {
       auth: {
-        storage: AsyncStorage,
+        storage: kvStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
