@@ -521,6 +521,39 @@ export const api = {
     return { unsubscribe: () => { sb.removeChannel(channel); } };
   },
 
+  // Create a new chat row + members. `memberIds` are the OTHER users
+  // — the caller's own id is added automatically. Returns the new
+  // chat id so the new-chat screen can navigate straight into the
+  // thread.
+  async createChat(
+    memberIds: string[],
+    type: 'dm' | 'group',
+    title: string = '',
+  ): Promise<{ id: string }> {
+    if (isMock()) {
+      // Mock-mode returns a stable id pattern the legacy router
+      // already understands (used by new-chat.tsx pre-Phase-6).
+      const prefix = type === 'dm' ? 'dm' : 'group';
+      return { id: `${prefix}-${memberIds.join('-')}` };
+    }
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { data: chatRow, error: chatErr } = await sb
+      .from('chats')
+      .insert({ type, title })
+      .select('id')
+      .single();
+    if (chatErr) throw chatErr;
+    const chatId = chatRow.id as string;
+    const memberRows = [user.id, ...memberIds.map(toUUID)].map(uid => ({
+      chat_id: chatId, user_id: uid,
+    }));
+    const { error: memErr } = await sb.from('chat_members').insert(memberRows);
+    if (memErr) throw memErr;
+    return { id: chatId };
+  },
+
   // ── Notifications ──
   async fetchNotifications() {
     if (isMock()) return [];

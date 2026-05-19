@@ -12,23 +12,27 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_VISIBLE_PEOPLE, SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
+import { useFriends } from '@/hooks/useFriends';
+import { api } from '@/lib/api';
+import { SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
+import type { Account } from '@/types/domain';
 
 export default function NewChatScreen() {
   const t = useTokens();
-  const friends = useStore(s => s.friends);
+  const showToast = useStore(s => s.showToast);
   const [picked, setPicked] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  const [starting, setStarting] = useState(false);
+  // Live mode: friend list from `api.fetchFriends()`. Mock mode:
+  // derived from the Zustand `friends` Set. Either way the picker
+  // is scoped to friends only — DMing strangers is intentionally
+  // not surfaced here (the legacy let you DM the full SC_VISIBLE
+  // catalogue but that doesn't translate to RLS-controlled
+  // friendships).
+  const { friends } = useFriends();
 
-  const ordered = useMemo(() => {
-    const fs: typeof SC_VISIBLE_PEOPLE = [];
-    const rest: typeof SC_VISIBLE_PEOPLE = [];
-    for (const p of SC_VISIBLE_PEOPLE) {
-      (friends.has(p.id) ? fs : rest).push(p);
-    }
-    return [...fs, ...rest];
-  }, [friends]);
+  const ordered = useMemo<Account[]>(() => friends, [friends]);
 
   const visible = ordered.filter(p => {
     if (!query.trim()) return true;
@@ -39,12 +43,22 @@ export default function NewChatScreen() {
   const toggle = (id: string) =>
     setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
-  const start = () => {
-    if (picked.length === 0) return;
-    if (picked.length === 1) {
-      router.replace(`/chat/dm-${picked[0]}` as never);
-    } else {
-      router.replace(`/chat/group-${picked.join('-')}` as never);
+  const start = async () => {
+    if (picked.length === 0 || starting) return;
+    setStarting(true);
+    try {
+      // createChat in live mode inserts chats + chat_members rows
+      // and returns the new chat id. In mock mode it returns the
+      // legacy dm-/group- stable id so the router lands on a
+      // SC_THREADS entry as it did before.
+      const { id } = await api.createChat(picked, picked.length === 1 ? 'dm' : 'group');
+      router.replace(`/chat/${id}` as never);
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? `Couldn't start chat: ${e.message}` : "Couldn't start chat.",
+        kind: 'error',
+      });
+      setStarting(false);
     }
   };
 
@@ -109,7 +123,6 @@ export default function NewChatScreen() {
             </View>
           ) : visible.map((p, i) => {
             const on = picked.includes(p.id);
-            const isFriend = friends.has(p.id);
             return (
               <Pressable
                 key={p.id}
@@ -123,7 +136,7 @@ export default function NewChatScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <SCText size={15} weight="600">{p.name}</SCText>
                   <SCText variant="mono" size={11} color={t.ink3}>
-                    @{p.username}{isFriend ? ' · friend' : ''}
+                    @{p.username} · friend
                   </SCText>
                 </View>
                 <View style={{
@@ -144,17 +157,18 @@ export default function NewChatScreen() {
       <View style={{ padding: 18, backgroundColor: t.surface }}>
         <Pressable
           onPress={start}
-          disabled={picked.length === 0}
+          disabled={picked.length === 0 || starting}
           style={({ pressed }) => [{
             height: 52, borderRadius: RADIUS.lg,
             backgroundColor: picked.length ? t.primary : t.subtle,
             alignItems: 'center', justifyContent: 'center',
             flexDirection: 'row', gap: 8,
-          }, pressed && picked.length > 0 && { opacity: 0.85 }]}
+            opacity: starting ? 0.6 : 1,
+          }, pressed && picked.length > 0 && !starting && { opacity: 0.85 }]}
         >
           <SCIcon name={picked.length > 1 ? 'people' : 'chat'} size={16} color={picked.length ? t.primaryInk : t.ink3} />
           <SCText variant="mono" size={12} weight="700" color={picked.length ? t.primaryInk : t.ink3}>
-            {ctaLabel}
+            {starting ? 'STARTING…' : ctaLabel}
           </SCText>
         </Pressable>
       </View>

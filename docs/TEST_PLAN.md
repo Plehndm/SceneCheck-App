@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **301/301** after full-migration Phase 5 (§2.14 — Profiles + Social). Earlier deltas in §2.7 … §2.13._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **306/306** after full-migration Phase 6 (§2.15 — Chat). Earlier deltas in §2.7 … §2.14._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 30 files (8 components + 17 screens + 5 hooks), 197 test cases |
-| **Total tests** | — | — | **301 tests, 42 suites** |
+| **Integration tests** | Required | ≥ 3 | 31 files (8 components + 17 screens + 6 hooks), 202 test cases |
+| **Total tests** | — | — | **306 tests, 43 suites** |
 
 ### 2.2 Migration note
 
@@ -183,6 +183,7 @@ scenecheck-expo/
     │   ├── SCEventCard.test.tsx
     │   └── SCTimePicker.test.tsx        # NEW (§2.8) — three-wheel time picker
     ├── hooks/
+    │   ├── useChats.test.ts             # NEW (§2.15) — chats + chat messages
     │   ├── useEvent.test.ts             # NEW (§2.11) — single-event hook
     │   ├── useEvents.test.ts            # NEW (§2.9) — events data hook
     │   ├── useFriends.test.ts           # NEW (§2.14) — friends + requests + profile
@@ -250,9 +251,9 @@ Approximate run-times:
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
 | Component (8 files) | 35 | <1s | local + CI |
-| Hook (5 files) | 20 | <1s | local + CI |
+| Hook (6 files) | 25 | <1s | local + CI |
 | Screen integration (24 files) | 142 | ~3s | local + CI |
-| **Total (Jest)** | **301** | **~5s** | local + CI |
+| **Total (Jest)** | **306** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -565,6 +566,39 @@ paths return the same shapes the screens already assert against.
   awaited `api.*` calls are validated via the hook tests.
 - Add an integration test for `my-following.tsx`. Untouched in
   Phase 5 (no `org_follows` table).
+
+### 2.15 Full-migration Phase 6: Chat (post-§2.14 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §17._
+
+Phase 6 wires the chat list, chat thread, and new-chat composer
+through the new hooks. Realtime path stays untested in Jest (no
+Supabase channel mock); the mock-mode `subscribeToChat` returns
+`{ unsubscribe: () => {} }` so the lifecycle still mounts cleanly.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useChats.test.ts` (new, 5 cases) | useChats (2) + useChatMessages (3) | useChats: returns SC_CHATS synchronously; reload is callable. useChatMessages: seeds messages from `SC_THREADS[id]` in mock mode; `send()` appends an optimistic message immediately; undefined chatId returns an empty list without crashing. |
+
+| File updated | Change | Why |
+|---|---|---|
+| `tests/screens/new-chat.test.tsx` | Rewrote to assert on friend-only picker behavior + async start. New tests use `SC_VISIBLE_PERSON_BY_ID['p1']` and `['p3']` (both in `resetStore` default friends) and assert that non-friend `p2` is absent. The START CHAT case now awaits two microtask flushes for `api.createChat` to resolve. | Phase 6 changed the picker source from `SC_VISIBLE_PEOPLE` to `useFriends()`. The "isFriend ? ' · friend'" handle suffix was simplified to always show ` · friend` since the picker is now scoped to friends only. |
+
+**Delivered count**: 306 / 306 (up from 301). 43 suites (up from 42).
+
+**What this section deliberately does NOT do:**
+
+- Test the Realtime dedupe path in `useChatMessages`. The
+  channel's `onMessage` callback is wired through
+  `api.subscribeToChat`; mock mode returns a no-op subscription.
+  Live verification is the two-browser smoke described in
+  `PROGRESS_SNAPSHOT.md` §17.5.
+- Test the live-mode `transformRow` mapping in `useChatMessages`.
+  Same reason — no Supabase row source under Jest.
+- Add a chat-tab test for the new `useChats` synchronous init.
+  Existing `tests/screens/chat-tab.test.tsx` already asserts
+  against `SC_CHATS[0].title` which still resolves the same way
+  via the hook's sync initializer.
 
 ---
 

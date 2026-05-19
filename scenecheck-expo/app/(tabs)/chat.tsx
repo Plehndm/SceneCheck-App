@@ -6,13 +6,16 @@ import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
-import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_CHATS, SC_ACCOUNT_BY_ID, SC_EVENT_BY_ID } from '@/data/mocks';
+import { useChats } from '@/hooks/useChats';
+import { SC_ACCOUNT_BY_ID, SC_EVENT_BY_ID } from '@/data/mocks';
 import { Pressable } from 'react-native';
 
 export default function ChatTab() {
   const t = useTokens();
+  // useChats() reads from Supabase in live mode (the chats ⨝
+  // chat_members ⨝ messages join) and SC_CHATS in mock mode.
+  const { chats } = useChats();
   return (
     <Screen>
       <View style={{ paddingHorizontal: 18, paddingTop: 8 }}>
@@ -20,7 +23,7 @@ export default function ChatTab() {
         <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Chat</SCText>
       </View>
       <View style={{ paddingHorizontal: 14, paddingTop: 14, gap: 10 }}>
-        {SC_CHATS.map(c => {
+        {chats.map(c => {
           const title = c.kind === 'event'
             ? c.title ?? SC_EVENT_BY_ID[c.eventId ?? '']?.title ?? 'Event chat'
             : SC_ACCOUNT_BY_ID[c.personId ?? '']?.name ?? 'DM';

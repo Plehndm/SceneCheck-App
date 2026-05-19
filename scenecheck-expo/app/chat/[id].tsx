@@ -12,25 +12,21 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
+import { useChatMessages } from '@/hooks/useChatMessages';
 import {
-  SC_CHATS, SC_THREADS, SC_EVENT_BY_ID, SC_VISIBLE_PERSON_BY_ID,
+  SC_CHATS, SC_EVENT_BY_ID, SC_VISIBLE_PERSON_BY_ID,
 } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
-import type { Message } from '@/types/domain';
-
-type Status = 'sending' | 'sent' | 'failed';
-interface UIMessage extends Message {
-  id: string;
-  status?: Status;
-  edited?: boolean;
-}
 
 export default function ChatThreadScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const offline = useStore(s => s.tweaks.offline);
   const showToast = useStore(s => s.showToast);
+  // useChatMessages owns the message list, the realtime subscription,
+  // and the optimistic send / retry path. The legacy UIMessage shape
+  // is preserved so the screen below doesn't have to change.
+  const { messages: msgs, send, retry } = useChatMessages(id);
 
   const chat = id ? SC_CHATS.find(c => c.id === id) : null;
   const event = chat?.kind === 'event' && chat.eventId ? SC_EVENT_BY_ID[chat.eventId] : null;
@@ -57,42 +53,26 @@ export default function ChatThreadScreen() {
     );
   }
 
-  const seed = (id && SC_THREADS[id]) || [];
-  const [msgs, setMsgs] = useState<UIMessage[]>(
-    seed.map(m => ({ ...m, id: `seed-${Math.random()}`, status: m.from === 'host' ? 'sent' : undefined }))
-  );
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
-  const nextIdRef = useRef(1);
 
   useEffect(() => {
     // Auto-scroll to bottom when messages change.
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
   }, [msgs.length]);
 
-  const send = () => {
-    if (!draft.trim()) return;
-    const localId = `m${nextIdRef.current++}`;
+  const handleSend = async () => {
     const text = draft.trim();
-    setMsgs(prev => [...prev, { id: localId, from: 'host', who: 'You', text, time: 'now', status: 'sending' }]);
+    if (!text) return;
     setDraft('');
-    setTimeout(() => {
-      setMsgs(prev => prev.map(m =>
-        m.id === localId ? { ...m, status: offline ? 'failed' : 'sent' } : m
-      ));
-      if (offline) {
-        showToast({ message: "Couldn't send — you're offline.", kind: 'error' });
-      }
-    }, 650);
-  };
-
-  const retry = (localId: string) => {
-    setMsgs(prev => prev.map(m => m.id === localId ? { ...m, status: 'sending' } : m));
-    setTimeout(() => {
-      setMsgs(prev => prev.map(m =>
-        m.id === localId ? { ...m, status: offline ? 'failed' : 'sent' } : m
-      ));
-    }, 650);
+    try {
+      await send(text);
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? `Couldn't send: ${e.message}` : "Couldn't send.",
+        kind: 'error',
+      });
+    }
   };
 
   const title = event ? chat?.title ?? event.title :
@@ -224,7 +204,7 @@ export default function ChatThreadScreen() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={send}
+            onSubmitEditing={handleSend}
             placeholder="Message…"
             placeholderTextColor={t.ink3}
             style={{
@@ -234,7 +214,7 @@ export default function ChatThreadScreen() {
             }}
           />
           <Pressable
-            onPress={send}
+            onPress={handleSend}
             style={({ pressed }) => [{
               width: 44, height: 44, borderRadius: RADIUS.lg,
               backgroundColor: t.primary,

@@ -44,6 +44,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Full-migration **Phase 3** of 7: Events list, Search, My Hosting — three thin swaps from `SC_EVENTS` import to `useEvents()`. No new API methods needed (the hook + `api.fetchEvents` from Phase 0 + the filter logic already in each screen do all the work). My Hosting now filters on `kind === 'yours' \|\| hostId === me.id` so it works for live UUIDs and mock string ids. Search still reads `SC_VISIBLE_PEOPLE` + `SC_ORGS` for the people/orgs tabs (Phase 5 territory). No test churn — existing screen tests cover the rendering and the synchronous mock-mode `useEvents` initializer means assertions still land on first render. See §14. |
 | 2026-05-19 | Full-migration **Phase 4** of 7: Interests system. New `hooks/useInterests.ts` (catalog + search) and `hooks/useInterest.ts` (single-tag), both with mock-mode synchronous init. New API method `api.getInterest(tagName)` (returns `null` for unknown tags so the UI can fall back gracefully); fixed the existing `api.searchInterests` to translate DB columns (`name` / `subscriber_count` / `description` / `similar_tags`) → in-memory shape (`tag` / `others` / `desc` / `similar`) since the previous `data as Interest[]` cast was a bug (wrong key names in live mode). Wired `app/interests/index.tsx`, `app/interests/[tag].tsx`, and the create-event tag-search catalog through the new hooks. +5 hook tests. See §15. |
 | 2026-05-19 | Full-migration **Phase 5** of 7: Profiles + Social. New API methods: `api.fetchFriends` (friendships ⨝ profiles, both directions, client-side union), `api.fetchFriendRequests` (returns the legacy `FriendRequest` shape), `api.declineFriendRequest`, `api.removeFriend`. Three new hooks: `useFriends`, `useFriendRequests`, `useProfile` — all mock-mode-synchronous via the Zustand `friends` / `incomingRequests` Sets, live-mode via the new API methods. Wired `my-friends.tsx`, `requests.tsx`, `profile/[id].tsx`. Accept / decline / unfriend now commit to Supabase with optimistic Zustand updates. `my-following.tsx` left untouched (no `org_follows` table in the schema yet). +5 hook tests. See §16. |
+| 2026-05-19 | Full-migration **Phase 6** of 7: Chat (list + thread + new chat) — the only Realtime surface in the app. New API method `api.createChat(memberIds, type)` (inserts `chats` + `chat_members` rows; mock returns the legacy `dm-…` / `group-…` stable id). Two new hooks: `useChats` (mock-mode sync from `SC_CHATS`, live-mode joins `chats ⨝ chat_members ⨝ messages`) and `useChatMessages` (handles initial fetch + realtime subscription with id-based dedupe of own echoes + optimistic `send`/`retry` with status reconciliation). Wired `app/(tabs)/chat.tsx`, `app/chat/[id].tsx`, `app/new-chat.tsx`. New chat is now friends-only (RLS-controlled friendships don't allow DMing strangers). +5 hook tests; the new-chat screen tests were rewritten to match the friends-only picker + async-start path. See §17. |
 
 ### Current layout
 
@@ -985,7 +986,91 @@ becomes a priority.
 
 ---
 
-## 17. How to re-snapshot this file
+## 17. Full migration — Phase 6: Chat
+
+_Last updated: 2026-05-19_
+
+Phase 6 of the 7-phase plan. The only Realtime surface in the app:
+new messages from other users flow in via a Supabase channel
+subscription, deduped against the client's own optimistic inserts.
+
+### 17.1 New API method
+
+`api.createChat(memberIds, type, title?)` — inserts a `chats` row +
+one `chat_members` row per participant (caller included). Returns
+the new `{ id }` so the new-chat screen can `router.replace`
+straight into the thread. In mock mode it returns the legacy
+stable id pattern (`dm-<personId>` for 1-on-1, `group-<id1>-<id2>…`
+for groups) so SC_THREADS lookups in the chat thread keep
+working without a backend.
+
+### 17.2 New hooks
+
+| Hook | Mock mode | Live mode |
+|---|---|---|
+| `useChats()` | `SC_CHATS` synchronously. | `api.getChats()` join (`chats ⨝ chat_members ⨝ messages`). Returns `reload()`. |
+| `useChatMessages(chatId)` | Initial = `SC_THREADS[chatId]` with stamped ids. `send()` mirrors the legacy 650ms timed optimistic flow so existing chat tests + the offline tweak still pass. | Initial = `api.getChatMessages(chatId)` mapped to the legacy `UIMessage` shape. Realtime subscription via `api.subscribeToChat` appends each `INSERT` payload, deduped by id against own echoes. `send()` adds optimistic with a `tmp-…` id, awaits `api.sendMessage`, swaps the id for the persisted UUID + stamps `status='sent'`. Failures stamp `status='failed'` for the existing retry CTA. |
+
+### 17.3 Screen wiring
+
+- `app/(tabs)/chat.tsx` — `SC_CHATS` → `useChats()`. Title fallback
+  still consults `SC_ACCOUNT_BY_ID` / `SC_EVENT_BY_ID` in mock mode;
+  in live mode the join already pulls everything we need.
+- `app/chat/[id].tsx` — local `useState<UIMessage[]>` + manual
+  setTimeout-driven send/retry → `useChatMessages(id)`. The
+  `KeyboardAvoidingView` + composer markup is unchanged; only the
+  data plumbing was swapped. The composer's onPress / onSubmitEditing
+  now call `handleSend()` which wraps the hook's async `send()`
+  with an error toast.
+- `app/new-chat.tsx` — `SC_VISIBLE_PEOPLE` → `useFriends()`.
+  Picker is now scoped to friends only (RLS-controlled friendships
+  don't allow DMing strangers). `start()` is async — awaits
+  `api.createChat(picked, type)` and replaces the route with the
+  returned id. A "STARTING…" label disables the button during the
+  call.
+
+### 17.4 Realtime: what it does and how it's deduped
+
+`api.subscribeToChat` opens a `postgres_changes` channel on the
+`messages` table filtered by `chat_id`. Each `INSERT` payload's
+`new` row is mapped through the same `transformRow` the initial
+fetch uses, then appended to the hook's state — unless an entry
+with that id is already present.
+
+The dedupe matters for the caller's own messages: after
+`api.sendMessage` resolves we swap the temp id for the persisted
+UUID, so when the Realtime echo for that UUID arrives the
+`prev.some(m => m.id === row.id)` check short-circuits the append.
+
+### 17.5 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 306 / 306, 43 suites (+5 over Phase 5's 301) |
+| `npm run web` HMR re-bundles clean; server returns 200 | ✅ |
+| Sign-in as A → start a DM with friend B → message appears in `messages` row in `public.messages`; chat appears in `public.chats` + two `chat_members` rows | manually verifiable once you have two users |
+| Sign-in as B in another browser tab → A's new message arrives within ~500ms via Realtime | same |
+
+### 17.6 What this section deliberately does NOT do
+
+- Realtime subscription on the chat *list* (Phase 6 only wires it
+  in the thread). Adding new chats while the list is open requires
+  the user to navigate or `reload()`. A future enhancement.
+- Profile names on incoming "them" messages. Live-mode messages
+  arrive with `who=''` (the realtime payload doesn't include the
+  sender's profile). The screen handles empty `who` gracefully —
+  the "X · Y" timestamp line only renders if `who` is set. A
+  per-row profile lookup would be straightforward but is out of
+  scope for this phase.
+- Realtime publication migration. Local Supabase's
+  `supabase_realtime` publication is configured by default for all
+  public tables in recent CLI versions; if a future deployment
+  removes that we'll need `ALTER PUBLICATION supabase_realtime ADD
+  TABLE messages;` in a migration.
+
+---
+
+## 18. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
