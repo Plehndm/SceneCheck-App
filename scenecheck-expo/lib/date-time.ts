@@ -30,6 +30,23 @@ export function parseDate(s: string | null | undefined): Date {
   return new Date(year, Math.max(0, monIdx), day);
 }
 
+// Year-aware variants for inputs that span across years (e.g. birthdate
+// pickers). Output format is "May 16, 1995"; the parser accepts the same
+// shape with or without a leading day-of-week.
+export function fmtDateWithYear(d: Date): string {
+  return `${MON_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+export function parseDateWithYear(s: string | null | undefined): Date | null {
+  const m = (s || '').match(/([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (!m) return null;
+  const monIdx = MON_SHORT.indexOf(m[1].slice(0, 3) as typeof MON_SHORT[number]);
+  if (monIdx < 0) return null;
+  const day = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+  return new Date(year, monIdx, day);
+}
+
 export function parseTime(t: string | null | undefined): TimeParts {
   const m = (t || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!m) return { h: 12, m: 0, ap: 'AM' };

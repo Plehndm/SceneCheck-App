@@ -1,14 +1,17 @@
-// Sign up — email + password + birthdate. The architecture doc's FR1.3
-// requires age verification; we collect birthdate here but the actual
-// 18+ check happens server-side via the Supabase auth hook.
+// Sign up — display name + email + password + birthdate. The
+// architecture doc's FR1.3 requires age verification; we enforce
+// 18+ client-side via the picker's maxDate bound (anything younger
+// is greyed out and unselectable). A server-side check on the
+// Supabase auth hook is still the source of truth for production.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCButton } from '@/components/SCAddButton';
 import { SCIcon } from '@/components/SCIcon';
+import { SCDatePicker } from '@/components/SCDatePicker';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/api';
@@ -24,6 +27,16 @@ export default function SignUpScreen() {
   const showToast = useStore(s => s.showToast);
   const setMe = useStore(s => s.setMe);
 
+  // 18+ gate. The picker disables any date later than this maxDate;
+  // a reasonable historic floor on minDate keeps the calendar
+  // bounded (no one signing up is ~150 years old).
+  const { minBirthdate, maxBirthdate } = useMemo(() => {
+    const now = new Date();
+    const max = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
+    const min = new Date(now.getFullYear() - 120, 0, 1);
+    return { minBirthdate: min, maxBirthdate: max };
+  }, []);
+
   const submit = async () => {
     if (!displayName.trim()) {
       showToast({ message: 'Display name is required.', kind: 'error' });
@@ -35,6 +48,10 @@ export default function SignUpScreen() {
     }
     if (password.length < 8) {
       showToast({ message: 'Password must be at least 8 characters.', kind: 'error' });
+      return;
+    }
+    if (!birthdate.trim()) {
+      showToast({ message: 'Pick your birthdate to continue.', kind: 'error' });
       return;
     }
     setSubmitting(true);
@@ -94,7 +111,7 @@ export default function SignUpScreen() {
           <TextInput
             value={email}
             onChangeText={setEmail}
-            placeholder="you@uci.edu"
+            placeholder="Your email"
             placeholderTextColor={t.ink3}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -115,12 +132,17 @@ export default function SignUpScreen() {
         </View>
         <View>
           <SCText variant="labelCap" style={{ marginBottom: 6 }}>Birthdate</SCText>
-          <TextInput
+          {/* Same calendar popover as Create Event, but year-aware and
+              bounded by 18+ on the upper end. Anything more recent
+              than 18 years ago renders greyed + line-through and isn't
+              tappable, so the validation is enforced at picker time. */}
+          <SCDatePicker
             value={birthdate}
-            onChangeText={setBirthdate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={t.ink3}
-            style={inputStyle(t)}
+            onChange={setBirthdate}
+            withYear
+            minDate={minBirthdate}
+            maxDate={maxBirthdate}
+            placeholder="Pick your birthdate"
           />
         </View>
       </View>
