@@ -18,7 +18,7 @@ The two source-of-truth references for "what got done" are:
 
 ## 1. Project structure evolution
 
-_Last updated: 2026-05-19 (commit 325bbd4)_
+_Last updated: 2026-05-18 (commit 325bbd4)_
 
 | Date | Event |
 |---|---|
