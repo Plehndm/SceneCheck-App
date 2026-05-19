@@ -46,6 +46,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Full-migration **Phase 5** of 7: Profiles + Social. New API methods: `api.fetchFriends` (friendships ⨝ profiles, both directions, client-side union), `api.fetchFriendRequests` (returns the legacy `FriendRequest` shape), `api.declineFriendRequest`, `api.removeFriend`. Three new hooks: `useFriends`, `useFriendRequests`, `useProfile` — all mock-mode-synchronous via the Zustand `friends` / `incomingRequests` Sets, live-mode via the new API methods. Wired `my-friends.tsx`, `requests.tsx`, `profile/[id].tsx`. Accept / decline / unfriend now commit to Supabase with optimistic Zustand updates. `my-following.tsx` left untouched (no `org_follows` table in the schema yet). +5 hook tests. See §16. |
 | 2026-05-19 | Full-migration **Phase 6** of 7: Chat (list + thread + new chat) — the only Realtime surface in the app. New API method `api.createChat(memberIds, type)` (inserts `chats` + `chat_members` rows; mock returns the legacy `dm-…` / `group-…` stable id). Two new hooks: `useChats` (mock-mode sync from `SC_CHATS`, live-mode joins `chats ⨝ chat_members ⨝ messages`) and `useChatMessages` (handles initial fetch + realtime subscription with id-based dedupe of own echoes + optimistic `send`/`retry` with status reconciliation). Wired `app/(tabs)/chat.tsx`, `app/chat/[id].tsx`, `app/new-chat.tsx`. New chat is now friends-only (RLS-controlled friendships don't allow DMing strangers). +5 hook tests; the new-chat screen tests were rewritten to match the friends-only picker + async-start path. See §17. |
 | 2026-05-19 | Full-migration **Phase 7** of 7 — final phase: Attendees + Ratings. New API methods `api.fetchAttendees` (`event_subscriptions ⨝ profiles` for confirmed rows) and `api.fetchRatings` (`ratings ⨝ events!inner` filtered on `events.creator_id`, mapped back to the legacy `Review` shape). Two new hooks `useAttendees` / `useRatings` with mock-mode synchronous init. Wired `app/attendees/[id].tsx` (also through `useEvent` for the event title) and `app/ratings/[hostId].tsx` (also through `useProfile` for the host name). +5 hook tests. **Migration complete: every original mock-imported screen now reads from Supabase in live mode.** See §18. |
+| 2026-05-19 | Switched `.env` back to the hosted Supabase project (`kmlecodmifljbtzaqahm.supabase.co` + the `sb_publishable_rWC_…` key) for end-to-end verification. Added `supabase/seed-hosted.sql` — an idempotent variant of `seed.sql` with `ON CONFLICT DO NOTHING` on every INSERT so it can be safely re-run via the hosted Studio SQL Editor. Seeds 15 interests + 9 published events (all `creator_id=NULL`) + 15 event_interests join rows. Profiles / friendships / chats / ratings intentionally not seeded — they come from real user activity after sign-up. See §19. |
 
 ### Current layout
 
@@ -1144,7 +1145,96 @@ Migration is done. Natural follow-on threads (not blocking):
 
 ---
 
-## 19. How to re-snapshot this file
+## 19. Hosted Supabase swap + seeded data
+
+_Last updated: 2026-05-19_
+
+After the 7-phase local migration was complete (§12–§18), `.env`
+was swapped from the local stack back to the hosted Supabase
+project so the end-to-end flow could be verified against the same
+backend the team uses for demos. A new idempotent seed file was
+added so the hosted DB can be (re-)populated from the Studio SQL
+Editor without giving the agent direct production-DB credentials.
+
+### 19.1 `.env` swap
+
+```diff
+- EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+- EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
++ EXPO_PUBLIC_SUPABASE_URL=https://kmlecodmifljbtzaqahm.supabase.co
++ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_rWC_j5c08XfhSz08bHl-hg_kPLrI0SO
+```
+
+The previous (local) values are preserved as a comment in the
+file so the swap back is trivial.
+
+### 19.2 `supabase/seed-hosted.sql` (new)
+
+A copy of `supabase/seed.sql` with `ON CONFLICT (…) DO NOTHING`
+appended to each `INSERT` statement. Safe to re-run; the script
+is a no-op if the rows already exist.
+
+Contents:
+
+| Table | Rows | Notes |
+|---|---|---|
+| `interests` | 15 | `biking`, `cooking`, `golf`, `climbing`, `study`, `coffee`, `uci`, `informatics`, `group10`, `running`, `music`, `board-games`, `design`, `bouldering`, `yoga`. PK conflict on `id`. |
+| `events` | 9 | PostGIS points centered on UCI (33.6461, -117.8427). All `creator_id=NULL` + `status='published'` so they're readable by every authenticated user via RLS but don't trigger the host-only EDIT/CANCEL UI on the detail screen. PK conflict on `id`. |
+| `event_interests` | 15 | Maps the 9 events to relevant tags so the Map tab pin colors + interest-based ranking work. PK conflict on the composite `(event_id, interest_id)`. |
+
+Deliberately NOT seeded:
+
+- `profiles` — the `handle_new_user` trigger creates one per
+  sign-up; static profile rows for "mock people" would fail the
+  `auth.users` foreign key.
+- `friendships`, `event_subscriptions`, `chats`, `chat_members`,
+  `messages`, `ratings`, `user_interests`, `notifications` — all
+  reference `profiles` (and through it `auth.users`). They have to
+  come from real user activity once you sign up in the app.
+
+### 19.3 How to apply (one-time, by the user)
+
+The agent intentionally doesn't have credentials for the hosted
+project (auto-mode classifier blocks direct REST hits to a prod
+project). The user runs these steps:
+
+1. Open the dashboard at
+   <https://supabase.com/dashboard/project/kmlecodmifljbtzaqahm>.
+2. Confirm migrations have been applied (Table Editor shows the
+   expected tables — `events`, `interests`, `profiles`,
+   `friendships`, `chats`, etc.). If not:
+   ```
+   npx supabase login
+   npx supabase link --project-ref kmlecodmifljbtzaqahm
+   npx supabase db push
+   ```
+3. SQL Editor → New query → paste contents of
+   `supabase/seed-hosted.sql` → Run.
+4. Sign up in the app at <http://localhost:8081> with a fresh
+   email; the trigger creates the profile, `AuthBootstrap`
+   hydrates the store, Home + Map tabs render the 9 events.
+
+### 19.4 Why this isn't part of the test suite
+
+The Jest run still talks to mock mode (`api.isMock()` is true
+when env vars aren't set during test boot; jest-expo doesn't load
+`.env`), so the 311/311 test count is unaffected by the swap. The
+verification path is manual: sign in against hosted + click
+through the screens.
+
+### 19.5 To switch back to the local stack
+
+```
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+```
+
+(Both keys are kept in the `.env` file as comments precisely so
+the swap is one-line in either direction.)
+
+---
+
+## 20. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

@@ -2,6 +2,14 @@
 
 _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **311/311** after full-migration Phase 7 (§2.16 — Attendees + Ratings). **The 7-phase Supabase migration is now complete.** Earlier deltas in §2.7 … §2.15._
 
+_Backend target: Jest runs in mock mode (no env vars under
+`jest-expo`); the dev server (`npm run web`) currently points at
+the **hosted** Supabase project (`kmlecodmifljbtzaqahm`) per
+`docs/PROGRESS_SNAPSHOT.md` §19. Seed data for hosted lives in
+`supabase/seed-hosted.sql` (idempotent variant of `supabase/
+seed.sql`). To swap the dev server back to the local stack,
+restore the alternate values kept as comments in `.env`._
+
 ## Part 1 — Test Plan (Strategic)
 
 ### 1.1 Scope: what's in, what's out (and why)
