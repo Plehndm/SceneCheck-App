@@ -12,7 +12,8 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_EVENTS, SC_VISIBLE_PEOPLE, SC_ORGS } from '@/data/mocks';
+import { useEvents } from '@/hooks/useEvents';
+import { SC_VISIBLE_PEOPLE, SC_ORGS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
@@ -22,17 +23,21 @@ export default function SearchScreen() {
   const t = useTokens();
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<Tab>('events');
+  // Events come from `useEvents()` — live in live mode, fixture
+  // array in mock mode. People + orgs are still on mocks; Phase 5
+  // migrates them.
+  const { events: allEvents } = useEvents();
 
   const lowered = query.trim().toLowerCase();
 
   const events = useMemo(() => {
-    if (!lowered) return SC_EVENTS.slice(0, 6);
-    return SC_EVENTS.filter(e =>
+    if (!lowered) return allEvents.slice(0, 6);
+    return allEvents.filter(e =>
       e.title.toLowerCase().includes(lowered) ||
       e.where.toLowerCase().includes(lowered) ||
       e.interests.some(i => i.toLowerCase().includes(lowered))
     );
-  }, [lowered]);
+  }, [lowered, allEvents]);
 
   const people = useMemo(() => {
     if (!lowered) return SC_VISIBLE_PEOPLE.slice(0, 6);

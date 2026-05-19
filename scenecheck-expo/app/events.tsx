@@ -14,7 +14,7 @@ import { SCTag } from '@/components/SCTag';
 import { ConflictChip } from '@/components/ConflictChip';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
-import { SC_EVENTS } from '@/data/mocks';
+import { useEvents } from '@/hooks/useEvents';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
@@ -27,21 +27,24 @@ export default function EventsListScreen() {
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
   const meInterests = useStore(s => s.me.interests ?? []);
+  // Live in live mode, fixture array in mock mode — same hook the
+  // Home tab + Map tab use.
+  const { events: allEvents } = useEvents();
 
   const isRecommended = (e: SCEvent) =>
     e.kind === 'recommended' || e.interests.some(tag => meInterests.includes(tag));
 
-  const list = SC_EVENTS.filter(e =>
+  const list = allEvents.filter(e =>
     filter === 'all' ? true :
     filter === 'recommended' ? isRecommended(e) :
     e.kind === filter
   );
 
   const counts = {
-    all: SC_EVENTS.length,
-    yours: SC_EVENTS.filter(e => e.kind === 'yours').length,
-    friend: SC_EVENTS.filter(e => e.kind === 'friend').length,
-    recommended: SC_EVENTS.filter(isRecommended).length,
+    all: allEvents.length,
+    yours: allEvents.filter(e => e.kind === 'yours').length,
+    friend: allEvents.filter(e => e.kind === 'friend').length,
+    recommended: allEvents.filter(isRecommended).length,
   };
 
   const accentFor = (e: SCEvent) =>

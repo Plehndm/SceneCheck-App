@@ -10,13 +10,20 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCButton } from '@/components/SCAddButton';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_EVENTS } from '@/data/mocks';
+import { useStore } from '@/store/useStore';
+import { useEvents } from '@/hooks/useEvents';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
 export default function MyHostingScreen() {
   const t = useTokens();
-  const events = SC_EVENTS.filter(e => e.hostId === 'me');
+  const meId = useStore(s => s.me.id);
+  // Filter on either the live UUID (live mode) or the literal 'me'
+  // (mock mode — SC_ME.id is 'me'). `kind === 'yours'` is the
+  // canonical signal from `transformEventRow`, so we accept either
+  // shape and fall through.
+  const { events: allEvents } = useEvents();
+  const events = allEvents.filter(e => e.kind === 'yours' || e.hostId === meId);
 
   return (
     <Screen>

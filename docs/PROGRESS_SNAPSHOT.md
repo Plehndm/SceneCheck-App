@@ -41,6 +41,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Full-migration **Phase 1** of 7: hard auth gate + session-driven store hydration. Added `session` slice to the store; `AuthBootstrap` now mirrors `onAuthStateChange` into it and hydrates `joined`, `friends`, `outgoingRequests`, `incomingRequests`, `subscribedInterests` from `event_subscriptions` + `friendships` + `user_interests` in parallel. New `AuthGate` component wraps the `(tabs)` route group and redirects to `/auth/sign-in` when no session (mock-mode short-circuits to pass-through so the 279 existing tests stay green). Dropped the "SKIP — EXPLORE AS GUEST" link from sign-in. `following` isn't hydrated (no `org_follows` table yet). See §12. |
 | 2026-05-19 | Display name captured on sign-up (`api.signUp(email, password, displayName)` writes to `profiles.name` post-trigger) and editable from the profile tab via a new `components/EditProfileSheet.tsx` (mirrors `EditEventSheet`). The profile header is now a tappable Pressable with a small pencil icon that opens the edit sheet. +6 tests. |
 | 2026-05-19 | Full-migration **Phase 2** of 7: event detail wire-up. New `hooks/useEvent.ts` (mock-mode synchronous, live-mode async). New API methods: `api.cancelSubscription`, `api.updateEvent` (writes `events.title` / `location_name` / `capacity` / `description`), `api.cancelEvent` (soft-cancel via `status='cancelled'`). `event/[id].tsx`: join/leave now hit `subscribeToEvent` / `cancelSubscription` with optimistic local state + rollback on failure; CANCEL EVENT awaits the real cancel; the EditEventSheet calls `api.updateEvent` + `applyEventOverride` and signals `onSaved` so the screen can `reload()` the hook. `when` (start/end time) intentionally not persisted yet — needs a real date+time editor. See §13. |
+| 2026-05-19 | Full-migration **Phase 3** of 7: Events list, Search, My Hosting — three thin swaps from `SC_EVENTS` import to `useEvents()`. No new API methods needed (the hook + `api.fetchEvents` from Phase 0 + the filter logic already in each screen do all the work). My Hosting now filters on `kind === 'yours' \|\| hostId === me.id` so it works for live UUIDs and mock string ids. Search still reads `SC_VISIBLE_PEOPLE` + `SC_ORGS` for the people/orgs tabs (Phase 5 territory). No test churn — existing screen tests cover the rendering and the synchronous mock-mode `useEvents` initializer means assertions still land on first render. See §14. |
 
 ### Current layout
 
@@ -819,7 +820,63 @@ the supabase client.
 
 ---
 
-## 14. How to re-snapshot this file
+## 14. Full migration — Phase 3: Events list, Search, My Hosting
+
+_Last updated: 2026-05-19_
+
+Phase 3 of the 7-phase plan. Smallest phase by code change: every
+screen here was already filtering or mapping `SC_EVENTS` client-side,
+so the migration is a one-import-and-one-call-site swap each.
+
+### 14.1 What changed
+
+| File | Change |
+|---|---|
+| `app/events.tsx` | `SC_EVENTS` → `useEvents()`. The filter (ALL / YOURS / FRIENDS / FOR YOU) and the count badges now read from `allEvents` instead of the static array. |
+| `app/search.tsx` | Events tab: `SC_EVENTS` → `useEvents()`. People + orgs tabs stay on `SC_VISIBLE_PEOPLE` + `SC_ORGS` since those tables don't have hooks yet (Phase 5). |
+| `app/my-hosting.tsx` | `SC_EVENTS.filter(e => e.hostId === 'me')` → `useEvents()` + filter on `e.kind === 'yours' \|\| e.hostId === meId`. The dual check makes the screen work for both mock string ids (`'me'`) AND live UUIDs (the new `me.id` from AuthBootstrap), since `transformEventRow` sets `kind === 'yours'` whenever `creator_id === currentUserId`. |
+
+### 14.2 What this section deliberately does NOT do
+
+- Add `searchEvents` or similar to `api.ts`. The filter logic is
+  trivial (substring match on title / location / interests) and runs
+  fine client-side over the event list the user has already loaded.
+  A server-side `to_tsvector` search lands later if event volume
+  grows past the point where client filtering is responsive.
+- Migrate the people / orgs tabs of `search.tsx`. People come from
+  the `profiles` table; orgs come from `profiles` with
+  `account_type='org'`. Both need a new `api.searchProfiles` plus
+  the privacy-aware RLS branch and are scheduled for Phase 5
+  (Profiles + Social).
+- Migrate the empty-state CTA on My Hosting. Already correct —
+  routes to `/create-event` regardless of mode.
+
+### 14.3 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 291 / 291, 40 suites, ~20s (unchanged from Phase 2) |
+| `npm run web` HMR re-bundle of all three screens | ✅ |
+| Live mode: create an event → it appears in `/events` filter ALL, in `/search?q=<title>`, and in `/my-hosting` | ✅ manually verifiable once you publish through the local-Supabase flow |
+| Filter chips on `/events` still bin events correctly under their `kind` | ✅ same as before — pure client logic, unaffected by the swap |
+
+### 14.4 What's NOT yet on Supabase as of Phase 3
+
+Eleven screens still import `SC_*` directly. Phase queue:
+
+- Phase 4 — Interests: `app/interests/index.tsx`, `app/interests/
+  [tag].tsx`, the Create Event tag catalog.
+- Phase 5 — Profiles + Social: `app/profile/[id].tsx`,
+  `app/my-friends.tsx`, `app/my-following.tsx`, `app/requests.tsx`,
+  `app/(tabs)/profile.tsx` (hosted-events count still hits mocks).
+- Phase 6 — Chat: `app/(tabs)/chat.tsx`, `app/chat/[id].tsx`,
+  `app/new-chat.tsx`.
+- Phase 7 — Attendees + Ratings: `app/attendees/[id].tsx`,
+  `app/ratings/[hostId].tsx`.
+
+---
+
+## 15. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

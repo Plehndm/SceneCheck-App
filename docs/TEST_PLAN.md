@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **291/291** after full-migration Phase 2 (§2.11 — event detail). Earlier deltas in §2.7 / §2.8 / §2.9 / §2.10 (Phase 1 + display-name edit). Display-name edit landed alongside Phase 1; see §2.10._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count holds at **291/291** through full-migration Phase 3 (§2.12 — Events list / Search / My Hosting; intentionally test-free because the swap is mechanical). Earlier deltas in §2.7 / §2.8 / §2.9 / §2.10 / §2.11._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -478,6 +478,33 @@ cancel via `api.cancelEvent`. The data hook is `useEvent` (mirrors
   `api.subscribeToEvent` always resolves successfully, so the
   rollback branch is unreachable from Jest. Live-mode coverage
   would need a Supabase mock; deferred.
+
+### 2.12 Full-migration Phase 3: Events list / Search / My Hosting (post-§2.11 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §14._
+
+Phase 3 is intentionally test-free. Three screens swap
+`SC_EVENTS` import for `useEvents()`; all client-side filter logic
+(filter chips on Events, substring match on Search, host-id filter
+on My Hosting) is unchanged. Because `useEvents` initializes
+synchronously with `SC_EVENTS` in mock mode, every existing screen
+assertion against an event title / count still lands on the first
+render — no test updates required.
+
+**Delivered count**: 291 / 291 (unchanged). 40 suites (unchanged).
+
+**What this section deliberately does NOT do:**
+
+- Add a test for "live event count flows into `/events` ALL chip".
+  The chip reads `allEvents.length`; the existing
+  `tests/screens/events-list.test.tsx` assertion already counts
+  `SC_EVENTS.length` and stays green via mock-mode sync init.
+- Add a test for the new `kind === 'yours' \|\| hostId === meId`
+  filter on My Hosting. Mock mode's `SC_EVENT_BY_ID['e1']` has
+  `hostId === 'me'`; `me.id` defaults to `'me'`; existing test
+  expectations match.
+- Re-snapshot the coverage table. Pure substitution — no new
+  branches.
 
 ---
 
