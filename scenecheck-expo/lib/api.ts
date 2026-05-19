@@ -18,7 +18,7 @@ import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_CHATS, SC_THREADS,
-  SC_VISIBLE_PEOPLE, SC_FRIEND_REQUESTS,
+  SC_VISIBLE_PEOPLE, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
 import type { SCEvent, Account, Chat, Message, Interest } from '@/types/domain';
 
@@ -552,6 +552,58 @@ export const api = {
     const { error: memErr } = await sb.from('chat_members').insert(memberRows);
     if (memErr) throw memErr;
     return { id: chatId };
+  },
+
+  // Fetch the confirmed attendees of an event as full Account rows.
+  // Mock mode returns SC_VISIBLE_PEOPLE — the screen still treats
+  // it as an opaque list. Live mode joins `event_subscriptions` to
+  // `profiles` and filters status='confirmed'.
+  async fetchAttendees(eventId: string): Promise<Account[]> {
+    if (isMock()) return SC_VISIBLE_PEOPLE;
+    const sb = requireClient();
+    const { data, error } = await sb
+      .from('event_subscriptions')
+      .select('profile:profiles!event_subscriptions_user_id_fkey(*)')
+      .eq('event_id', toUUID(eventId))
+      .eq('status', 'confirmed');
+    if (error) throw error;
+    return (data ?? [])
+      .map((r: { profile?: Account | null }) => r.profile)
+      .filter(Boolean) as Account[];
+  },
+
+  // Ratings table doesn't carry `host_id` directly — the host is
+  // `events.creator_id`. We embed the events row via PostgREST
+  // `!inner` so we can both join and filter by the host. Result is
+  // mapped to the legacy `Review` shape the screen already uses.
+  async fetchRatings(hostId: string): Promise<import('@/types/domain').Review[]> {
+    if (isMock()) return SC_REVIEWS.filter(r => r.hostId === hostId);
+    const sb = requireClient();
+    const hostUuid = toUUID(hostId);
+    const { data, error } = await sb
+      .from('ratings')
+      .select('event_id, user_id, stars, text, created_at, events!inner(creator_id)')
+      .eq('events.creator_id', hostUuid)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    interface Row {
+      event_id: string;
+      user_id: string;
+      stars: number;
+      text: string | null;
+      created_at: string;
+    }
+    return (data ?? []).map((r: Row) => ({
+      // The DB primary key is (event_id, user_id); compose a stable
+      // id string so React keys + the screen's `r.id` filter still work.
+      id: `${toMockId(r.event_id)}:${toMockId(r.user_id)}`,
+      eventId: toMockId(r.event_id),
+      hostId: hostId,
+      reviewerId: toMockId(r.user_id),
+      rating: r.stars,
+      when: new Date(r.created_at).toLocaleDateString(),
+      text: r.text ?? '',
+    }));
   },
 
   // ── Notifications ──

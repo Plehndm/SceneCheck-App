@@ -45,6 +45,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Full-migration **Phase 4** of 7: Interests system. New `hooks/useInterests.ts` (catalog + search) and `hooks/useInterest.ts` (single-tag), both with mock-mode synchronous init. New API method `api.getInterest(tagName)` (returns `null` for unknown tags so the UI can fall back gracefully); fixed the existing `api.searchInterests` to translate DB columns (`name` / `subscriber_count` / `description` / `similar_tags`) → in-memory shape (`tag` / `others` / `desc` / `similar`) since the previous `data as Interest[]` cast was a bug (wrong key names in live mode). Wired `app/interests/index.tsx`, `app/interests/[tag].tsx`, and the create-event tag-search catalog through the new hooks. +5 hook tests. See §15. |
 | 2026-05-19 | Full-migration **Phase 5** of 7: Profiles + Social. New API methods: `api.fetchFriends` (friendships ⨝ profiles, both directions, client-side union), `api.fetchFriendRequests` (returns the legacy `FriendRequest` shape), `api.declineFriendRequest`, `api.removeFriend`. Three new hooks: `useFriends`, `useFriendRequests`, `useProfile` — all mock-mode-synchronous via the Zustand `friends` / `incomingRequests` Sets, live-mode via the new API methods. Wired `my-friends.tsx`, `requests.tsx`, `profile/[id].tsx`. Accept / decline / unfriend now commit to Supabase with optimistic Zustand updates. `my-following.tsx` left untouched (no `org_follows` table in the schema yet). +5 hook tests. See §16. |
 | 2026-05-19 | Full-migration **Phase 6** of 7: Chat (list + thread + new chat) — the only Realtime surface in the app. New API method `api.createChat(memberIds, type)` (inserts `chats` + `chat_members` rows; mock returns the legacy `dm-…` / `group-…` stable id). Two new hooks: `useChats` (mock-mode sync from `SC_CHATS`, live-mode joins `chats ⨝ chat_members ⨝ messages`) and `useChatMessages` (handles initial fetch + realtime subscription with id-based dedupe of own echoes + optimistic `send`/`retry` with status reconciliation). Wired `app/(tabs)/chat.tsx`, `app/chat/[id].tsx`, `app/new-chat.tsx`. New chat is now friends-only (RLS-controlled friendships don't allow DMing strangers). +5 hook tests; the new-chat screen tests were rewritten to match the friends-only picker + async-start path. See §17. |
+| 2026-05-19 | Full-migration **Phase 7** of 7 — final phase: Attendees + Ratings. New API methods `api.fetchAttendees` (`event_subscriptions ⨝ profiles` for confirmed rows) and `api.fetchRatings` (`ratings ⨝ events!inner` filtered on `events.creator_id`, mapped back to the legacy `Review` shape). Two new hooks `useAttendees` / `useRatings` with mock-mode synchronous init. Wired `app/attendees/[id].tsx` (also through `useEvent` for the event title) and `app/ratings/[hostId].tsx` (also through `useProfile` for the host name). +5 hook tests. **Migration complete: every original mock-imported screen now reads from Supabase in live mode.** See §18. |
 
 ### Current layout
 
@@ -1070,7 +1071,80 @@ UUID, so when the Realtime echo for that UUID arrives the
 
 ---
 
-## 18. How to re-snapshot this file
+## 18. Full migration — Phase 7: Attendees + Ratings (migration complete)
+
+_Last updated: 2026-05-19_
+
+Phase 7 — final phase. Wires the last two screens still reading from
+mock fixtures (`attendees/[id]` and `ratings/[hostId]`) through real
+Supabase queries.
+
+### 18.1 New API methods
+
+| Method | DB shape | Notes |
+|---|---|---|
+| `api.fetchAttendees(eventId)` | `select profile:profiles!event_subscriptions_user_id_fkey(*) from event_subscriptions where event_id = … and status='confirmed'` | Returns the rows as `Account[]`. Mock mode returns `SC_VISIBLE_PEOPLE`. |
+| `api.fetchRatings(hostId)` | `select event_id, user_id, stars, text, created_at, events!inner(creator_id) from ratings where events.creator_id = …` | The `ratings` table doesn't carry `host_id` directly — the host is `events.creator_id`. The `events!inner` embed both joins and filters. Result mapped to the legacy `Review` shape: composite key `${event_id}:${user_id}` as `id`, `stars → rating`, `created_at → when` (locale date string). |
+
+### 18.2 New hooks
+
+| Hook | Mock mode | Live mode |
+|---|---|---|
+| `useAttendees(eventId)` | `SC_VISIBLE_PEOPLE` synchronously. | `api.fetchAttendees(eventId)`. |
+| `useRatings(hostId)` | `SC_REVIEWS.filter(r => r.hostId === hostId)` synchronously. | `api.fetchRatings(hostId)`. |
+
+### 18.3 Screen wiring
+
+- `app/attendees/[id].tsx` — `SC_EVENT_BY_ID[id]` → `useEvent(id)`;
+  `SC_VISIBLE_PEOPLE` → `useAttendees(id)`. The "X of Y going"
+  copy and per-row profile rendering are unchanged.
+- `app/ratings/[hostId].tsx` — `SC_ACCOUNT_BY_ID[hostId]` →
+  `useProfile(hostId)`; `SC_REVIEWS.filter(...)` →
+  `useRatings(hostId)`. Star-filter chips + per-row event chip
+  unchanged.
+
+### 18.4 Migration complete
+
+Every screen that originally imported from `data/mocks.ts` now
+reads through a hook that hits Supabase in live mode and falls
+through to a synchronous mock-mode initializer for tests + offline
+demo. The exceptions documented along the way:
+
+- `my-following.tsx` — no `org_follows` table in the schema, so the
+  screen still reads the Zustand `following` Set + mock orgs. A
+  follow-on migration would add the table.
+- Profile screen's `SC_REVIEWS` lookup was never on the profile
+  screen itself — the screen reads via `useRatings` through the
+  separate `/ratings/[hostId]` route, which IS migrated.
+- Avatar uploads still write to the Zustand `picture` slice (data
+  URL in memory). A Supabase Storage migration is a separate piece
+  of work documented in `docs/PROGRESS_SNAPSHOT.md` §7.
+
+### 18.5 Verification
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ 311 / 311, 44 suites (+5 over Phase 6's 306) |
+| `npm run web` HMR re-bundles clean; server returns 200 | ✅ |
+| Live mode: open the attendees screen on an event you joined → list reflects the `event_subscriptions` rows | manually verifiable |
+| Live mode: rate an event via the existing `api.rateEvent` flow → row appears on `/ratings/<hostId>` | same |
+
+### 18.6 What's next
+
+Migration is done. Natural follow-on threads (not blocking):
+
+- Real org-follow table + `useFollowing` hook (replaces the
+  Zustand-only `following` Set on `my-following.tsx`).
+- Supabase Storage for profile photos (replaces the in-memory
+  data URL in `picture`).
+- Realtime on the chat *list* so new conversations appear without
+  a reload.
+- An E2E layer (Playwright) so the live paths the per-hook tests
+  intentionally skip get real-browser coverage.
+
+---
+
+## 19. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **306/306** after full-migration Phase 6 (§2.15 — Chat). Earlier deltas in §2.7 … §2.14._
+_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **311/311** after full-migration Phase 7 (§2.16 — Attendees + Ratings). **The 7-phase Supabase migration is now complete.** Earlier deltas in §2.7 … §2.15._
 
 ## Part 1 — Test Plan (Strategic)
 
@@ -108,8 +108,8 @@ _Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scene
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
 | **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 31 files (8 components + 17 screens + 6 hooks), 202 test cases |
-| **Total tests** | — | — | **306 tests, 43 suites** |
+| **Integration tests** | Required | ≥ 3 | 32 files (8 components + 17 screens + 7 hooks), 207 test cases |
+| **Total tests** | — | — | **311 tests, 44 suites** |
 
 ### 2.2 Migration note
 
@@ -183,6 +183,7 @@ scenecheck-expo/
     │   ├── SCEventCard.test.tsx
     │   └── SCTimePicker.test.tsx        # NEW (§2.8) — three-wheel time picker
     ├── hooks/
+    │   ├── useAttendees.test.ts         # NEW (§2.16) — attendees + ratings
     │   ├── useChats.test.ts             # NEW (§2.15) — chats + chat messages
     │   ├── useEvent.test.ts             # NEW (§2.11) — single-event hook
     │   ├── useEvents.test.ts            # NEW (§2.9) — events data hook
@@ -251,9 +252,9 @@ Approximate run-times:
 |---|---|---|---|
 | Unit (5 files) | 104 | <1s | local + CI |
 | Component (8 files) | 35 | <1s | local + CI |
-| Hook (6 files) | 25 | <1s | local + CI |
+| Hook (7 files) | 30 | <1s | local + CI |
 | Screen integration (24 files) | 142 | ~3s | local + CI |
-| **Total (Jest)** | **306** | **~5s** | local + CI |
+| **Total (Jest)** | **311** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -599,6 +600,31 @@ Supabase channel mock); the mock-mode `subscribeToChat` returns
   Existing `tests/screens/chat-tab.test.tsx` already asserts
   against `SC_CHATS[0].title` which still resolves the same way
   via the hook's sync initializer.
+
+### 2.16 Full-migration Phase 7: Attendees + Ratings (post-§2.15 delta)
+
+_Captured 2026-05-19 alongside `docs/PROGRESS_SNAPSHOT.md` §18._
+
+Phase 7 wires the last two screens that still imported from
+`data/mocks.ts` (`attendees/[id]` and `ratings/[hostId]`) through
+the new hooks. With this phase the 7-phase Supabase migration is
+complete — every original mock-imported screen now reads from a
+hook that hits Supabase in live mode.
+
+| File added | Tests added | What they assert |
+|---|---|---|
+| `tests/hooks/useAttendees.test.ts` (new, 5 cases) | useAttendees (2) + useRatings (3) | useAttendees returns SC_VISIBLE_PEOPLE for any eventId in mock mode and an empty list for undefined; useRatings filters SC_REVIEWS by hostId, returns [] for unknown hosts, and handles undefined. |
+
+**Delivered count**: 311 / 311 (up from 306). 44 suites (up from 43).
+
+**What this section deliberately does NOT do:**
+
+- Test the live-mode join paths in `api.fetchAttendees` /
+  `api.fetchRatings`. No Supabase client under Jest; live
+  verification is in `PROGRESS_SNAPSHOT.md` §18.5.
+- Test the composite key + locale-date `when` transform in
+  `api.fetchRatings`. Same reason — exercised only against a real
+  DB row.
 
 ---
 

@@ -11,15 +11,19 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCAvatar } from '@/components/SCAvatar';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_REVIEWS, SC_ACCOUNT_BY_ID, SC_ANY_EVENT_BY_ID } from '@/data/mocks';
+import { useProfile } from '@/hooks/useProfile';
+import { useRatings } from '@/hooks/useRatings';
+import { SC_ACCOUNT_BY_ID, SC_ANY_EVENT_BY_ID } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
 
 export default function RatingsScreen() {
   const t = useTokens();
   const { hostId } = useLocalSearchParams<{ hostId: string }>();
-  const host = hostId ? SC_ACCOUNT_BY_ID[hostId] : null;
-
-  const all = useMemo(() => SC_REVIEWS.filter(r => r.hostId === hostId), [hostId]);
+  // Host name comes from useProfile in either mode. Ratings list
+  // joins ratings ⨝ events on creator_id in live mode; mock-mode
+  // filters SC_REVIEWS by hostId.
+  const { profile: host } = useProfile(hostId);
+  const { ratings: all } = useRatings(hostId);
   const ordered = useMemo(
     () => [...all].sort((a, b) => b.id.localeCompare(a.id)),
     [all],

@@ -9,13 +9,18 @@ import { SCCard } from '@/components/SCCard';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCAvatar } from '@/components/SCAvatar';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_EVENT_BY_ID, SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { useEvent } from '@/hooks/useEvent';
+import { useAttendees } from '@/hooks/useAttendees';
 
 export default function AttendeesScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const event = id ? SC_EVENT_BY_ID[id] : null;
-  const visible = SC_VISIBLE_PEOPLE;
+  // useEvent: mock-mode sync from SC_EVENT_BY_ID, live from
+  // api.getEventById. useAttendees: live joins event_subscriptions ⨝
+  // profiles for confirmed rows; mock returns SC_VISIBLE_PEOPLE so
+  // the existing screen test still sees the full roster.
+  const { event } = useEvent(id);
+  const { attendees: visible } = useAttendees(id);
   if (!event) {
     return (
       <Screen>
