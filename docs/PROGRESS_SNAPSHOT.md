@@ -18,7 +18,7 @@ The two source-of-truth references for "what got done" are:
 
 ## 1. Project structure evolution
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit 325bbd4)_
 
 | Date | Event |
 |---|---|
@@ -29,7 +29,7 @@ _Last updated: 2026-05-19 (commit ____)_
 | 2026-05-19 | Env-var renamed from `EXPO_PUBLIC_SUPABASE_ANON_KEY` to `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Supabase 2025 key-system update). Legacy var kept as fallback. |
 | 2026-05-19 | Four logical commits land on `main` (`59d5583` backend, `b38f70b` Expo project, `3b03664` archive, `48bae88` docs). Working tree clean. |
 | 2026-05-19 | Second code review (`docs/CODE_REVIEW_REPORT_2.md`) lands as commit `c0432bf`. Confirms all 7 first-review findings resolved. Flags one new navigation bug + 7 smaller post-migration issues. |
-| 2026-05-19 | Second-review patch batch (8 fixes) lands as commit `____`. Navigation 404, `isHost` literal-string bug, hardcoded date, `toastIdCounter` module-scope leak, dead `x/y` coordinate roundtrip, `fmtWhen`/`fmtTime` duplication, mock data leaking into live-mode store init, and `Map` coupling to `useStore` all addressed. |
+| 2026-05-19 | Second-review patch batch (8 fixes) lands as commit `325bbd4`. Navigation 404, `isHost` literal-string bug, hardcoded date, `toastIdCounter` module-scope leak, dead `x/y` coordinate roundtrip, `fmtWhen`/`fmtTime` duplication, mock data leaking into live-mode store init, and `Map` coupling to `useStore` all addressed. |
 
 ### Current layout
 
@@ -275,14 +275,14 @@ _Last updated: 2026-05-19 (commit c0432bf)_
 
 ## 7. Outstanding items / next steps
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit 325bbd4)_
 
 Eight bug-level findings from the second code review
-(`docs/CODE_REVIEW_REPORT_2.md`) have been patched in commit `____`.
+(`docs/CODE_REVIEW_REPORT_2.md`) have been patched in commit `325bbd4`.
 One architectural recommendation remains (item 1 below). Ordered
 roughly by remaining impact.
 
-### Resolved by the second-review patch batch (commit `____`)
+### Resolved by the second-review patch batch (commit `325bbd4`)
 
 - ✅ **Navigation 404** — `event/[id].tsx:249` now routes to `/attendees/${e.id}` (matches the actual route file)
 - ✅ **`isHost` broken in live mode** — `event/[id].tsx:101` now compares `e.hostId` against `me.id` from the store instead of the literal string `'me'`
@@ -312,12 +312,12 @@ roughly by remaining impact.
 
 ## 8. Code reviews
 
-_Last updated: 2026-05-19 (commit ____)_
+_Last updated: 2026-05-19 (commit 325bbd4)_
 
 | # | Date | File | Scope | Headline |
 |---|---|---|---|---|
 | 1 | 2026-05-18 | `docs/CODE_REVIEW_REPORT.md` | Pre-migration audit of the legacy prototype + Supabase backend | 4 backend bugs (RLS, CORS, race, missing notif dispatch), god-component `app.jsx`, duplicate conflict logic, stack deviation from the architecture doc — **all 7 fixed in commits `59d5583` + `b38f70b`** |
-| 2 | 2026-05-19 | `docs/CODE_REVIEW_REPORT_2.md` | Post-migration delta review of the current state | All 7 first-review findings confirmed resolved. Flagged 1 new navigation bug + 7 smaller post-migration issues — **all 8 patched in commit `____`** (this commit; see §7) |
+| 2 | 2026-05-19 | `docs/CODE_REVIEW_REPORT_2.md` | Post-migration delta review of the current state | All 7 first-review findings confirmed resolved. Flagged 1 new navigation bug + 7 smaller post-migration issues — **all 8 patched in commit `325bbd4`** (see §7) |
 
 The second review is structured as a delta — every original finding has
 a ✅ / ⚠️ / ❌ status line with file:line citations, plus standalone
