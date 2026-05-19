@@ -104,7 +104,7 @@ export default function SignInScreen() {
           <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder="••••••••"
+            placeholder="Your password"
             placeholderTextColor={t.ink3}
             secureTextEntry
             style={inputStyle(t)}

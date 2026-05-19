@@ -17,7 +17,7 @@ describe('SignInScreen', () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignInScreen />);
     expect(getByText('Welcome back')).toBeTruthy();
     expect(getByPlaceholderText('Your email')).toBeTruthy();
-    expect(getByPlaceholderText('••••••••')).toBeTruthy();
+    expect(getByPlaceholderText('Your password')).toBeTruthy();
   });
 
   test('Sign in with empty fields shows an error toast', () => {
@@ -31,7 +31,7 @@ describe('SignInScreen', () => {
   test('Sign in with credentials replaces to /(tabs) in mock mode', async () => {
     const { getByPlaceholderText, getByText } = renderScreen(<SignInScreen />);
     fireEvent.changeText(getByPlaceholderText('Your email'), 'a@b.com');
-    fireEvent.changeText(getByPlaceholderText('••••••••'), 'password');
+    fireEvent.changeText(getByPlaceholderText('Your password'), 'password');
     fireEvent.press(getByText('SIGN IN'));
     // api.signIn in mock mode resolves immediately; let microtasks flush.
     await Promise.resolve();
