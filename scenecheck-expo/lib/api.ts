@@ -120,11 +120,25 @@ export const api = {
   toMockId,
 
   // ── Auth ──
-  async signUp(email: string, password: string) {
+  async signUp(email: string, password: string, displayName?: string) {
     if (isMock()) return { user: SC_ME, session: { access_token: 'mock' } };
     const sb = requireClient();
     const { data, error } = await sb.auth.signUp({ email, password });
     if (error) throw error;
+    // The `handle_new_user` Postgres trigger has just inserted a
+    // skeleton `profiles` row with name=''. Set the display name in
+    // the same flow so AuthBootstrap's hydrate (fired by the SIGNED_IN
+    // event) finds the populated row instead of an empty one. The
+    // update is best-effort: a missing row or RLS failure shouldn't
+    // block sign-up itself.
+    const userId = data.user?.id;
+    if (displayName?.trim() && userId) {
+      try {
+        await sb.from('profiles')
+          .update({ name: displayName.trim() })
+          .eq('user_id', userId);
+      } catch { /* swallow — name can be edited later from the profile tab */ }
+    }
     return data;
   },
 

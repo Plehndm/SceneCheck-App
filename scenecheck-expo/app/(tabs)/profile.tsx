@@ -2,6 +2,7 @@
 // from Phase 4: hosting, friends, following, interests, ratings,
 // settings, drafts.
 
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -11,6 +12,7 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCTag } from '@/components/SCTag';
 import { SCSection } from '@/components/SCSection';
 import { SCIcon, type IconName } from '@/components/SCIcon';
+import { EditProfileSheet } from '@/components/EditProfileSheet';
 import { useImagePicker } from '@/hooks/useImagePicker';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
@@ -18,6 +20,7 @@ import { SC_EVENTS } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
 
 export default function ProfileTab() {
+  const [editOpen, setEditOpen] = useState(false);
   const t = useTokens();
   const me = useStore(s => s.me);
   const picture = useStore(s => s.picture);
@@ -75,7 +78,22 @@ export default function ProfileTab() {
             <SCIcon name="camera" size={14} color={t.primaryInk} />
           </Pressable>
         </View>
-        <SCText variant="displayTight" size={28} style={{ marginTop: 12 }}>{me.name}</SCText>
+        <Pressable
+          onPress={() => setEditOpen(true)}
+          accessibilityLabel="Edit display name"
+          style={({ pressed }) => [{
+            flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12,
+          }, pressed && { opacity: 0.7 }]}
+        >
+          <SCText variant="displayTight" size={28}>{me.name || 'Set your name'}</SCText>
+          <View style={{
+            width: 26, height: 26, borderRadius: 13,
+            backgroundColor: t.subtle,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <SCIcon name="edit" size={12} color={t.ink2} />
+          </View>
+        </Pressable>
         <SCText variant="mono" size={12} color={t.ink3} style={{ marginTop: 4 }}>
           @{me.username} · {me.city}
         </SCText>
@@ -150,6 +168,8 @@ export default function ProfileTab() {
           <SCIcon name="search" size={16} color={t.ink} />
         </Pressable>
       </View>
+
+      <EditProfileSheet visible={editOpen} onClose={() => setEditOpen(false)} />
     </Screen>
   );
 }

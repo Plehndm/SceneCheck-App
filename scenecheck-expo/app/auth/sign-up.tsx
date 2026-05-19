@@ -16,13 +16,19 @@ import { RADIUS } from '@/theme/tokens';
 
 export default function SignUpScreen() {
   const t = useTokens();
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [birthdate, setBirthdate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const showToast = useStore(s => s.showToast);
+  const setMe = useStore(s => s.setMe);
 
   const submit = async () => {
+    if (!displayName.trim()) {
+      showToast({ message: 'Display name is required.', kind: 'error' });
+      return;
+    }
     if (!email || !password) {
       showToast({ message: 'Email and password are required.', kind: 'error' });
       return;
@@ -33,7 +39,11 @@ export default function SignUpScreen() {
     }
     setSubmitting(true);
     try {
-      await api.signUp(email, password);
+      await api.signUp(email, password, displayName.trim());
+      // Write the name into the store directly so the profile tab
+      // reflects it immediately, even before AuthBootstrap's listener
+      // re-hydrates from the profiles row.
+      setMe({ name: displayName.trim() });
       showToast({ message: 'Account created. Welcome!', kind: 'success' });
       router.replace('/(tabs)' as never);
     } catch (e) {
@@ -67,6 +77,18 @@ export default function SignUpScreen() {
       </View>
 
       <View style={{ gap: 12 }}>
+        <View>
+          <SCText variant="labelCap" style={{ marginBottom: 6 }}>Display name</SCText>
+          <TextInput
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="How should we call you?"
+            placeholderTextColor={t.ink3}
+            autoCapitalize="words"
+            autoCorrect={false}
+            style={inputStyle(t)}
+          />
+        </View>
         <View>
           <SCText variant="labelCap" style={{ marginBottom: 6 }}>Email</SCText>
           <TextInput

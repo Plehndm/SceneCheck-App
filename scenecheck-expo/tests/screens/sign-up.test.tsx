@@ -16,13 +16,24 @@ describe('SignUpScreen', () => {
   test('renders the form chrome', () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignUpScreen />);
     expect(getByText('Create account')).toBeTruthy();
+    expect(getByPlaceholderText('How should we call you?')).toBeTruthy();
     expect(getByPlaceholderText('you@uci.edu')).toBeTruthy();
     expect(getByPlaceholderText('At least 8 characters')).toBeTruthy();
     expect(getByPlaceholderText('YYYY-MM-DD')).toBeTruthy();
   });
 
+  test('rejects submission without a display name', () => {
+    const { getByText, getByPlaceholderText } = renderScreen(<SignUpScreen />);
+    fireEvent.changeText(getByPlaceholderText('you@uci.edu'), 'a@b.com');
+    fireEvent.changeText(getByPlaceholderText('At least 8 characters'), 'longenoughpw');
+    fireEvent.press(getByText('SIGN UP'));
+    expect(useStore.getState().toasts.length).toBe(1);
+    expect(useStore.getState().toasts[0].message).toMatch(/display name/i);
+  });
+
   test('rejects passwords shorter than 8 chars', () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignUpScreen />);
+    fireEvent.changeText(getByPlaceholderText('How should we call you?'), 'Test User');
     fireEvent.changeText(getByPlaceholderText('you@uci.edu'), 'a@b.com');
     fireEvent.changeText(getByPlaceholderText('At least 8 characters'), 'short');
     // SCButton uppercases its label.
@@ -31,13 +42,17 @@ describe('SignUpScreen', () => {
     expect(useStore.getState().toasts[0].message).toMatch(/8 characters/i);
   });
 
-  test('signs up successfully in mock mode', async () => {
+  test('signs up successfully in mock mode and writes display name into me', async () => {
     const { getByText, getByPlaceholderText } = renderScreen(<SignUpScreen />);
+    fireEvent.changeText(getByPlaceholderText('How should we call you?'), 'Test User');
     fireEvent.changeText(getByPlaceholderText('you@uci.edu'), 'a@b.com');
     fireEvent.changeText(getByPlaceholderText('At least 8 characters'), 'longenoughpw');
     fireEvent.press(getByText('SIGN UP'));
     await Promise.resolve();
     expect(router.replace).toHaveBeenCalledWith('/(tabs)');
+    // The screen calls `setMe({ name })` right after sign-up so the
+    // profile tab reflects the chosen name immediately.
+    expect(useStore.getState().me.name).toBe('Test User');
   });
 
   test('Sign in link routes back to /auth/sign-in', () => {

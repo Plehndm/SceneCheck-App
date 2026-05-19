@@ -62,6 +62,13 @@ describe('ProfileTab', () => {
     expect(router.push).toHaveBeenCalledWith('/my-friends');
   });
 
+  test('tapping the name opens the edit profile sheet (SAVE CHANGES becomes visible)', () => {
+    const { getByText, queryByText, getByLabelText } = renderScreen(<ProfileTab />);
+    expect(queryByText('SAVE CHANGES')).toBeNull();
+    fireEvent.press(getByLabelText('Edit display name'));
+    expect(getByText('SAVE CHANGES')).toBeTruthy();
+  });
+
   test('drafts row only renders when drafts exist', () => {
     const { queryByText } = renderScreen(<ProfileTab />);
     expect(queryByText('Drafts')).toBeNull();
