@@ -7,7 +7,10 @@ _Backend target: Jest runs in mock mode (no env vars under
 the **hosted** Supabase project (`kmlecodmifljbtzaqahm`) per
 `docs/PROGRESS_SNAPSHOT.md` §19. Seed data for hosted lives in
 `supabase/seed-hosted.sql` (idempotent variant of `supabase/
-seed.sql`). To swap the dev server back to the local stack,
+seed.sql`). Auth emails go through **Resend** via Supabase's
+Custom SMTP setting (runbook in `docs/PROGRESS_SNAPSHOT.md` §20)
+— no code touches the SMTP path, so the swap is invisible to
+this test plan. To swap the dev server back to the local stack,
 restore the alternate values kept as comments in `.env`._
 
 ## Part 1 — Test Plan (Strategic)

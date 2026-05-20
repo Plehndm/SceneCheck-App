@@ -50,6 +50,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Sign-up polish: birthdate is now the same `SCDatePicker` calendar popover the Create Event screen uses (extended with `minDate` / `maxDate` / `withYear` / `placeholder` props; existing event-creation defaults preserved). The 18+ age gate is enforced at picker time — `maxDate` is 18 years ago today, so younger dates render greyed + line-through + unselectable. Added `fmtDateWithYear` / `parseDateWithYear` helpers in `lib/date-time.ts`. Email placeholder swapped from `"you@uci.edu"` → `"Your email"` to match the actual policy (any email works). +1 test ("rejects submission without a birthdate"); the "signs up successfully" case now picks a birthdate via a small test helper before submitting. |
 | 2026-05-19 | Sign-up / sign-in: graceful handling for projects with email confirmation enabled. `signUp` now inspects the returned session — when null (hosted Supabase default), routes to `/auth/sign-in` with a "check your email" toast instead of bouncing through the auth gate to a sign-in that would fail with "Email not confirmed". The sign-in handler now rewrites Supabase's opaque "Email not confirmed" error into an actionable explanation. |
 | 2026-05-19 | Auth UX expansion: full forgot-password flow + resend-confirmation + account management. **API**: `api.resendConfirmation`, `api.requestPasswordReset` (web computes `redirectTo` from `window.location.origin`), `api.updateEmail`, `api.updatePassword`. **New screens**: `app/auth/forgot-password.tsx` (email → recovery email), `app/auth/reset-password.tsx` (new-password form fed by the recovery session). **New components**: `ChangeEmailSheet`, `ChangePasswordSheet` (mounted from Settings). **Sign-in screen**: added a "Forgot password?" link + an inline "RESEND CONFIRMATION EMAIL" affordance that appears after a confirmation error. **Settings screen**: new ACCOUNT section with Email + Password rows that open the corresponding sheets. Email placeholder on sign-in swapped to `"Your email"` to match sign-up. +14 tests across four files. |
+| 2026-05-19 | Confirmation link + UX hardening: `api.signUp` now passes `emailRedirectTo` so the email link routes back to `/auth/sign-in?confirmed=1` (web computes from `window.location.origin`); sign-in renders a persistent banner when arriving with `?confirmEmail=1` (warn-toned, "Confirm your email" + body copy) or `?confirmed=1` (good-toned, "Email confirmed"); banner has a dismiss button + an inline `RESEND CONFIRMATION EMAIL` button. Sign-up passes the typed email along via params so the resend button works without re-typing. Sign-in screen is no longer presented as a modal (dropped `presentation: 'modal'` for `auth/sign-in` and `auth/reset-password` in `_layout.tsx`; `auth/sign-up` and `auth/forgot-password` stay as modals). +5 tests. Misc copy: `"Welcome back"` → `"SceneCheck"` on the sign-in headline; sign-in password placeholder `"••••••••"` → `"Your password"` (the dots looked pre-filled). |
+| 2026-05-19 | Hosted Supabase email delivery switched from the shared-SMTP free tier (rate-limited to ~2/hr) to **Resend** via the Supabase Custom SMTP setting. No code change — this is entirely dashboard config on Supabase + Resend. Full runbook captured in `docs/PROGRESS_SNAPSHOT.md` §20. |
 
 ### Current layout
 
@@ -1237,7 +1239,114 @@ the swap is one-line in either direction.)
 
 ---
 
-## 20. How to re-snapshot this file
+## 20. Hosted SMTP: Resend setup runbook
+
+_Last updated: 2026-05-19_
+
+The hosted Supabase free tier ships a shared SMTP relay rate-
+limited to ~2 emails per hour per project. That cap is fine for a
+solo dev but breaks the moment a class of users tries to sign up.
+The fix is to switch to a real ESP via Supabase's Custom SMTP
+setting. Resend is free for the first 3,000 emails/month +
+100/day, and supports a single verified sending domain on the free
+tier — comfortably more than SceneCheck will use for a demo.
+
+This section is the operational runbook. There is **no code change**
+required to enable this — the entire path is configured in the
+Supabase and Resend dashboards.
+
+### 20.1 Why switch
+
+| Symptom on the shared SMTP | Cause | Resolved by Custom SMTP |
+|---|---|---|
+| Sign-up "Account created" but no email arrives | Hourly cap of ~2/hr exhausted by earlier sign-up attempts | ✅ Resend free tier = 100/day |
+| Confirmation emails land in Spam / Promotions | Generic `noreply@mail.supabase.io` sender has no reputation | ✅ Sending from your own verified domain |
+| No way to customize the From / Reply-To address | Locked to Supabase's default sender | ✅ Free-form sender on the verified domain |
+| Delivery logs are coarse | Supabase shows `email_sent` but no recipient-side delivery info | ✅ Resend Logs show open / delivered / bounced |
+
+### 20.2 The runbook
+
+#### Step 1 — Resend account (2 min)
+
+1. <https://resend.com> → **Sign up**.
+2. Verify the signup confirmation email.
+
+#### Step 2 — Verify a sending domain (5–30 min)
+
+Resend won't deliver to arbitrary addresses without a verified
+domain. Two paths:
+
+| Path | Use when | How |
+|---|---|---|
+| **A. Real domain** (recommended) | You have / can grab a domain. Cloudflare Registrar sells at cost (~$8/yr). Works for any recipient. | Resend → Domains → Add Domain → copy the SPF/DKIM (and optional DMARC) TXT records into your DNS registrar → click Verify. |
+| **B. `onboarding@resend.dev`** | Testing only. Limitation: can only deliver to your own Resend account email. | Skip step 2 — use the built-in sender. |
+
+#### Step 3 — API key (1 min)
+
+1. Resend → **API Keys → Create API Key**.
+2. Name: `supabase-scenecheck`.
+3. Permission: `Sending access`.
+4. Domain: pick the verified domain (or "All domains" for testing).
+5. **Copy the `re_…` key now** — you won't see it again.
+
+#### Step 4 — Wire into Supabase (2 min)
+
+1. <https://supabase.com/dashboard/project/kmlecodmifljbtzaqahm/settings/auth>
+2. **SMTP Settings** → toggle **Enable Custom SMTP** ON.
+3. Fill in:
+
+| Field | Value |
+|---|---|
+| Sender email | `auth@<verified-domain>` (Path A) or `onboarding@resend.dev` (Path B) |
+| Sender name | `SceneCheck` |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` |
+| Password | the `re_…` API key |
+| Minimum interval | default (60s) |
+
+4. **Save**.
+
+#### Step 5 — Verify (3 min)
+
+1. Resend → **Logs → Send test email** to yourself. Confirms key + domain.
+2. In the app: sign out → sign up with a fresh email → confirmation arrives within seconds.
+3. Watch **Supabase → Auth → Logs** for `email_sent` events.
+
+#### Step 6 — Optional polish
+
+- **Supabase → Auth → Email Templates → "Confirm signup"** — replace the default copy with SceneCheck-branded HTML. Keep `{{ .ConfirmationURL }}` as the link placeholder.
+- **Supabase → Auth → Rate Limits** — the per-hour confirmation cap (default 4/hr) is now your bottleneck, not Supabase's shared SMTP. Raise if you expect a burst of sign-ups during the demo.
+
+### 20.3 What this section deliberately does NOT do
+
+- Touch any TypeScript / React Native code. The Supabase server-side
+  email pipeline is fully separated from the app bundle; the
+  `auth.signUp({ ..., options: { emailRedirectTo } })` call we ship
+  already produces the right link format regardless of SMTP backend.
+- Commit the API key. The Resend `re_…` key is a server-side
+  credential that lives only in the Supabase dashboard; it's
+  intentionally absent from the repo + `.env` (`.env` only carries
+  the publishable client key).
+- Migrate existing unconfirmed users. Anyone who signed up before
+  the swap and never confirmed needs to either click the original
+  link (still valid for 24h) or be deleted + re-sign-up. New
+  sign-ups after the SMTP switch will receive the email via Resend
+  immediately.
+
+### 20.4 Common failures
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Resend "Pending verification" forever | DNS not propagated | Check at <https://www.whatsmydns.net> — TXT records must be globally visible |
+| `Domain is not verified` in Resend Logs | Sender email isn't on the verified domain | Use `something@<verified-domain>` exactly |
+| Sign-up succeeds but no email arrives | Supabase cached the old SMTP | Toggle Enable Custom SMTP off → Save → on → Save |
+| Email lands in Promotions/Spam | New domain has no reputation | Send a few legit messages, ask recipients to mark "Not spam"; DMARC alignment helps |
+| `Rate limit exceeded` from Resend | Free tier 100/day cap | Wait or upgrade |
+
+---
+
+## 21. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
