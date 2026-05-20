@@ -12,6 +12,7 @@ import { SCCard } from '@/components/SCCard';
 import { SCIcon, type IconName } from '@/components/SCIcon';
 import { SCSection } from '@/components/SCSection';
 import { SCButton } from '@/components/SCAddButton';
+import { SCTopBar } from '@/components/SCTopBar';
 import { ChangeEmailSheet } from '@/components/ChangeEmailSheet';
 import { ChangePasswordSheet } from '@/components/ChangePasswordSheet';
 import { useStore } from '@/store/useStore';
@@ -98,9 +99,9 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <View style={{ paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12 }}>
-        <SCText variant="labelCap">Account</SCText>
-        <SCText variant="displayTight" size={36} style={{ marginTop: 4 }}>Settings</SCText>
+      <SCTopBar onBack={() => router.back()} subtitle="ACCOUNT" />
+      <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
+        <SCText variant="displayTight" size={36}>Settings</SCText>
       </View>
 
       {/* Account credentials — email + password */}

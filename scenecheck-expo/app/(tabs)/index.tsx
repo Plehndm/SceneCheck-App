@@ -26,6 +26,7 @@ import { LegendDot } from '@/components/LegendDot';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
+import { useDateCityLabel } from '@/hooks/useDateCityLabel';
 import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
@@ -37,6 +38,8 @@ export default function HomeScreen() {
   const isJoinedNow = (id: string) => joined.has(id) && !pendingLeave.has(id);
   // Live in live mode, fixture array in mock mode — see hooks/useEvents.
   const { events, loading } = useEvents();
+  // Live date + (if location granted) reverse-geocoded city.
+  const dateCityLabel = useDateCityLabel();
 
   return (
     <Screen>
@@ -46,7 +49,7 @@ export default function HomeScreen() {
         flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
       }}>
         <View>
-          <SCText variant="labelCap">Sat May 9 · Irvine</SCText>
+          <SCText variant="labelCap">{dateCityLabel}</SCText>
           <SCText variant="displayTight" size={36} style={{ marginTop: 4, lineHeight: 36 }}>
             What&apos;s the{'\n'}scene?
           </SCText>

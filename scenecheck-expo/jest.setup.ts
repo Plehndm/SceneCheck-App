@@ -9,13 +9,17 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
 
-// expo-location — useLocation() calls request + getCurrentPosition.
+// expo-location — useLocation() calls request + getCurrentPosition;
+// useDateCityLabel() calls reverseGeocodeAsync. The geocode mock
+// returns [] so the city stays null and the header shows just the
+// date (the no-location path), keeping the date assertion stable.
 jest.mock('expo-location', () => ({
   Accuracy: { Balanced: 3 },
   requestForegroundPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   getCurrentPositionAsync: jest.fn().mockResolvedValue({
     coords: { latitude: 33.6461, longitude: -117.8427 },
   }),
+  reverseGeocodeAsync: jest.fn().mockResolvedValue([]),
 }));
 
 // expo-image-picker — useImagePicker() calls request + launchImageLibrary.

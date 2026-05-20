@@ -17,10 +17,12 @@ beforeEach(() => {
 describe('MapTab', () => {
   test('renders the date label and "Map" headline', () => {
     const { getByText } = renderScreen(<MapTab />);
-    // The date string is now built from `fmtDate(new Date())` (round-2
-    // code-review fix) — assert on the trailing constant instead of a
-    // frozen May-9 literal.
-    expect(getByText(/· Irvine$/)).toBeTruthy();
+    // The label is now `useDateCityLabel()` — live date, plus a
+    // reverse-geocoded city when location resolves. The jest geocode
+    // mock returns [], so just the date shows; assert its shape.
+    expect(
+      getByText(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}$/),
+    ).toBeTruthy();
     expect(getByText('Map')).toBeTruthy();
   });
 

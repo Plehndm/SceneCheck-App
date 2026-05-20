@@ -206,6 +206,8 @@ scenecheck-expo/
     │   ├── useFriends.test.ts           # NEW (§2.14) — friends + requests + profile
     │   ├── useImagePicker.test.ts
     │   └── useInterests.test.ts         # NEW (§2.13) — interest catalog + single tag
+    │   # useDateCityLabel has no dedicated file — its date-only output
+    │   # is covered by the Home + Map screen tests' dynamic-date asserts.
     └── screens/                         # per-route integration tests
         ├── attendees.test.tsx
         ├── chat-tab.test.tsx

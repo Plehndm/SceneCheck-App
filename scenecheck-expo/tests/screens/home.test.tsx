@@ -14,9 +14,18 @@ beforeEach(() => {
 });
 
 describe('HomeScreen', () => {
-  test('renders the date header + headline', () => {
+  test('renders the dynamic date header + headline', () => {
     const { getByText } = renderScreen(<HomeScreen />);
-    expect(getByText('Sat May 9 · Irvine')).toBeTruthy();
+    // Date is now `fmtDate(new Date())` ("Tue May 20"); the city is
+    // appended only when location resolves (the jest geocode mock
+    // returns [], so just the date shows). Assert the date shape.
+    // End-anchored so it matches the bare header date ("Wed May 20")
+    // and NOT the event-card "when" strings that carry a time suffix
+    // ("Sat May 9 · 7:00 AM"). City is null under the jest geocode
+    // mock, so the header has no " · City" suffix.
+    expect(
+      getByText(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}$/),
+    ).toBeTruthy();
     expect(getByText(/What's the/)).toBeTruthy();
   });
 

@@ -8,6 +8,7 @@ import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCIcon } from '@/components/SCIcon';
+import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useFriendRequests } from '@/hooks/useFriendRequests';
@@ -27,9 +28,9 @@ export default function RequestsScreen() {
 
   return (
     <Screen>
-      <View style={{ paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12 }}>
-        <SCText variant="labelCap">Inbox</SCText>
-        <SCText variant="displayTight" size={36} style={{ marginTop: 4 }}>Follow requests</SCText>
+      <SCTopBar onBack={() => router.back()} subtitle="INBOX" />
+      <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
+        <SCText variant="displayTight" size={36}>Follow requests</SCText>
         <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 6 }}>
           {requests.length} {requests.length === 1 ? 'PERSON WANTS' : 'PEOPLE WANT'} TO ADD YOU
         </SCText>

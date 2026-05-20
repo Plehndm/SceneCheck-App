@@ -10,7 +10,8 @@ beforeEach(() => resetStore());
 describe('RequestsScreen', () => {
   test('renders the inbox header with the right count', () => {
     const { getByText } = renderScreen(<RequestsScreen />);
-    expect(getByText('Inbox')).toBeTruthy();
+    // "Inbox" is now the SCTopBar subtitle, rendered uppercase.
+    expect(getByText('INBOX')).toBeTruthy();
     expect(getByText('Follow requests')).toBeTruthy();
     // The "2 PEOPLE WANT TO ADD YOU" string renders as separate child
     // text nodes inside a single SCText; query by the constant tail.

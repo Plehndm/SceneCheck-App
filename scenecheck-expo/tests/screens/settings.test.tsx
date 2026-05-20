@@ -12,13 +12,18 @@ beforeEach(() => resetStore());
 describe('SettingsScreen', () => {
   test('renders the page chrome', () => {
     const { getByText } = renderScreen(<SettingsScreen />);
-    expect(getByText('Account')).toBeTruthy();
+    // "Account" is now the SCTopBar subtitle (uppercase "ACCOUNT") +
+    // the ACCOUNT section header; the big title is still "Settings".
     expect(getByText('Settings')).toBeTruthy();
+    // The back-bar's subtitle confirms SCTopBar is mounted.
+    expect(getByText('ACCOUNT')).toBeTruthy();
   });
 
   test('renders every named section', () => {
     const { getByText } = renderScreen(<SettingsScreen />);
-    expect(getByText(/ACCOUNT/)).toBeTruthy();
+    // The ACCOUNT *section* header carries the email suffix, which
+    // distinguishes it from the SCTopBar "ACCOUNT" subtitle.
+    expect(getByText(/^ACCOUNT · /)).toBeTruthy();
     expect(getByText(/DISCOVERY · /)).toBeTruthy();
     expect(getByText(/PROFILE VISIBILITY · /)).toBeTruthy();
     expect(getByText('APPEARANCE')).toBeTruthy();

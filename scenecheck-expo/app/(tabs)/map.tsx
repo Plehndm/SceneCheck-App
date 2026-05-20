@@ -20,7 +20,8 @@ import { useLocation } from '@/hooks/useLocation';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvents } from '@/hooks/useEvents';
-import { fmtDate, whenRange } from '@/lib/date-time';
+import { useDateCityLabel } from '@/hooks/useDateCityLabel';
+import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -30,6 +31,8 @@ export default function MapTab() {
   const t = useTokens();
   const { coords, status, isFallback, request } = useLocation();
   const meInterests = useStore(s => s.me.interests ?? []);
+  // Same live date + city label the Home header uses.
+  const dateCityLabel = useDateCityLabel();
   const [radius, setRadius] = useState<number>(RADIUS_OPTIONS_M[2]);
   const [focused, setFocused] = useState<SCEvent | null>(null);
   // Pull pins from the API. In live mode this hits the rank_events_query
@@ -47,7 +50,7 @@ export default function MapTab() {
         flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
       }}>
         <View style={{ flex: 1 }}>
-          <SCText variant="labelCap">{fmtDate(new Date())} · Irvine</SCText>
+          <SCText variant="labelCap">{dateCityLabel}</SCText>
           <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Map</SCText>
           {isFallback && (
             <Pressable

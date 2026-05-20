@@ -6,6 +6,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { ThemeProvider } from '@/theme/ThemeProvider';
@@ -22,6 +23,11 @@ export default function RootLayout() {
   // Subscribe so StatusBar style flips with the active mode.
   const mode = useStore(s => s.mode);
   return (
+    // SafeAreaProvider must wrap the tree so the custom SCTopBar /
+    // Screen `SafeAreaView edges={['top']}` get real top insets on
+    // native — otherwise the back buttons + headers render under the
+    // status bar / notch.
+    <SafeAreaProvider>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <Stack screenOptions={{ headerShown: false }}>
@@ -64,5 +70,6 @@ export default function RootLayout() {
         <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
