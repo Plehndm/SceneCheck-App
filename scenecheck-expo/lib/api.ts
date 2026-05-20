@@ -133,23 +133,33 @@ export const api = {
     const emailRedirectTo = typeof window !== 'undefined' && window.location?.origin
       ? `${window.location.origin}/auth/sign-in?confirmed=1`
       : 'scenecheckexpo://auth/sign-in?confirmed=1';
+    const name = displayName?.trim();
     const { data, error } = await sb.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo },
+      options: {
+        emailRedirectTo,
+        // Stamp the display name into auth.users metadata. This rides
+        // along on the same row the SIGNED_IN session carries, so
+        // AuthBootstrap.hydrate can read it immediately + race-free
+        // via `session.user.user_metadata.display_name`. Without this
+        // the hydrate would read the still-empty profiles.name (the
+        // separate update below can land after the hydrate's read) and
+        // fall back to the email — the bug this fixes.
+        data: name ? { display_name: name } : undefined,
+      },
     });
     if (error) throw error;
-    // The `handle_new_user` Postgres trigger has just inserted a
-    // skeleton `profiles` row with name=''. Set the display name in
-    // the same flow so AuthBootstrap's hydrate (fired by the SIGNED_IN
-    // event) finds the populated row instead of an empty one. The
-    // update is best-effort: a missing row or RLS failure shouldn't
-    // block sign-up itself.
+    // Belt-and-suspenders: also persist to profiles.name so anything
+    // that reads the profiles table directly (other users viewing this
+    // profile, the ratings join, etc.) sees the name. The metadata
+    // above is what makes the *current user's* own display correct
+    // instantly; this write makes it correct for everyone else too.
     const userId = data.user?.id;
-    if (displayName?.trim() && userId) {
+    if (name && userId) {
       try {
         await sb.from('profiles')
-          .update({ name: displayName.trim() })
+          .update({ name })
           .eq('user_id', userId);
       } catch { /* swallow — name can be edited later from the profile tab */ }
     }

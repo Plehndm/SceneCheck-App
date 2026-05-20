@@ -46,7 +46,14 @@ export function AuthBootstrap() {
 
     let cancelled = false;
 
-    async function hydrate(userId: string, email: string | null) {
+    // `metaName` is the display name stamped into the auth user's
+    // metadata at sign-up time (api.signUp passes `options.data.
+    // display_name`). It's part of the auth.users row, so it's
+    // available immediately + race-free — unlike `profiles.name`,
+    // which api.signUp writes in a separate statement that can land
+    // AFTER this hydrate's profile read. Resolution order below is
+    // therefore: live profiles.name → metadata name → email prefix.
+    async function hydrate(userId: string, email: string | null, metaName?: string | null) {
       // Fire every read in parallel — none depend on each other.
       const [
         { data: profile },
@@ -81,10 +88,15 @@ export function AuthBootstrap() {
         .map((r: { interests?: { name?: string } | null }) => r.interests?.name)
         .filter((n: string | undefined): n is string => Boolean(n));
 
+      const dbName = (profile?.name as string | undefined)?.trim();
       const profilePatch: Partial<Account> = {
         id: userId,
         type: (profile?.account_type as 'person' | 'org' | null) ?? 'person',
-        name: (profile?.name as string | undefined) || email || 'You',
+        // Prefer the persisted profile name; fall back to the auth-
+        // metadata display name (race-free at sign-up); only then to
+        // the email *prefix* (never the full email — that's what made
+        // the header read like an address).
+        name: dbName || metaName?.trim() || email?.split('@')[0] || 'You',
         username: (profile?.username as string | undefined) || email?.split('@')[0] || undefined,
         bio: (profile?.bio as string | undefined) ?? '',
         interests,
@@ -139,12 +151,15 @@ export function AuthBootstrap() {
       });
     }
 
+    const metaDisplayName = (u: { user_metadata?: { display_name?: string } } | null | undefined) =>
+      u?.user_metadata?.display_name ?? null;
+
     // 1. Initial session check (fires once at mount).
     supabase.auth.getSession().then(({ data }) => {
       const session = data.session;
       if (session?.user) {
         setSession({ userId: session.user.id, email: session.user.email ?? null });
-        hydrate(session.user.id, session.user.email ?? null);
+        hydrate(session.user.id, session.user.email ?? null, metaDisplayName(session.user));
       } else {
         setSession(null);
       }
@@ -155,7 +170,7 @@ export function AuthBootstrap() {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (session?.user) {
           setSession({ userId: session.user.id, email: session.user.email ?? null });
-          hydrate(session.user.id, session.user.email ?? null);
+          hydrate(session.user.id, session.user.email ?? null, metaDisplayName(session.user));
         }
       }
       if (event === 'SIGNED_OUT') {
