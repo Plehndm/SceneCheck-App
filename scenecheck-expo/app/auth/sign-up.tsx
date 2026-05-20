@@ -62,21 +62,22 @@ export default function SignUpScreen() {
       // re-hydrates from the profiles row.
       setMe({ name: displayName.trim() });
 
-      // When the Supabase project has "Confirm email" enabled (the
-      // hosted default), `auth.signUp` returns a user but no session
-      // — the user has to click the confirmation link in the email
-      // before they can sign in. Routing to /(tabs) here would land
-      // them on the auth gate's redirect to /auth/sign-in, which
-      // then fails with "Email not confirmed". Detect the missing
-      // session and route to /auth/sign-in with a clear message
-      // instead. Mock mode + projects with confirmation off both
-      // return a session, so the happy path goes straight to tabs.
+      // Email confirmation is OFF on the hosted project (see
+      // PROGRESS_SNAPSHOT.md §21 for the Resend → no-confirmation
+      // pivot), so `auth.signUp` returns a live session and the user
+      // is signed in immediately — straight to the tabs with a
+      // welcome toast.
+      //
+      // The branch below is a defensive fallback: if confirmation is
+      // ever re-enabled (or `.env` points at a project that requires
+      // it), `signUp` returns no session and we route to the sign-in
+      // screen's "check your email" banner + Resend button instead of
+      // bouncing the user through the auth gate to a sign-in that
+      // would fail with "Email not confirmed". Mock mode + the
+      // confirmation-off hosted project both return a session, so
+      // this branch is currently dormant.
       const hasSession = !!(result as { session?: unknown } | null)?.session;
       if (!hasSession && !api.isMock()) {
-        // Defer the visible reminder to the sign-in screen via query
-        // params — that screen renders a persistent banner + a
-        // Resend button. We pass the email along so the user doesn't
-        // have to re-type it before resending.
         showToast({
           message: 'Check your email to confirm.',
           kind: 'info',
@@ -89,7 +90,10 @@ export default function SignUpScreen() {
         return;
       }
 
-      showToast({ message: 'Account created. Welcome!', kind: 'success' });
+      showToast({
+        message: `Welcome to SceneCheck, ${displayName.trim().split(' ')[0]}!`,
+        kind: 'success',
+      });
       router.replace('/(tabs)' as never);
     } catch (e) {
       showToast({

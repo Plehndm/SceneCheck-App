@@ -1,9 +1,14 @@
 // Bottom-sheet for changing the signed-in user's email. Calls
 // `api.updateEmail(newEmail)` which routes through
-// `supabase.auth.updateUser({ email })`. The Supabase default flow
-// sends a confirmation link to BOTH the old and new addresses; the
-// email isn't switched until both confirm. The toast copy spells
-// this out so the user knows to check both inboxes.
+// `supabase.auth.updateUser({ email })`.
+//
+// Email confirmation is currently OFF on the hosted project (see
+// PROGRESS_SNAPSHOT.md §21 for why), so the change applies without
+// the user clicking links in their inbox. If the project's
+// "Secure email change" setting is ever turned back on, Supabase
+// will require confirmation on both addresses and the change won't
+// take effect until then — the copy below stays accurate either
+// way by saying "updated" rather than promising instant switchover.
 
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, TextInput, View } from 'react-native';
@@ -48,9 +53,8 @@ export function ChangeEmailSheet({ visible, onClose }: Props) {
     try {
       await api.updateEmail(trimmed);
       showToast({
-        message: 'Confirmation sent to both your old and new email — click both links to finish.',
+        message: 'Email updated.',
         kind: 'success',
-        duration: 8000,
       });
       onClose();
     } catch (e) {
@@ -99,7 +103,7 @@ export function ChangeEmailSheet({ visible, onClose }: Props) {
             paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14,
           }}>
             <SCText size={11} color={t.ink2} style={{ lineHeight: 16 }}>
-              Supabase will email a confirmation link to both your current and new addresses. The switch only happens after you click both.
+              Your sign-in email changes right away. Use the new address next time you sign in.
             </SCText>
           </View>
 
@@ -146,7 +150,7 @@ export function ChangeEmailSheet({ visible, onClose }: Props) {
               }, pressed && { opacity: 0.85 }]}
             >
               <SCText variant="mono" size={12} weight="700" color={t.primaryInk}>
-                {saving ? 'SENDING…' : 'SEND CONFIRMATIONS'}
+                {saving ? 'UPDATING…' : 'UPDATE EMAIL'}
               </SCText>
             </Pressable>
           </View>

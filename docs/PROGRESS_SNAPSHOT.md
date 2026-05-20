@@ -52,6 +52,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-19 | Auth UX expansion: full forgot-password flow + resend-confirmation + account management. **API**: `api.resendConfirmation`, `api.requestPasswordReset` (web computes `redirectTo` from `window.location.origin`), `api.updateEmail`, `api.updatePassword`. **New screens**: `app/auth/forgot-password.tsx` (email → recovery email), `app/auth/reset-password.tsx` (new-password form fed by the recovery session). **New components**: `ChangeEmailSheet`, `ChangePasswordSheet` (mounted from Settings). **Sign-in screen**: added a "Forgot password?" link + an inline "RESEND CONFIRMATION EMAIL" affordance that appears after a confirmation error. **Settings screen**: new ACCOUNT section with Email + Password rows that open the corresponding sheets. Email placeholder on sign-in swapped to `"Your email"` to match sign-up. +14 tests across four files. |
 | 2026-05-19 | Confirmation link + UX hardening: `api.signUp` now passes `emailRedirectTo` so the email link routes back to `/auth/sign-in?confirmed=1` (web computes from `window.location.origin`); sign-in renders a persistent banner when arriving with `?confirmEmail=1` (warn-toned, "Confirm your email" + body copy) or `?confirmed=1` (good-toned, "Email confirmed"); banner has a dismiss button + an inline `RESEND CONFIRMATION EMAIL` button. Sign-up passes the typed email along via params so the resend button works without re-typing. Sign-in screen is no longer presented as a modal (dropped `presentation: 'modal'` for `auth/sign-in` and `auth/reset-password` in `_layout.tsx`; `auth/sign-up` and `auth/forgot-password` stay as modals). +5 tests. Misc copy: `"Welcome back"` → `"SceneCheck"` on the sign-in headline; sign-in password placeholder `"••••••••"` → `"Your password"` (the dots looked pre-filled). |
 | 2026-05-19 | Hosted Supabase email delivery switched from the shared-SMTP free tier (rate-limited to ~2/hr) to **Resend** via the Supabase Custom SMTP setting. No code change — this is entirely dashboard config on Supabase + Resend. Full runbook captured in `docs/PROGRESS_SNAPSHOT.md` §20. |
+| 2026-05-20 | **Pivoted away from email confirmation entirely.** Resend's free tier requires a *purchased + DNS-verified domain* to send to anyone other than your own inbox, and the Cloudflare DNS auto-config kept failing on an SSO mismatch — too much friction for a course project. Disabled "Confirm email" in the Supabase dashboard instead, so sign-up returns a live session immediately. UI follow-ups: `ChangeEmailSheet` now says "Email updated" / "Your sign-in email changes right away" (was "confirmation sent to both inboxes"); button relabeled `SEND CONFIRMATIONS` → `UPDATE EMAIL`; the post-sign-up toast is now `Welcome to SceneCheck, <first name>!` straight into the tabs. The confirm-email banner + Resend button on sign-in are kept as a *dormant defensive fallback* (only fire if confirmation is ever re-enabled). See §21. |
 
 ### Current layout
 
@@ -1346,7 +1347,87 @@ domain. Two paths:
 
 ---
 
-## 21. How to re-snapshot this file
+## 21. Email confirmation: the Resend pivot to no-confirmation
+
+_Last updated: 2026-05-20_
+
+This section records *why* SceneCheck ended up with email
+confirmation turned off, after a detour through custom SMTP. It's
+the kind of decision that looks arbitrary in the diff but had a
+concrete chain of blockers behind it.
+
+### 21.1 The chain of events
+
+1. **Switched the dev server to the hosted Supabase project** (§19)
+   so the team could verify against a shared backend. Hosted
+   projects default to **"Confirm email" ON**.
+2. **Sign-ups stopped completing** — the confirmation email never
+   arrived. Root cause: the hosted free tier uses a *shared SMTP
+   relay capped at ~2 emails/hour per project*. A few test sign-ups
+   exhausted it and subsequent emails were silently dropped.
+3. **Started implementing Resend** as a real ESP via Supabase's
+   Custom SMTP setting (full runbook still in §20 for if we ever
+   want it). Free tier is 3,000/month — plenty.
+4. **Hit Resend's domain wall.** Resend (like every reputable ESP)
+   refuses to send to arbitrary recipients without a
+   **DNS-verified sending domain** — `onboarding@resend.dev` only
+   delivers to your own Resend-account inbox. So a real domain was
+   required for classmates / graders to receive confirmations.
+5. **Hit a Cloudflare blocker on top of that.** The Resend
+   "auto-configure DNS" path tries to OAuth into Cloudflare to
+   write the records, and that login failed with an identity-
+   provider mismatch ("the details for your user do not match the
+   details for the identity provider"). Manual DNS entry was still
+   possible, but now the cost was: buy a domain + fix a Cloudflare
+   login + add DNS records + wait for propagation — all to gate
+   sign-ups behind an email step that a course project doesn't
+   actually need.
+
+### 21.2 The decision
+
+For a course project where the goal is a working demo, the
+confirmation step is pure friction. We **turned off "Confirm
+email"** in the Supabase dashboard (Authentication → Providers →
+Email → Confirm email → off). Sign-up now returns a live session
+immediately; the user lands in the app with no inbox round-trip.
+
+Trade-off accepted: anyone can sign up with an unverified address.
+For a production launch we'd revisit — either finish the Resend +
+domain setup (§20 runbook is ready) or use a managed verification
+provider. The code is structured so flipping confirmation back on
+requires *zero code changes* (see §21.4).
+
+### 21.3 What changed in the app
+
+| File | Before | After |
+|---|---|---|
+| `components/ChangeEmailSheet.tsx` | Notice: "Supabase will email a confirmation link to both your current and new addresses…"; button `SEND CONFIRMATIONS`; toast "Confirmation sent to both your old and new email…" | Notice: "Your sign-in email changes right away…"; button `UPDATE EMAIL`; toast "Email updated." |
+| `app/auth/sign-up.tsx` | Post-signup toast "Account created. Welcome!" | "Welcome to SceneCheck, &lt;first name&gt;!" straight into the tabs |
+| `app/auth/sign-in.tsx` | Confirm-email banner + Resend button were live on every hosted sign-up | Same components, now **dormant** — only render when `signUp` returns no session, which doesn't happen with confirmation off |
+
+### 21.4 Why the confirm-email scaffolding stays in the code
+
+The `?confirmEmail` / `?confirmed` banner on sign-in, the inline +
+banner Resend buttons, the `!hasSession` branch in sign-up, and
+`api.resendConfirmation` are all **retained, not deleted**. They're
+a defensive fallback: if "Confirm email" is ever re-enabled (going
+to production, or pointing `.env` at a project that requires it),
+the full confirmation UX comes back with no code change. Deleting
+them would be a regression the moment confirmation matters again.
+
+### 21.5 If a teammate needs to undo this (turn confirmation back on)
+
+1. Supabase dashboard → Authentication → Providers → Email →
+   **Confirm email → ON** → Save.
+2. Make sure a working SMTP is configured (the §20 Resend runbook),
+   or sign-ups will silently fail to deliver again.
+3. No app code changes needed — the dormant scaffolding reactivates
+   automatically because `signUp` will start returning a null
+   session for unconfirmed users.
+
+---
+
+## 22. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

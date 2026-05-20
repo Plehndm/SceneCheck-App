@@ -29,9 +29,9 @@ describe('SettingsScreen', () => {
 
   test('tapping Email row opens the change-email sheet', () => {
     const { getByText, queryByText } = renderScreen(<SettingsScreen />);
-    expect(queryByText('SEND CONFIRMATIONS')).toBeNull();
+    expect(queryByText('UPDATE EMAIL')).toBeNull();
     fireEvent.press(getByText('Email'));
-    expect(getByText('SEND CONFIRMATIONS')).toBeTruthy();
+    expect(getByText('UPDATE EMAIL')).toBeTruthy();
   });
 
   test('tapping Password row opens the change-password sheet', () => {
