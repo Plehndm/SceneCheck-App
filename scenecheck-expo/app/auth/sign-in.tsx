@@ -4,9 +4,10 @@
 
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
+import { SCIcon } from '@/components/SCIcon';
 import { SCButton } from '@/components/SCAddButton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
@@ -15,11 +16,20 @@ import { RADIUS } from '@/theme/tokens';
 
 export default function SignInScreen() {
   const t = useTokens();
+  // Two query params route here:
+  //   ?confirmEmail=1 — user just signed up; show the "check your email" banner
+  //   ?confirmed=1    — user clicked the link in the email; show a success banner
+  const params = useLocalSearchParams<{ confirmEmail?: string; confirmed?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [resending, setResending] = useState(false);
+  const [banner, setBanner] = useState<'check-email' | 'confirmed' | null>(() => {
+    if (params.confirmEmail === '1') return 'check-email';
+    if (params.confirmed === '1') return 'confirmed';
+    return null;
+  });
   const showToast = useStore(s => s.showToast);
 
   const submit = async () => {
@@ -72,6 +82,44 @@ export default function SignInScreen() {
 
   return (
     <Screen contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 28 }}>
+      {banner && (
+        <View
+          accessibilityLabel={banner === 'check-email' ? 'Confirmation needed' : 'Email confirmed'}
+          style={{
+            flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+            padding: 14, marginBottom: 20, borderRadius: RADIUS.md,
+            backgroundColor: banner === 'confirmed' ? t.good + '1F' : t.warn + '24',
+            borderWidth: 1,
+            borderColor: banner === 'confirmed' ? t.good + '4F' : t.warn + '5C',
+          }}
+        >
+          <View style={{
+            width: 28, height: 28, borderRadius: 14,
+            backgroundColor: banner === 'confirmed' ? t.good : t.warn,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <SCIcon
+              name={banner === 'confirmed' ? 'check' : 'mail'}
+              size={14}
+              color="white"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <SCText size={13} weight="700" style={{ marginBottom: 2 }}>
+              {banner === 'confirmed' ? 'Email confirmed' : 'Confirm your email'}
+            </SCText>
+            <SCText size={12} color={t.ink2} style={{ lineHeight: 17 }}>
+              {banner === 'confirmed'
+                ? 'You can sign in now.'
+                : 'Account created. Click the confirmation link we just sent you, then come back here to sign in.'}
+            </SCText>
+          </View>
+          <Pressable onPress={() => setBanner(null)} accessibilityLabel="Dismiss">
+            <SCIcon name="x" size={14} color={t.ink3} />
+          </Pressable>
+        </View>
+      )}
+
       <View style={{ alignItems: 'center', marginBottom: 32 }}>
         <View style={{
           width: 64, height: 64, borderRadius: 32, backgroundColor: t.primary,

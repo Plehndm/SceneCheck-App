@@ -3,11 +3,12 @@
 import { fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import SignInScreen from '@/app/auth/sign-in';
-import { renderScreen, resetStore } from '../test-utils';
+import { renderScreen, resetStore, setRouteParams } from '../test-utils';
 import { useStore } from '@/store/useStore';
 
 beforeEach(() => {
   resetStore();
+  setRouteParams({});
   (router.replace as jest.Mock).mockClear();
   (router.push as jest.Mock).mockClear();
 });
@@ -53,5 +54,35 @@ describe('SignInScreen', () => {
     const { getByText } = renderScreen(<SignInScreen />);
     fireEvent.press(getByText('Forgot password?'));
     expect(router.push).toHaveBeenCalledWith('/auth/forgot-password');
+  });
+
+  test('?confirmEmail=1 query param shows the "Confirm your email" banner', () => {
+    setRouteParams({ confirmEmail: '1' });
+    const { getByText } = renderScreen(<SignInScreen />);
+    expect(getByText('Confirm your email')).toBeTruthy();
+    // Body copy explains what to do next.
+    expect(getByText(/confirmation link/i)).toBeTruthy();
+  });
+
+  test('?confirmed=1 query param shows the "Email confirmed" success banner', () => {
+    setRouteParams({ confirmed: '1' });
+    const { getByText } = renderScreen(<SignInScreen />);
+    expect(getByText('Email confirmed')).toBeTruthy();
+    expect(getByText(/sign in now/i)).toBeTruthy();
+  });
+
+  test('no banner when no relevant query params are present', () => {
+    setRouteParams({});
+    const { queryByText } = renderScreen(<SignInScreen />);
+    expect(queryByText('Confirm your email')).toBeNull();
+    expect(queryByText('Email confirmed')).toBeNull();
+  });
+
+  test('dismissing the check-email banner removes it', () => {
+    setRouteParams({ confirmEmail: '1' });
+    const { getByText, queryByText, getByLabelText } = renderScreen(<SignInScreen />);
+    expect(getByText('Confirm your email')).toBeTruthy();
+    fireEvent.press(getByLabelText('Dismiss'));
+    expect(queryByText('Confirm your email')).toBeNull();
   });
 });

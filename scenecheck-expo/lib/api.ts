@@ -124,7 +124,20 @@ export const api = {
   async signUp(email: string, password: string, displayName?: string) {
     if (isMock()) return { user: SC_ME, session: { access_token: 'mock' } };
     const sb = requireClient();
-    const { data, error } = await sb.auth.signUp({ email, password });
+    // Pass `emailRedirectTo` so the confirmation link doesn't depend
+    // on the project's Site URL being correctly configured. On web we
+    // can use the current origin; on native we route via the app's
+    // URL scheme (configured in app.json). The destination is the
+    // sign-in screen with ?confirmed=1 so the screen can show a
+    // success banner once Supabase verifies the token + redirects.
+    const emailRedirectTo = typeof window !== 'undefined' && window.location?.origin
+      ? `${window.location.origin}/auth/sign-in?confirmed=1`
+      : 'scenecheckexpo://auth/sign-in?confirmed=1';
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    });
     if (error) throw error;
     // The `handle_new_user` Postgres trigger has just inserted a
     // skeleton `profiles` row with name=''. Set the display name in

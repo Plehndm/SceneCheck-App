@@ -73,12 +73,17 @@ export default function SignUpScreen() {
       // return a session, so the happy path goes straight to tabs.
       const hasSession = !!(result as { session?: unknown } | null)?.session;
       if (!hasSession && !api.isMock()) {
+        // Defer the visible reminder to the sign-in screen via a
+        // query param — that screen renders a persistent banner
+        // that survives until the user signs in (or clears it).
+        // A short-lived toast also fires so the user gets immediate
+        // feedback on the redirect.
         showToast({
-          message: 'Account created — check your email to confirm before signing in.',
+          message: 'Check your email to confirm.',
           kind: 'info',
-          duration: 8000,
+          duration: 6000,
         });
-        router.replace('/auth/sign-in' as never);
+        router.replace({ pathname: '/auth/sign-in', params: { confirmEmail: '1' } } as never);
         return;
       }
 
