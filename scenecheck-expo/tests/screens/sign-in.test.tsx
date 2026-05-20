@@ -62,6 +62,14 @@ describe('SignInScreen', () => {
     expect(getByText('Confirm your email')).toBeTruthy();
     // Body copy explains what to do next.
     expect(getByText(/confirmation link/i)).toBeTruthy();
+    // And exposes a resend button inline.
+    expect(getByText('RESEND CONFIRMATION EMAIL')).toBeTruthy();
+  });
+
+  test('?email=… prefills the email field', () => {
+    setRouteParams({ confirmEmail: '1', email: 'someone@example.com' });
+    const { getByDisplayValue } = renderScreen(<SignInScreen />);
+    expect(getByDisplayValue('someone@example.com')).toBeTruthy();
   });
 
   test('?confirmed=1 query param shows the "Email confirmed" success banner', () => {

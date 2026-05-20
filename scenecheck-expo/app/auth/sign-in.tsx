@@ -16,11 +16,13 @@ import { RADIUS } from '@/theme/tokens';
 
 export default function SignInScreen() {
   const t = useTokens();
-  // Two query params route here:
-  //   ?confirmEmail=1 — user just signed up; show the "check your email" banner
-  //   ?confirmed=1    — user clicked the link in the email; show a success banner
-  const params = useLocalSearchParams<{ confirmEmail?: string; confirmed?: string }>();
-  const [email, setEmail] = useState('');
+  // Three query params route here:
+  //   ?confirmEmail=1 — user just signed up; show "check your email" banner
+  //   ?confirmed=1    — user clicked the link in the email; show success banner
+  //   ?email=...      — prefill the email field so the user doesn't have to
+  //                     re-type it before resending or signing in
+  const params = useLocalSearchParams<{ confirmEmail?: string; confirmed?: string; email?: string }>();
+  const [email, setEmail] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [needsConfirm, setNeedsConfirm] = useState(false);
@@ -86,37 +88,56 @@ export default function SignInScreen() {
         <View
           accessibilityLabel={banner === 'check-email' ? 'Confirmation needed' : 'Email confirmed'}
           style={{
-            flexDirection: 'row', alignItems: 'flex-start', gap: 10,
             padding: 14, marginBottom: 20, borderRadius: RADIUS.md,
             backgroundColor: banner === 'confirmed' ? t.good + '1F' : t.warn + '24',
             borderWidth: 1,
             borderColor: banner === 'confirmed' ? t.good + '4F' : t.warn + '5C',
           }}
         >
-          <View style={{
-            width: 28, height: 28, borderRadius: 14,
-            backgroundColor: banner === 'confirmed' ? t.good : t.warn,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <SCIcon
-              name={banner === 'confirmed' ? 'check' : 'mail'}
-              size={14}
-              color="white"
-            />
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+            <View style={{
+              width: 28, height: 28, borderRadius: 14,
+              backgroundColor: banner === 'confirmed' ? t.good : t.warn,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <SCIcon
+                name={banner === 'confirmed' ? 'check' : 'mail'}
+                size={14}
+                color="white"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <SCText size={13} weight="700" style={{ marginBottom: 2 }}>
+                {banner === 'confirmed' ? 'Email confirmed' : 'Confirm your email'}
+              </SCText>
+              <SCText size={12} color={t.ink2} style={{ lineHeight: 17 }}>
+                {banner === 'confirmed'
+                  ? 'You can sign in now.'
+                  : 'Account created. Click the confirmation link we just sent you, then come back here to sign in. Email not arriving? Resend it below.'}
+              </SCText>
+            </View>
+            <Pressable onPress={() => setBanner(null)} accessibilityLabel="Dismiss">
+              <SCIcon name="x" size={14} color={t.ink3} />
+            </Pressable>
           </View>
-          <View style={{ flex: 1 }}>
-            <SCText size={13} weight="700" style={{ marginBottom: 2 }}>
-              {banner === 'confirmed' ? 'Email confirmed' : 'Confirm your email'}
-            </SCText>
-            <SCText size={12} color={t.ink2} style={{ lineHeight: 17 }}>
-              {banner === 'confirmed'
-                ? 'You can sign in now.'
-                : 'Account created. Click the confirmation link we just sent you, then come back here to sign in.'}
-            </SCText>
-          </View>
-          <Pressable onPress={() => setBanner(null)} accessibilityLabel="Dismiss">
-            <SCIcon name="x" size={14} color={t.ink3} />
-          </Pressable>
+          {banner === 'check-email' && (
+            <Pressable
+              onPress={handleResend}
+              disabled={resending}
+              accessibilityLabel="Resend confirmation email"
+              style={({ pressed }) => [{
+                marginTop: 12, alignSelf: 'flex-start',
+                paddingHorizontal: 12, paddingVertical: 8,
+                borderRadius: 999,
+                backgroundColor: t.ink,
+                opacity: resending ? 0.6 : 1,
+              }, pressed && !resending && { opacity: 0.85 }]}
+            >
+              <SCText variant="mono" size={11} weight="700" color={t.card} style={{ letterSpacing: 1.2 }}>
+                {resending ? 'RESENDING…' : 'RESEND CONFIRMATION EMAIL'}
+              </SCText>
+            </Pressable>
+          )}
         </View>
       )}
 

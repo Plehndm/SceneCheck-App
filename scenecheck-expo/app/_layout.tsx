@@ -47,10 +47,16 @@ export default function RootLayout() {
           <Stack.Screen name="create-event" options={{ presentation: 'modal' }} />
           <Stack.Screen name="event-published" options={{ presentation: 'card' }} />
           <Stack.Screen name="drafts" options={{ presentation: 'card' }} />
-          <Stack.Screen name="auth/sign-in" options={{ presentation: 'modal' }} />
+          {/* Sign-in is the unauthenticated entry point (AuthGate
+              redirects here), so it's a full-screen route — not a
+              modal. Same for reset-password since users land on it
+              directly from the recovery email link. Sign-up and
+              forgot-password are reached from sign-in and slide up
+              as modals so the user can dismiss to return. */}
+          <Stack.Screen name="auth/sign-in" />
+          <Stack.Screen name="auth/reset-password" />
           <Stack.Screen name="auth/sign-up" options={{ presentation: 'modal' }} />
           <Stack.Screen name="auth/forgot-password" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="auth/reset-password" options={{ presentation: 'modal' }} />
         </Stack>
         <AuthBootstrap />
         <ToastHost />

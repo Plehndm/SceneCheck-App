@@ -73,17 +73,19 @@ export default function SignUpScreen() {
       // return a session, so the happy path goes straight to tabs.
       const hasSession = !!(result as { session?: unknown } | null)?.session;
       if (!hasSession && !api.isMock()) {
-        // Defer the visible reminder to the sign-in screen via a
-        // query param — that screen renders a persistent banner
-        // that survives until the user signs in (or clears it).
-        // A short-lived toast also fires so the user gets immediate
-        // feedback on the redirect.
+        // Defer the visible reminder to the sign-in screen via query
+        // params — that screen renders a persistent banner + a
+        // Resend button. We pass the email along so the user doesn't
+        // have to re-type it before resending.
         showToast({
           message: 'Check your email to confirm.',
           kind: 'info',
           duration: 6000,
         });
-        router.replace({ pathname: '/auth/sign-in', params: { confirmEmail: '1' } } as never);
+        router.replace({
+          pathname: '/auth/sign-in',
+          params: { confirmEmail: '1', email: email.trim() },
+        } as never);
         return;
       }
 
