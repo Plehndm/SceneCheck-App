@@ -22,6 +22,7 @@ import { useStore } from '@/store/useStore';
 import { useProfile } from '@/hooks/useProfile';
 import { useHostedEvents } from '@/hooks/useHostedEvents';
 import { useRatings } from '@/hooks/useRatings';
+import { useUserInterests } from '@/hooks/useUserInterests';
 import { api } from '@/lib/api';
 import { SC_VISIBLE_PERSON_BY_ID, SC_MY_ACCOUNTS, SC_ACCOUNT_BY_ID } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
@@ -57,6 +58,10 @@ export default function OtherProfileScreen() {
   // off `id` (the host's user id).
   const { events: hostedEvents } = useHostedEvents(id);
   const { ratings: reviews } = useRatings(id);
+  // Interests come from `user_interests` (publicly readable), not the
+  // profiles row — so they resolve even for a private account, which we
+  // surface to non-friends (interests only; everything else stays hidden).
+  const { interests: userInterests } = useUserInterests(id);
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
@@ -119,9 +124,9 @@ export default function OtherProfileScreen() {
     return <Unavailable />;
   }
 
-  // Private + not a friend (and not you) → request card ONLY. This is the
-  // privacy guarantee: no interests, bio, ratings, or hosted events leak
-  // to a non-friend, whether or not the row was actually readable.
+  // Private + not a friend (and not you): show ONLY their interests plus a
+  // request card. Bio, ratings, hosted events, and message/safety actions
+  // stay hidden until they accept.
   if (privateLocked) {
     return (
       <Screen>
@@ -135,6 +140,19 @@ export default function OtherProfileScreen() {
             </SCText>
           )}
         </View>
+
+        {/* Interests are public even on a private account. */}
+        {userInterests.length > 0 && (
+          <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+            <SCText variant="labelCap" style={{ marginBottom: 8 }}>Interests</SCText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {userInterests.map(tag => (
+                <SCTag key={tag} tag={tag} size="sm" tone="soft" onPress={() => router.push(`/interests/${tag}` as never)} />
+              ))}
+            </View>
+          </View>
+        )}
+
         <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
           <SCCard style={{ padding: 16, alignItems: 'center', gap: 8 }}>
             <View style={{
@@ -145,8 +163,8 @@ export default function OtherProfileScreen() {
             </View>
             <SCText size={15} weight="600">This account is private</SCText>
             <SCText size={13} color={t.ink3} style={{ textAlign: 'center', lineHeight: 18 }}>
-              Send a friend request to connect. You&apos;ll see {subject.name.split(' ')[0]}&apos;s
-              profile once they accept.
+              You can see {subject.name.split(' ')[0]}&apos;s interests. Send a friend request to
+              see the rest of their profile once they accept.
             </SCText>
           </SCCard>
         </View>
@@ -309,11 +327,11 @@ export default function OtherProfileScreen() {
       </View>
 
       {/* Interests */}
-      {!!person.interests?.length && (
+      {userInterests.length > 0 && (
         <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
           <SCText variant="labelCap" style={{ marginBottom: 8 }}>Interests</SCText>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {person.interests.map(tag => (
+            {userInterests.map(tag => (
               <SCTag key={tag} tag={tag} size="sm" tone="soft" onPress={() => router.push(`/interests/${tag}` as never)} />
             ))}
           </View>

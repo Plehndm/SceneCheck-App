@@ -595,6 +595,24 @@ export const api = {
     return { subscribed: true as const };
   },
 
+  // A given user's interest tag names. `user_interests` is publicly
+  // readable (RLS `USING (true)`), so this works for ANY account —
+  // including private ones, whose interests we intentionally expose even
+  // when the rest of their profile is hidden.
+  async getInterestsForUser(userId: string): Promise<string[]> {
+    if (isMock()) return SC_ACCOUNT_BY_ID[userId]?.interests ?? [];
+    const sb = requireClient();
+    const { data, error } = await sb
+      .from('user_interests')
+      .select('interests(name)')
+      .eq('user_id', toUUID(userId))
+      .overrideTypes<{ interests: { name: string } | null }[], { merge: false }>();
+    if (error) throw error;
+    return (data ?? [])
+      .map(r => r.interests?.name)
+      .filter((n): n is string => Boolean(n));
+  },
+
   // ── Chat ──
   async getChats(): Promise<Chat[]> {
     if (isMock()) return SC_CHATS;

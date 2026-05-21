@@ -65,6 +65,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Map pin colors now match the legend by event type.** `pinColor` mis-coloured a **friend-hosted** event as "Other" (`mapPinMute`, grey) whenever it shared no interest tag with you — it was gated on `isRec`. Pins now map 1:1 to the legend by relationship: `yours → primary` ("Your events"), `friend → accentFriend` ("Friends", always), `recommended` or interest-match `→ accentBlue` ("Recommended"), else `→ mapPinMute` ("Other", e.g. an org event you have no interest connection to). No new test count (re-pointed the friend case + added an "Other" case); 359/359. See §26. |
 | 2026-05-21 | **Friend-request flow, map key persistence, location search + branch message cleanup.** **(1)** The `Co-Authored-By` trailer was stripped from all branch commit messages (`git filter-branch --msg-filter`) per request; new commits omit it too. **(2)** Selecting an event on the Map now keeps the colour **Key** visible — the focused-event card renders *above* the legend instead of replacing it. **(3)** Sending a friend request showed BOTH "request sent" and "send failed": `api.sendFriendRequest` invoked an Edge Function that wasn't reliably deployed. It now does a direct, idempotent `friendships` insert (the INSERT RLS already allows requesting anyone), and `profile/[id]` awaits it to show exactly one toast. **(4)** Added a real place to manage requests: the requests screen lists **Requests for you** (accept/decline) *and* **Sent by you** (Cancel), backed by a new `useOutgoingRequests` hook + `cancelOutgoingRequest` store action, and it's reachable from a new **Friend requests** row on the Profile tab (was only linked from Settings for private accounts). **(5)** The location picker gained **search by name/address** (geocoded via OpenStreetMap Nominatim, recentering the map) alongside drag-to-pin. +1 test (360/360). See §27. |
 | 2026-05-21 | **Private-profile privacy gate + location search autocomplete.** **(1)** A private account leaked its interests (and bio / hosted events / message + safety actions) to non-friends: the request-only card only triggered when `useProfile` returned null, but in mock mode (no RLS) — and live mode as a friend — the full profile rendered. `profile/[id]` now computes `privateLocked = isPrivate && !isFriend && !isSelf` and shows the minimal request card whenever it's set, in **every** mode, so a private account exposes only name/avatar + Send-request to non-friends (the live RLS still backstops the server). **(2)** The location picker's search is now a live **autocomplete dropdown** — typing (≥3 chars, 350 ms debounce) lists up to 5 OpenStreetMap Nominatim matches; tapping one recenters the map, so users don't need the exact place name. +1 test (361/361). See §28. |
+| 2026-05-21 | **Refine §28: private accounts show interests (only); search biased to the user.** Per follow-up: a private account should expose its **interests** to non-friends — just not bio/events/etc. New `api.getInterestsForUser` (reads the publicly-readable `user_interests`, so it works for any account) + `useUserInterests` hook; the private request card now renders an Interests section, and the full profile uses the hook too (which also fixes interests never loading in live mode, since `getProfile` doesn't return them). The location-search dropdown is now **biased to the user's location** — Nominatim `viewbox` + `bounded=1` centred on `coords` (default region when no permission) — so suggestions are nearby/accurate instead of global. 361/361. See §29. |
 
 ### Current layout
 
@@ -1994,7 +1995,52 @@ See `docs/TEST_PLAN.md` §2.23 for the per-file test additions.
 
 ---
 
-## 29. How to re-snapshot this file
+## 29. Refine §28: private interests visible + location-biased search
+
+_Last updated: 2026-05-21_
+
+Two adjustments to §28 after a follow-up.
+
+### 29.1 Private accounts show their interests (and only their interests)
+
+§28 hid everything from a non-friend. The intent is narrower: a private
+account's **interests** are public; only bio / hosted events / ratings /
+message + safety stay hidden until you're friends.
+
+- New `api.getInterestsForUser(userId)` reads `user_interests` (RLS
+  `USING (true)`, so readable for any account, private included) joined to
+  `interests(name)`. New `hooks/useUserInterests(id)` wraps it
+  (mock: `SC_ACCOUNT_BY_ID[id].interests`).
+- `app/profile/[id].tsx` calls the hook and renders an **Interests**
+  section in the private request card. The full profile now uses the same
+  hook for its interests block too — which incidentally fixes interests
+  never appearing in **live** mode (`getProfile` selects only the
+  `profiles` row, so `person.interests` was always undefined there).
+
+### 29.2 Location search is biased to the user
+
+The Nominatim autocomplete previously searched globally, so matches were
+"not accurate." It now sends a `viewbox` centred on the user's `coords`
+(half-size `BIAS_BOX_DEG = 0.6°`, ~65 km) with `bounded=1`, so results are
+restricted to the user's region. `coords` comes from `useLocation`, which
+falls back to the default region (UCI) when no permission is granted — so
+suggestions centre on the user, or the default when none.
+
+### 29.3 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 361 / 361, 51 suites |
+| Private non-friend sees interests, not bio/message | ✅ `tests/screens/other-profile.test.tsx` |
+| Private friend still sees the full profile | ✅ same file |
+| Search biased to the user / default | ✅ wired (Nominatim is a network call — exercised on device, not under Jest) |
+
+See `docs/TEST_PLAN.md` §2.24.
+
+---
+
+## 30. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

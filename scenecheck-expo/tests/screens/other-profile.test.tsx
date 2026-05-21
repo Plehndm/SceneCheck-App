@@ -49,14 +49,16 @@ describe('OtherProfileScreen — person', () => {
     expect(getByText('Profile unavailable')).toBeTruthy();
   });
 
-  test('a private non-friend sees only a request card — no interests leak', () => {
-    // p4 (Theo) is private and not a friend → request card only. Interests,
-    // bio, and the message/safety actions must NOT render (the privacy fix).
+  test('a private non-friend sees interests ONLY — no bio / message / safety', () => {
+    // p4 (Theo) is private and not a friend → request card. Interests are
+    // shown (public even on private accounts); bio + message/safety are not.
     setRouteParams({ id: 'p4' });
     useStore.setState({ friends: new Set(['p1', 'p3', 'p5']), outgoingRequests: new Set() });
     const { getByText, queryByText } = renderScreen(<OtherProfileScreen />);
     expect(getByText('This account is private')).toBeTruthy();
-    expect(queryByText('Interests')).toBeNull();
+    expect(getByText('Interests')).toBeTruthy();
+    const p = SC_ACCOUNT_BY_ID.p4;
+    if (p.bio) expect(queryByText(p.bio)).toBeNull();
     expect(queryByText('MESSAGE')).toBeNull();
     fireEvent.press(getByText('SEND FRIEND REQUEST'));
     expect(useStore.getState().outgoingRequests.has('p4')).toBe(true);

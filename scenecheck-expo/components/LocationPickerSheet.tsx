@@ -29,11 +29,20 @@ interface Props {
 
 interface Suggestion { label: string; lat: number; lng: number }
 
+// Half-size (degrees) of the search box centred on the user — ~65 km, so
+// suggestions stay in the user's region instead of matching globally.
+const BIAS_BOX_DEG = 0.6;
+
 // Free-form place/address → up to 5 candidates, via OpenStreetMap
-// Nominatim (no API key, CORS-enabled, works on web + native). Returns []
-// on no match / network failure.
-async function suggestPlaces(q: string): Promise<Suggestion[]> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
+// Nominatim (no API key, CORS-enabled, works on web + native). Results are
+// biased to a viewbox centred on `near` (the user's location, or the
+// default region when none) and bounded to it, so the dropdown surfaces
+// nearby matches rather than far-flung ones. Returns [] on no match.
+async function suggestPlaces(q: string, near: LatLng): Promise<Suggestion[]> {
+  const { latitude: lat, longitude: lng } = near;
+  const viewbox = `${lng - BIAS_BOX_DEG},${lat - BIAS_BOX_DEG},${lng + BIAS_BOX_DEG},${lat + BIAS_BOX_DEG}`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5`
+    + `&viewbox=${encodeURIComponent(viewbox)}&bounded=1&q=${encodeURIComponent(q)}`;
   try {
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await res.json();
@@ -90,10 +99,13 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
     if (q.length < 3) { setSuggestions([]); return; }
     let cancelled = false;
     const handle = setTimeout(async () => {
-      const results = await suggestPlaces(q);
+      // Bias to the user's location (coords falls back to the default
+      // region when permission isn't granted).
+      const results = await suggestPlaces(q, coords);
       if (!cancelled) setSuggestions(results);
     }, 350);
     return () => { cancelled = true; clearTimeout(handle); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   const selectSuggestion = (s: Suggestion) => {
@@ -112,7 +124,7 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
     if (suggestions.length > 0) { selectSuggestion(suggestions[0]); return; }
     setSearching(true);
     setNoMatch(false);
-    const results = await suggestPlaces(q);
+    const results = await suggestPlaces(q, coords);
     setSearching(false);
     if (results.length > 0) selectSuggestion(results[0]);
     else setNoMatch(true);

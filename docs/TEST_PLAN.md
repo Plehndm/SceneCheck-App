@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.23 — private-profile privacy gate + location search autocomplete)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.24 — private interests visible + location-biased search)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -846,7 +846,7 @@ profile-screen gate; the search is a network surface verified on device.
 
 | File changed | Tests | What they assert |
 |---|---|---|
-| `tests/screens/other-profile.test.tsx` (updated, +1 net) | privacy gate | Full-profile tests use a public fixture (p1); a private non-friend (p4) sees "This account is private" with **no** "Interests"/MESSAGE and can still send a request; a private *friend* (p4 in `friends`) sees the full profile ("Interests" present). |
+| `tests/screens/other-profile.test.tsx` (updated, +1 net) | privacy gate | Full-profile tests use a public fixture (p1); a private non-friend (p4) sees "This account is private" + their **Interests** but NOT bio/MESSAGE, and can still send a request (see §2.24 for the interests-shown refinement); a private *friend* sees the full profile. |
 
 **Delivered count**: 361 / 361 (up from 360). 51 suites.
 
@@ -858,6 +858,32 @@ profile-screen gate; the search is a network surface verified on device.
 - Test the Nominatim autocomplete dropdown. It's a debounced network call
   (no key); exercised on device. The skip-guard/remount are render
   concerns.
+
+---
+
+### 2.24 Private interests visible + location-biased search (post-§2.23 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §29._
+
+Refines §2.23: a private account now shows its **interests** to
+non-friends (only interests; bio/events/etc. stay hidden), and the
+location-picker search biases suggestions to the user's region. The
+profile-screen test was re-pointed to assert interests are present on a
+private non-friend's card; the search bias is a network/param change
+verified on device.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/other-profile.test.tsx` | private interests | A private non-friend's card now renders "Interests" (public) but still hides bio + MESSAGE, and the request still sends. (Mock resolves interests from `SC_ACCOUNT_BY_ID`; live uses `api.getInterestsForUser` over the publicly-readable `user_interests`.) |
+
+**Delivered count**: 361 / 361. 51 suites.
+
+**What this section deliberately does NOT do:**
+
+- Test `api.getInterestsForUser` / `useUserInterests` in live mode (needs
+  Supabase; the mock path is exercised via the profile-screen test).
+- Test the Nominatim `viewbox` bias. It's a network call with no key;
+  the param construction is verified by inspection and on device.
 
 ---
 
