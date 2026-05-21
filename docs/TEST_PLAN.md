@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-19 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count rose to **326/326** after the auth UX expansion (forgot-password + reset-password + resend-confirmation + change-email + change-password). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked as chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **346/346** across 49 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.17 — Map discovery-range persistence)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -644,6 +644,39 @@ hook that hits Supabase in live mode.
 - Test the composite key + locale-date `when` transform in
   `api.fetchRatings`. Same reason — exercised only against a real
   DB row.
+
+---
+
+### 2.17 Map discovery-range persistence (post-§2.16 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §22._
+
+The Map tab's radius chips now drive the persisted `store.radius`
+(miles) instead of throwaway local state, and an off-preset range
+surfaces a Custom button that deep-links to Settings. The map-tab suite
+was reworked to cover the new behavior. The same pass cleared the 5
+PostgREST `tsc` errors earlier sections carried as "pre-existing" (now
+`tsc --noEmit` is clean) and hardened `supabase/seed-hosted-social.sql`
+(neither needed new tests — the type fix is compile-time, the seed is
+DB-only).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/map-tab.test.tsx` (5 → 8 cases, +3 net) | preset render + chip→store write + custom button | Preset chips render for 1/3/5/10/25/50 mi; tapping `10 MI` writes `store.radius = 10` (the persisted, Settings-shared value); a non-preset radius (7.5) renders `CUSTOM · 7.5 MI`; pressing it routes to `/settings`; no Custom button appears when the radius matches a preset. |
+
+**Delivered count**: 346 / 346 (up from 343). 49 suites.
+
+**What this section deliberately does NOT do:**
+
+- Add a store unit test for `setRadius` — it already exists
+  (`tests/unit/store.test.ts` → "setRadius updates radius"); the map-tab
+  test now covers the screen→store write path end-to-end.
+- Re-test the Settings slider. It already wrote `store.radius`; this
+  change only adds a second writer (the map chips) and a reader (the
+  Custom button) of the same value.
+- Assert the miles→meters conversion handed to `<Map>` / `useEvents`.
+  The Map component is mocked under Jest (see Reflection Q2); the
+  conversion is a pure arithmetic boundary verified by inspection.
 
 ---
 

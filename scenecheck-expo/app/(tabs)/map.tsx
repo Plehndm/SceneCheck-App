@@ -7,7 +7,7 @@
 // FR1.5 location permission: requested by useLocation().
 
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
@@ -25,22 +25,36 @@ import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
-const RADIUS_OPTIONS_M = [1600, 4828, 8047, 16093]; // 1, 3, 5, 10 miles
+// Discovery-range presets, in miles. Anything off this list (e.g. 7.5,
+// set via the Settings slider's 0.5-mi steps) is treated as "custom" and
+// surfaces the Custom button instead of highlighting a chip. Top preset
+// matches the Settings slider's 50-mi ceiling.
+const RADIUS_PRESETS_MI = [1, 3, 5, 10, 25, 50];
+const MILES_TO_METERS = 1609.34;
+// Whole miles render bare ("5"); fractional customs keep one decimal.
+const fmtMi = (mi: number) => (Number.isInteger(mi) ? String(mi) : mi.toFixed(1));
 
 export default function MapTab() {
   const t = useTokens();
   const { coords, status, isFallback, request } = useLocation();
   const meInterests = useStore(s => s.me.interests ?? []);
+  // Discovery range lives in the store (miles) so it persists across
+  // sessions and stays in sync with the Settings slider — tapping a chip
+  // here writes the same preference Settings reads. The Map/query want
+  // meters, so convert at the boundary.
+  const radius = useStore(s => s.radius);
+  const setRadius = useStore(s => s.setRadius);
+  const isCustomRadius = !RADIUS_PRESETS_MI.includes(radius);
+  const radiusM = radius * MILES_TO_METERS;
   // Same live date + city label the Home header uses.
   const dateCityLabel = useDateCityLabel();
-  const [radius, setRadius] = useState<number>(RADIUS_OPTIONS_M[2]);
   const [focused, setFocused] = useState<SCEvent | null>(null);
   // Pull pins from the API. In live mode this hits the rank_events_query
   // RPC against PostGIS; in mock mode it returns SC_EVENTS synchronously.
   const { events } = useEvents({
     lat: coords?.latitude,
     lng: coords?.longitude,
-    radiusM: radius,
+    radiusM,
   });
 
   return (
@@ -92,7 +106,7 @@ export default function MapTab() {
           <Map
             events={events}
             user={coords}
-            radiusM={radius}
+            radiusM={radiusM}
             meInterests={meInterests}
             onPinPress={(e) => setFocused(e)}
             style={{ width: '100%', height: '100%' }}
@@ -100,24 +114,57 @@ export default function MapTab() {
         </View>
       </View>
 
-      {/* Radius chips */}
-      <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 18, paddingVertical: 10 }}>
-        {RADIUS_OPTIONS_M.map(r => (
+      {/* Discovery-range chips — tapping one writes the persisted store
+          radius (shared with the Settings slider). When the saved range
+          isn't one of the presets, a Custom button appears on the right
+          showing the value and deep-links to Settings for fine control. */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        paddingHorizontal: 18, paddingVertical: 10,
+      }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 6, alignItems: 'center' }}
+          style={{ flexShrink: 1 }}
+        >
+          {RADIUS_PRESETS_MI.map(mi => {
+            const active = radius === mi;
+            return (
+              <Pressable
+                key={mi}
+                onPress={() => setRadius(mi)}
+                accessibilityLabel={`Set discovery range to ${mi} miles`}
+                style={({ pressed }) => [{
+                  paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999,
+                  borderWidth: 1,
+                  backgroundColor: active ? t.ink : t.card,
+                  borderColor: active ? t.ink : t.line,
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCText variant="mono" size={10} weight="600" color={active ? 'white' : t.ink}>
+                  {mi} MI
+                </SCText>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        {isCustomRadius && (
           <Pressable
-            key={r}
-            onPress={() => setRadius(r)}
+            onPress={() => router.push('/settings' as never)}
+            accessibilityLabel={`Custom discovery range, ${fmtMi(radius)} miles. Opens settings to adjust.`}
             style={({ pressed }) => [{
+              flexDirection: 'row', alignItems: 'center', gap: 5,
               paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999,
-              borderWidth: 1,
-              backgroundColor: radius === r ? t.ink : t.card,
-              borderColor: radius === r ? t.ink : t.line,
+              borderWidth: 1, backgroundColor: t.primary, borderColor: t.primary,
             }, pressed && { opacity: 0.85 }]}
           >
-            <SCText variant="mono" size={10} weight="600" color={radius === r ? 'white' : t.ink}>
-              {(r / 1609).toFixed(0)} MI
+            <SCIcon name="settings" size={11} color={t.primaryInk} />
+            <SCText variant="mono" size={10} weight="600" color={t.primaryInk}>
+              CUSTOM · {fmtMi(radius)} MI
             </SCText>
           </Pressable>
-        ))}
+        )}
       </View>
 
       {/* Focused event card OR legend */}

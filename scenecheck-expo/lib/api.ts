@@ -471,14 +471,18 @@ export const api = {
       sb.from('friendships')
         .select('to:profiles!friendships_to_id_fkey(*)')
         .eq('from_id', me)
-        .eq('status', 'accepted'),
+        .eq('status', 'accepted')
+        // to-one embed; override the array shape supabase-js infers
+        // without generated DB types.
+        .overrideTypes<{ to: Account | null }[], { merge: false }>(),
       sb.from('friendships')
         .select('from:profiles!friendships_from_id_fkey(*)')
         .eq('to_id', me)
-        .eq('status', 'accepted'),
+        .eq('status', 'accepted')
+        .overrideTypes<{ from: Account | null }[], { merge: false }>(),
     ]);
-    const out = (outRows ?? []).map((r: { to?: Account | null }) => r.to).filter(Boolean) as Account[];
-    const inn = (inRows ?? []).map((r: { from?: Account | null }) => r.from).filter(Boolean) as Account[];
+    const out = (outRows ?? []).map(r => r.to).filter(Boolean) as Account[];
+    const inn = (inRows ?? []).map(r => r.from).filter(Boolean) as Account[];
     return [...out, ...inn];
   },
 
@@ -658,10 +662,13 @@ export const api = {
       .from('event_subscriptions')
       .select('profile:profiles!event_subscriptions_user_id_fkey(*)')
       .eq('event_id', toUUID(eventId))
-      .eq('status', 'confirmed');
+      .eq('status', 'confirmed')
+      // to-one embed; override the array shape supabase-js infers
+      // without generated DB types.
+      .overrideTypes<{ profile: Account | null }[], { merge: false }>();
     if (error) throw error;
     return (data ?? [])
-      .map((r: { profile?: Account | null }) => r.profile)
+      .map(r => r.profile)
       .filter(Boolean) as Account[];
   },
 

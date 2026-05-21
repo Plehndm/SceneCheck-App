@@ -186,6 +186,18 @@ on conflict (id) do nothing;
 -- them from the account YOU signed up with, replace YOUR_EMAIL below and run
 -- just this block. It befriends Maya + adds you to the Morning Ride crew chat.
 --
+-- friendships.from_id and chat_members.user_id are FKs to profiles(user_id),
+-- so your account needs a profiles row FIRST. The handle_new_user trigger
+-- (migration 00002) creates it at sign-up, but accounts made before that
+-- migration — or added straight from the dashboard's "Add user" — can be
+-- missing it. That gap is exactly the
+--   "friendships_from_id_fkey ... is not present in table profiles"
+-- error. The first statement below makes this block self-sufficient by
+-- ensuring the profiles row exists before the friendship/chat inserts.
+--
+-- with me as (select id from auth.users where email = 'YOUR_EMAIL')
+-- insert into public.profiles (user_id, account_type)
+--   select id, 'person' from me on conflict (user_id) do nothing;
 -- with me as (select id from auth.users where email = 'YOUR_EMAIL')
 -- insert into public.friendships (from_id, to_id, status)
 --   select id, '00000000-0000-0000-0000-000000000002', 'accepted' from me

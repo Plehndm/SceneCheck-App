@@ -57,6 +57,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-20 | **Fixed display name showing as email after sign-up.** Root cause was a race: `AuthBootstrap` re-hydrates `me` from `profiles` on the `SIGNED_IN` event, and its (slow, 4-query) read of the just-created skeleton row often resolved BEFORE `api.signUp`'s separate `profiles.name` write landed — so it read `name=''` and fell back to the email, and that `setMe` ran *last*, clobbering the screen's correct `setMe({ name })`. Fix: `api.signUp` now also stamps the name into `auth.users` metadata via `options.data.display_name`, which rides on the same row the session carries; `AuthBootstrap.hydrate` reads it race-free as `session.user.user_metadata.display_name`. Name resolution is now `profiles.name → metadata display_name → email *prefix* → 'You'` (the full-email fallback is gone). The `profiles.name` write stays so other users / the ratings join see the name too. Existing accounts created before this fix show the email prefix until the name is set once via the profile-tab editor. |
 | 2026-05-20 | **Home map preview is now a real device-map snapshot.** The Home card was a hand-drawn faux map (colored blobs for park/water + one fake pin). Replaced it with the actual platform map (`Map` component → Apple Maps on iOS, Google Maps on Android, OSM/leaflet on web) centered on the user's location with the live event pins, rendered non-interactive so it reads as a tappable snapshot of "what's near me." Added an `interactive?: boolean` prop to `MapProps` (default true); when false the native map disables scroll/zoom/rotate/pitch/toolbar + sets `pointerEvents="none"`, and the web map disables dragging/scrollWheelZoom/doubleClickZoom/touchZoom/boxZoom/keyboard/zoomControl + `pointerEvents="none"` — so taps fall through to the card's Pressable which opens the Map tab. `MapPreview` pulls the user coords via `useLocation` (falls back to the UCI default region when permission isn't granted) and `me.interests` for pin coloring. 331/331 tests still green. Note: `npx tsc --noEmit` surfaced 5 *pre-existing* type errors (PostgREST nested-relation typing in `AuthBootstrap`/`api.ts`/a create-event test) unrelated to this change — flagged for a separate cleanup. |
 | 2026-05-21 | **Dynamic ratings + hosted-events on profiles + social seed data.** Profiles now compute ratings live instead of reading a static field: new `lib/ratings.ts` helpers (`summarizeRatings`, `ratingForEvent`, `formatRatingSummary`); new `api.fetchEventsByHost(hostId)` (all-statuses events by `creator_id`) + `hooks/useHostedEvents`. `app/profile/[id].tsx` now uses `useHostedEvents` + `useRatings` (was filtering `SC_EVENTS`/`SC_REVIEWS` mocks) — shows a Ratings summary card with the dynamic average or an explicit "No ratings yet", a hosted-events list with a per-event rating badge (or "No ratings yet" per event), and an empty state when a host has no events; rating display now shows for **people too**, not just orgs. `app/(tabs)/profile.tsx` HOSTED + RATING + "My ratings" stats are computed from the same hooks (was static `me.rating` / `SC_EVENTS` count). Added `supabase/seed-hosted-social.sql` — 6 mock auth.users (4 people + 2 orgs, password `scenecheck123`) + profiles + interests + event-host reassignment + ratings + friendships + a DM/group chat, so live mode has other users to verify against (RLS means chats/friends are visible by signing in *as* a mock user, or via the OPTIONAL "wire to your own account" block). +12 tests (ratings helpers, useHostedEvents, other-profile ratings/empty-state). 343/343. The 5 pre-existing PostgREST type errors are unchanged (no new ones). |
+| 2026-05-21 | **Map discovery range is now a persisted preference (+ type/seed cleanup).** The Map tab's radius chips were local `useState` in *meters*, disconnected from `store.radius` (the *miles* value the Settings slider owns) and reset to 5 mi on every mount — the choice never survived a reload. They now read/write the persisted `store.radius`, so a chip tap is the same write the slider makes and the two screens stay in sync. Presets widened to 1/3/5/10/25/50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling), and `radiusM = radius * MILES_TO_METERS` converts only at the `useEvents`/`<Map>` boundary. When the saved range is off-preset (e.g. 7.5 mi from the slider's 0.5-mi step) a **Custom · N mi** button appears to the right and deep-links to `/settings` for finer control. Folded in two previously-unrecorded fixes: the **5 PostgREST nested-relation `tsc` errors** flagged "pre-existing" in §58–§59 are resolved (`.overrideTypes<…, { merge:false }>()` declares the to-one embed shape supabase-js widens to an array without generated DB types — `AuthBootstrap` + `api.fetchFriends`/`fetchAttendees`; plus a `me.interests ?? []` guard in a create-event test) so `tsc --noEmit` is clean again; and `seed-hosted-social.sql`'s OPTIONAL "wire to your own account" block now upserts a `profiles` row before the friendship/chat inserts, fixing the `friendships_from_id_fkey … is not present in table profiles` error for accounts created before the `handle_new_user` trigger. +3 tests (346/346). See §22. |
 
 ### Current layout
 
@@ -1431,7 +1432,85 @@ them would be a regression the moment confirmation matters again.
 
 ---
 
-## 22. How to re-snapshot this file
+## 22. Map discovery range as a persisted preference (+ type/seed cleanup)
+
+_Last updated: 2026-05-21_
+
+Three pieces in one pass: the Map tab's discovery-range control became a
+real persisted preference, the long-standing PostgREST `tsc` errors were
+cleared, and the social seed's "wire to your own account" block was
+hardened against a foreign-key failure.
+
+### 22.1 Discovery range now persists + syncs with Settings
+
+`app/(tabs)/map.tsx` held its radius in local `useState` initialized to
+a meters constant (`RADIUS_OPTIONS_M = [1600, 4828, 8047, 16093]`),
+disconnected from `store.radius` (the miles value the Settings slider
+reads/writes). The chips moved the visible circle but the value reset to
+5 mi on every mount and nothing crossed a session boundary.
+
+| Aspect | Before | After |
+|---|---|---|
+| Source of truth | local `useState` (meters) | `store.radius` (miles), persisted via the existing `partialize` allowlist |
+| Sync with Settings | none — two independent values | one value; a chip tap is the same write the Settings slider makes |
+| Presets | 1 / 3 / 5 / 10 mi (4, fixed row) | 1 / 3 / 5 / 10 / 25 / 50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling) |
+| Off-preset values | not representable | **Custom · N mi** button on the right that deep-links to Settings |
+| Units | radius *was* meters everywhere | `radiusM = radius * MILES_TO_METERS` converts only where `useEvents` / `<Map>` need meters |
+
+The **Custom button** renders only when `radius` isn't one of the
+presets — e.g. 7.5 mi, which the Settings slider can produce on its
+0.5-mi step. It shows the live value (`CUSTOM · 7.5 MI`) with a gear
+icon and routes to `/settings`, where the continuous slider gives finer
+control than discrete chips can. Whole-mile values render bare;
+fractional customs keep one decimal (`fmtMi`).
+
+### 22.2 PostgREST nested-relation type errors resolved
+
+§58 and §59 recorded 5 `tsc` errors as "pre-existing … flagged for a
+separate cleanup." They came from supabase-js: with no generated
+`Database` type it widens every embedded relation to an array, while
+PostgREST returns a single object for a to-one embed. The inline
+`.map((r: { … }) => …)` annotations described the runtime object and so
+collided with the inferred array type.
+
+Fix: declare the real shape at the query with the (non-deprecated)
+`.overrideTypes<{ … }[], { merge: false }>()` and drop the now-redundant
+`.map` annotations — in `components/AuthBootstrap.tsx` (the
+`user_interests → interests(name)` embed) and `lib/api.ts`
+(`fetchFriends` both directions, `fetchAttendees`). The 5th error was
+`me.interests` (optional on `Account`) in
+`tests/screens/create-event.test.tsx`, guarded with `?? []`.
+`npx tsc --noEmit` is clean again.
+
+### 22.3 Social seed FK hardening
+
+`supabase/seed-hosted-social.sql`'s OPTIONAL "wire this graph to YOUR
+own account" block inserted into `friendships` / `chat_members` keyed on
+`auth.users.id`. Both columns are FKs to `profiles(user_id)`, so an
+account with no `profiles` row (created before the `handle_new_user`
+trigger, or via the dashboard's "Add user") failed with
+`friendships_from_id_fkey … is not present in table profiles` — which
+rolls back the whole script in the SQL Editor. The block now upserts the
+`profiles` row first (`insert … select id, 'person' … on conflict do
+nothing`) so it's self-sufficient. The seeded mock graph (all
+`00000000-…` UUIDs) was never the cause — those profiles come from the
+trigger firing on the seed's own `auth.users` inserts.
+
+### 22.4 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean (the 5 errors from §58–§59 resolved) |
+| `npm test` | ✅ 346 / 346, 49 suites, ~8.7s (+3 over §59's 343) |
+| Map chips write `store.radius` + persist | ✅ `tests/screens/map-tab.test.tsx` asserts the store value updates on tap |
+| Custom button shows the off-preset value + routes to `/settings` | ✅ same file |
+| Radius survives reload | ✅ `radius` is already in the store's `partialize` allowlist (unchanged) |
+
+See `docs/TEST_PLAN.md` §2.17 for the per-file test additions.
+
+---
+
+## 23. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

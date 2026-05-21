@@ -67,7 +67,11 @@ export function AuthBootstrap() {
           .maybeSingle(),
         supabase!.from('user_interests')
           .select('interests(name)')
-          .eq('user_id', userId),
+          .eq('user_id', userId)
+          // `interests` is a to-one embed (one interest per row), but
+          // without generated DB types supabase-js widens every embed to
+          // an array. Declare the real object shape.
+          .overrideTypes<{ interests: { name: string } | null }[], { merge: false }>(),
         // Confirmed subscriptions = events the user has joined.
         // (Waitlisted/removed/cancelled are kept out of `joined`.)
         supabase!.from('event_subscriptions')
@@ -85,8 +89,8 @@ export function AuthBootstrap() {
 
       // Profile + interests.
       const interests = (tagRows ?? [])
-        .map((r: { interests?: { name?: string } | null }) => r.interests?.name)
-        .filter((n: string | undefined): n is string => Boolean(n));
+        .map(r => r.interests?.name)
+        .filter((n): n is string => Boolean(n));
 
       const dbName = (profile?.name as string | undefined)?.trim();
       const profilePatch: Partial<Account> = {

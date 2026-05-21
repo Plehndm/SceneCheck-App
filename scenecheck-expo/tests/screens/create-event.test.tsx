@@ -65,7 +65,7 @@ describe('CreateEventScreen', () => {
     const me = useStore.getState().me;
     const { getByText } = renderScreen(<CreateEventScreen />);
     // Header reflects the count of pre-selected tags.
-    expect(getByText(`Tags · ${me.interests.length}`)).toBeTruthy();
+    expect(getByText(`Tags · ${(me.interests ?? []).length}`)).toBeTruthy();
     // The selected-tag chip renders with a '#' prefix.
     expect(getByText('#biking')).toBeTruthy();
     expect(getByText('#climbing')).toBeTruthy();
