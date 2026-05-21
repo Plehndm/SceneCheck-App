@@ -1,14 +1,15 @@
 // Bottom-sheet map picker for an event's location. Two ways to set the
-// point: (1) search a place/address by name, or (2) drag the map so the
-// fixed center pin marks the spot. Either way the map's center (reported
-// via `onRegionChange`) is returned as { lat, lng } on confirm.
+// point: (1) type a place/address and pick from a live suggestions
+// dropdown, or (2) drag the map so the fixed center pin marks the spot.
+// Either way the map's center (reported via `onRegionChange`) is returned
+// as { lat, lng } on confirm.
 //
 // We pass `initialCenter` (not `user`) to <Map>: the `user` prop drives a
 // recenter effect on web that would fight every pan and loop. To jump the
-// map after a search we instead remount it via a changing `key`, while the
-// center-pin overlay marks the chosen point.
+// map (after picking a suggestion) we remount it via a changing `key`,
+// while the center-pin overlay marks the chosen point.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, TextInput, View } from 'react-native';
 import { SCText } from './SCText';
 import { SCIcon } from './SCIcon';
@@ -26,22 +27,29 @@ interface Props {
   onConfirm: (coords: { lat: number; lng: number }) => void;
 }
 
-// Free-form place/address → coordinates, via OpenStreetMap Nominatim (no
-// API key, CORS-enabled, works on web + native). Returns null on no match.
-async function geocodeName(q: string): Promise<LatLng | null> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+interface Suggestion { label: string; lat: number; lng: number }
+
+// Free-form place/address → up to 5 candidates, via OpenStreetMap
+// Nominatim (no API key, CORS-enabled, works on web + native). Returns []
+// on no match / network failure.
+async function suggestPlaces(q: string): Promise<Suggestion[]> {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
   try {
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      const latitude = parseFloat(data[0].lat);
-      const longitude = parseFloat(data[0].lon);
-      if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+    if (Array.isArray(data)) {
+      return data
+        .map((d: { display_name?: string; lat?: string; lon?: string }) => ({
+          label: String(d.display_name ?? ''),
+          lat: parseFloat(String(d.lat)),
+          lng: parseFloat(String(d.lon)),
+        }))
+        .filter(s => s.label && Number.isFinite(s.lat) && Number.isFinite(s.lng));
     }
   } catch {
-    /* network/parse failure → treated as "no match" below */
+    /* network/parse failure → no suggestions */
   }
-  return null;
+  return [];
 }
 
 export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Props) {
@@ -53,11 +61,15 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
     : coords ?? DEFAULT_REGION;
   const [center, setCenter] = useState<LatLng>(start);
   // Bumping this remounts <Map> so a new `initialCenter` takes effect —
-  // how we jump the map to a search result without the recenter loop.
+  // how we jump the map to a chosen suggestion without the recenter loop.
   const [mapKey, setMapKey] = useState(0);
   const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [noMatch, setNoMatch] = useState(false);
+  // Skip the next debounced fetch — set when WE change the query text
+  // (selecting a suggestion) so the dropdown doesn't immediately reopen.
+  const skipNext = useRef(false);
 
   // Re-seed each time the sheet opens (the Map remounts on `visible`/key).
   useEffect(() => {
@@ -65,24 +77,45 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
       setCenter(start);
       setMapKey(k => k + 1);
       setQuery('');
+      setSuggestions([]);
       setNoMatch(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  // Debounced autocomplete — fetch as the user types (≥3 chars).
+  useEffect(() => {
+    if (skipNext.current) { skipNext.current = false; return; }
+    const q = query.trim();
+    if (q.length < 3) { setSuggestions([]); return; }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      const results = await suggestPlaces(q);
+      if (!cancelled) setSuggestions(results);
+    }, 350);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [query]);
+
+  const selectSuggestion = (s: Suggestion) => {
+    skipNext.current = true;
+    setQuery(s.label.split(',')[0]); // short label in the box
+    setSuggestions([]);
+    setNoMatch(false);
+    setCenter({ latitude: s.lat, longitude: s.lng });
+    setMapKey(k => k + 1); // remount → map jumps to the result
+  };
+
+  // GO / submit: jump to the current top suggestion, else fetch one.
   const runSearch = async () => {
     const q = query.trim();
     if (!q || searching) return;
+    if (suggestions.length > 0) { selectSuggestion(suggestions[0]); return; }
     setSearching(true);
     setNoMatch(false);
-    const found = await geocodeName(q);
+    const results = await suggestPlaces(q);
     setSearching(false);
-    if (found) {
-      setCenter(found);
-      setMapKey(k => k + 1); // remount → map jumps to the result
-    } else {
-      setNoMatch(true);
-    }
+    if (results.length > 0) selectSuggestion(results[0]);
+    else setNoMatch(true);
   };
 
   return (
@@ -110,28 +143,55 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
             </Pressable>
           </View>
 
-          {/* Search by name/address */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 8,
-            backgroundColor: t.subtle, borderRadius: RADIUS.md, paddingHorizontal: 12, height: 44,
-          }}>
-            <SCIcon name="search" size={16} color={t.ink3} />
-            <TextInput
-              value={query}
-              onChangeText={(v) => { setQuery(v); setNoMatch(false); }}
-              onSubmitEditing={runSearch}
-              returnKeyType="search"
-              placeholder="Search a place or address…"
-              placeholderTextColor={t.ink3}
-              autoCorrect={false}
-              style={{ flex: 1, color: t.ink, fontSize: 14, height: '100%' }}
-            />
-            <Pressable onPress={runSearch} disabled={searching} accessibilityLabel="Search location">
-              <SCText variant="mono" size={11} weight="700" color={t.primary}>
-                {searching ? '…' : 'GO'}
-              </SCText>
-            </Pressable>
+          {/* Search box + autocomplete dropdown (overlays the map below). */}
+          <View style={{ position: 'relative', zIndex: 10 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: t.subtle, borderRadius: RADIUS.md, paddingHorizontal: 12, height: 44,
+            }}>
+              <SCIcon name="search" size={16} color={t.ink3} />
+              <TextInput
+                value={query}
+                onChangeText={(v) => { setQuery(v); setNoMatch(false); }}
+                onSubmitEditing={runSearch}
+                returnKeyType="search"
+                placeholder="Search a place or address…"
+                placeholderTextColor={t.ink3}
+                autoCorrect={false}
+                style={{ flex: 1, color: t.ink, fontSize: 14, height: '100%' }}
+              />
+              <Pressable onPress={runSearch} disabled={searching} accessibilityLabel="Search location">
+                <SCText variant="mono" size={11} weight="700" color={t.primary}>
+                  {searching ? '…' : 'GO'}
+                </SCText>
+              </Pressable>
+            </View>
+
+            {suggestions.length > 0 && (
+              <View style={{
+                position: 'absolute', top: 48, left: 0, right: 0, zIndex: 20,
+                backgroundColor: t.card, borderColor: t.line, borderWidth: 1,
+                borderRadius: RADIUS.md, overflow: 'hidden',
+                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18,
+                shadowOffset: { width: 0, height: 8 }, elevation: 8,
+              }}>
+                {suggestions.map((s, i) => (
+                  <Pressable
+                    key={`${s.lat},${s.lng},${i}`}
+                    onPress={() => selectSuggestion(s)}
+                    style={({ pressed }) => [{
+                      flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
+                      borderBottomWidth: i < suggestions.length - 1 ? 1 : 0, borderBottomColor: t.line,
+                    }, pressed && { backgroundColor: t.subtle }]}
+                  >
+                    <SCIcon name="pin" size={14} color={t.ink3} />
+                    <SCText size={13} color={t.ink2} numberOfLines={2} style={{ flex: 1 }}>{s.label}</SCText>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
+
           <SCText size={11} color={noMatch ? t.danger : t.ink3}>
             {noMatch ? 'No match — try a more specific name.' : 'Search, or drag the map so the pin marks the spot.'}
           </SCText>

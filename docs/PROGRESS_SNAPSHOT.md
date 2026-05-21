@@ -64,6 +64,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Create-event polish: map location picker, capacity minus, today-default, time-picker loop fix.** **(1)** New `components/LocationPickerSheet.tsx` — a bottom-sheet interactive map with a fixed center pin; the host drags so the pin marks the spot, and the map center (via `onRegionChange`) is stored as `DraftForm.lat/lng` and used for publish + map placement (falls back to the host's location when not set). It passes `initialCenter` (not `user`) to `<Map>` to avoid the web recenter-on-pan loop. **(2)** Capacity decrement now uses a real `minus` icon (new in `SCIcon`) instead of an `x`. **(3)** The new-event default date is the dynamic current date (was a fixed +2d). **(4)** Fixed an infinite AM/PM loop in `SCTimePicker`: the snap `Wheel`'s `handleSettle` issued an *animated* `scrollTo`, whose `onMomentumScrollEnd` re-fired the handler — re-snapping + re-emitting `onChange` forever (repro: nudging 11 AM → 12 PM). Added a `programmatic` ref that skips the self-induced settle, and it only re-snaps when actually off-row. +3 tests (359/359). See §25. |
 | 2026-05-21 | **Map pin colors now match the legend by event type.** `pinColor` mis-coloured a **friend-hosted** event as "Other" (`mapPinMute`, grey) whenever it shared no interest tag with you — it was gated on `isRec`. Pins now map 1:1 to the legend by relationship: `yours → primary` ("Your events"), `friend → accentFriend` ("Friends", always), `recommended` or interest-match `→ accentBlue` ("Recommended"), else `→ mapPinMute` ("Other", e.g. an org event you have no interest connection to). No new test count (re-pointed the friend case + added an "Other" case); 359/359. See §26. |
 | 2026-05-21 | **Friend-request flow, map key persistence, location search + branch message cleanup.** **(1)** The `Co-Authored-By` trailer was stripped from all branch commit messages (`git filter-branch --msg-filter`) per request; new commits omit it too. **(2)** Selecting an event on the Map now keeps the colour **Key** visible — the focused-event card renders *above* the legend instead of replacing it. **(3)** Sending a friend request showed BOTH "request sent" and "send failed": `api.sendFriendRequest` invoked an Edge Function that wasn't reliably deployed. It now does a direct, idempotent `friendships` insert (the INSERT RLS already allows requesting anyone), and `profile/[id]` awaits it to show exactly one toast. **(4)** Added a real place to manage requests: the requests screen lists **Requests for you** (accept/decline) *and* **Sent by you** (Cancel), backed by a new `useOutgoingRequests` hook + `cancelOutgoingRequest` store action, and it's reachable from a new **Friend requests** row on the Profile tab (was only linked from Settings for private accounts). **(5)** The location picker gained **search by name/address** (geocoded via OpenStreetMap Nominatim, recentering the map) alongside drag-to-pin. +1 test (360/360). See §27. |
+| 2026-05-21 | **Private-profile privacy gate + location search autocomplete.** **(1)** A private account leaked its interests (and bio / hosted events / message + safety actions) to non-friends: the request-only card only triggered when `useProfile` returned null, but in mock mode (no RLS) — and live mode as a friend — the full profile rendered. `profile/[id]` now computes `privateLocked = isPrivate && !isFriend && !isSelf` and shows the minimal request card whenever it's set, in **every** mode, so a private account exposes only name/avatar + Send-request to non-friends (the live RLS still backstops the server). **(2)** The location picker's search is now a live **autocomplete dropdown** — typing (≥3 chars, 350 ms debounce) lists up to 5 OpenStreetMap Nominatim matches; tapping one recenters the map, so users don't need the exact place name. +1 test (361/361). See §28. |
 
 ### Current layout
 
@@ -1939,7 +1940,61 @@ See `docs/TEST_PLAN.md` §2.22 for the per-file test additions.
 
 ---
 
-## 28. How to re-snapshot this file
+## 28. Private-profile privacy gate + location search autocomplete
+
+_Last updated: 2026-05-21_
+
+### 28.1 Private accounts no longer leak interests to non-friends
+
+The other-profile screen only rendered the request-only card when
+`useProfile` returned null. But that's a *live-RLS* artifact — in mock
+mode (no RLS) the full profile (interests, bio, hosted events, message +
+safety actions) rendered for everyone, and a private account viewed by a
+non-friend showed all of it.
+
+`app/profile/[id].tsx` now derives:
+
+```ts
+const privateLocked = isPrivate && !isFriend && !isSelf;
+```
+
+and renders the minimal request card whenever `privateLocked` — *before*
+the full-profile branch — regardless of mock/live or whether the row was
+readable. So a private account exposes only name + avatar + Send-request
+to non-friends; the owner and accepted friends still see everything. This
+is a client-side guarantee that backstops the `profiles` SELECT RLS
+(migration 00014) in live mode and is the sole enforcement in mock mode.
+
+`tests/screens/other-profile.test.tsx` updated: the full-profile render
+tests use a public fixture (p1); a new test asserts a private non-friend
+sees the card with **no** "Interests"/MESSAGE and can still send a
+request, and another asserts a private *friend* sees the full profile.
+
+### 28.2 Location picker: search autocomplete
+
+The picker's search ran a single geocode on submit. It's now a live
+**dropdown**: typing (≥3 chars, 350 ms debounce) queries OpenStreetMap
+Nominatim for up to 5 matches and lists them under the search box;
+tapping one recenters the map (remount via `key`) and drops the pin
+there — so users don't have to know the exact place name. GO / submit
+jumps to the top match. Drag-to-pin still works. A `skipNext` ref
+prevents the dropdown reopening when selecting sets the input text.
+
+### 28.3 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 361 / 361, 51 suites (+1: private-gate cases net) |
+| Private non-friend sees no interests | ✅ `tests/screens/other-profile.test.tsx` |
+| Private friend sees full profile | ✅ same file |
+| Search autocomplete | ✅ wired (Nominatim is a network call — exercised on device, not under Jest) |
+
+See `docs/TEST_PLAN.md` §2.23 for the per-file test additions.
+
+---
+
+## 29. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

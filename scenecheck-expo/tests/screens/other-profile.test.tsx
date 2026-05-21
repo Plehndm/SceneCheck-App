@@ -11,16 +11,18 @@ import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
 beforeEach(() => resetStore());
 
 describe('OtherProfileScreen — person', () => {
-  test('renders name, handle, and bio', () => {
-    setRouteParams({ id: 'p2' });
+  test('renders name, handle, and bio (public profile)', () => {
+    // p1 (Maya) is public, so the full profile renders. (p2/p4 are
+    // private — non-friends now get the request card, see below.)
+    setRouteParams({ id: 'p1' });
     const { getByText } = renderScreen(<OtherProfileScreen />);
-    const p = SC_ACCOUNT_BY_ID.p2;
+    const p = SC_ACCOUNT_BY_ID.p1;
     expect(getByText(p.name)).toBeTruthy();
     if (p.bio) expect(getByText(p.bio)).toBeTruthy();
   });
 
   test('shows MESSAGE button and safety actions on people', () => {
-    setRouteParams({ id: 'p2' });
+    setRouteParams({ id: 'p1' });
     const { getByText } = renderScreen(<OtherProfileScreen />);
     expect(getByText('MESSAGE')).toBeTruthy();
     expect(getByText(/Block /)).toBeTruthy();
@@ -47,15 +49,24 @@ describe('OtherProfileScreen — person', () => {
     expect(getByText('Profile unavailable')).toBeTruthy();
   });
 
-  test('tapping REQUEST on a private profile sends a friend request', () => {
-    // p4 (Theo) is private and not a default friend. In mock mode the full
-    // profile shows with a REQUEST button; pressing it records an outgoing
-    // request (in live mode this also persists via api.sendFriendRequest).
+  test('a private non-friend sees only a request card — no interests leak', () => {
+    // p4 (Theo) is private and not a friend → request card only. Interests,
+    // bio, and the message/safety actions must NOT render (the privacy fix).
     setRouteParams({ id: 'p4' });
     useStore.setState({ friends: new Set(['p1', 'p3', 'p5']), outgoingRequests: new Set() });
-    const { getByText } = renderScreen(<OtherProfileScreen />);
-    fireEvent.press(getByText('REQUEST'));
+    const { getByText, queryByText } = renderScreen(<OtherProfileScreen />);
+    expect(getByText('This account is private')).toBeTruthy();
+    expect(queryByText('Interests')).toBeNull();
+    expect(queryByText('MESSAGE')).toBeNull();
+    fireEvent.press(getByText('SEND FRIEND REQUEST'));
     expect(useStore.getState().outgoingRequests.has('p4')).toBe(true);
+  });
+
+  test('a private account you ARE friends with shows the full profile', () => {
+    setRouteParams({ id: 'p4' });
+    useStore.setState({ friends: new Set(['p4']) });
+    const { getByText } = renderScreen(<OtherProfileScreen />);
+    expect(getByText('Interests')).toBeTruthy();
   });
 });
 

@@ -60,11 +60,18 @@ export default function OtherProfileScreen() {
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
+  const meId = useStore(s => s.me.id);
   const subject = person ?? fallback;          // whoever we can name
   const subjectName = subject?.name ?? 'this person';
   const isPrivate = subject?.privacy === 'private';
   const isFriend = id ? friends.has(id) : false;
   const isPending = id ? outgoing.has(id) : false;
+  const isSelf = !!id && id === meId;
+  // A private account is fully visible only to its owner or an accepted
+  // friend. For everyone else we show the minimal request card — never
+  // interests / bio / hosted events. Enforced client-side in EVERY mode
+  // (mock has no RLS; in live this backstops the profiles SELECT policy).
+  const privateLocked = isPrivate && !isFriend && !isSelf;
 
   // Send a friend request. Persists in live mode — the friendships INSERT
   // RLS allows requesting ANY user, private accounts included — with an
@@ -99,12 +106,9 @@ export default function OtherProfileScreen() {
   };
 
   // ── Gating ──────────────────────────────────────────────────────────
-  // No full profile to show. While the live fetch is in flight, render
-  // just the bar (avoids flashing "unavailable"). If it resolved empty
-  // but the fallback tells us this is a PRIVATE account, show a minimal
-  // request card — you can ask to connect without seeing their content.
-  // Anything else is genuinely hidden (blocked, missing).
-  if (!person) {
+  // Nothing identifiable yet: wait while a live fetch is in flight, else
+  // the account is genuinely gone.
+  if (!subject) {
     if (loading) {
       return (
         <Screen>
@@ -112,41 +116,58 @@ export default function OtherProfileScreen() {
         </Screen>
       );
     }
-    if (fallback && isPrivate) {
+    return <Unavailable />;
+  }
+
+  // Private + not a friend (and not you) → request card ONLY. This is the
+  // privacy guarantee: no interests, bio, ratings, or hosted events leak
+  // to a non-friend, whether or not the row was actually readable.
+  if (privateLocked) {
+    return (
+      <Screen>
+        <SCTopBar onBack={() => router.back()} />
+        <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>
+          <SCAvatar person={subject} size={96} />
+          <SCText variant="displayTight" size={28} style={{ marginTop: 12 }}>{subject.name}</SCText>
+          {!!subject.username && (
+            <SCText variant="mono" size={12} color={t.ink3} style={{ marginTop: 4 }}>
+              @{subject.username}
+            </SCText>
+          )}
+        </View>
+        <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+          <SCCard style={{ padding: 16, alignItems: 'center', gap: 8 }}>
+            <View style={{
+              width: 48, height: 48, borderRadius: 24, backgroundColor: t.subtle,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <SCIcon name="lock" size={20} color={t.ink3} />
+            </View>
+            <SCText size={15} weight="600">This account is private</SCText>
+            <SCText size={13} color={t.ink3} style={{ textAlign: 'center', lineHeight: 18 }}>
+              Send a friend request to connect. You&apos;ll see {subject.name.split(' ')[0]}&apos;s
+              profile once they accept.
+            </SCText>
+          </SCCard>
+        </View>
+        <View style={{ paddingHorizontal: 18 }}>
+          <SCButton
+            label={isPending ? 'Request pending' : 'Send friend request'}
+            onPress={requestFriend}
+            variant={isPending ? 'secondary' : 'primary'}
+          />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Not private-locked but the full row hasn't resolved (e.g. a public
+  // profile mid-fetch): wait, then fall back to unavailable.
+  if (!person) {
+    if (loading) {
       return (
         <Screen>
           <SCTopBar onBack={() => router.back()} />
-          <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>
-            <SCAvatar person={fallback} size={96} />
-            <SCText variant="displayTight" size={28} style={{ marginTop: 12 }}>{fallback.name}</SCText>
-            {!!fallback.username && (
-              <SCText variant="mono" size={12} color={t.ink3} style={{ marginTop: 4 }}>
-                @{fallback.username}
-              </SCText>
-            )}
-          </View>
-          <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
-            <SCCard style={{ padding: 16, alignItems: 'center', gap: 8 }}>
-              <View style={{
-                width: 48, height: 48, borderRadius: 24, backgroundColor: t.subtle,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <SCIcon name="lock" size={20} color={t.ink3} />
-              </View>
-              <SCText size={15} weight="600">This account is private</SCText>
-              <SCText size={13} color={t.ink3} style={{ textAlign: 'center', lineHeight: 18 }}>
-                Send a friend request to connect. You&apos;ll see {fallback.name.split(' ')[0]}&apos;s
-                profile once they accept.
-              </SCText>
-            </SCCard>
-          </View>
-          <View style={{ paddingHorizontal: 18 }}>
-            <SCButton
-              label={isPending ? 'Request pending' : 'Send friend request'}
-              onPress={requestFriend}
-              variant={isPending ? 'secondary' : 'primary'}
-            />
-          </View>
         </Screen>
       );
     }
