@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **346/346** across 49 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.17 — Map discovery-range persistence)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **352/352** across 50 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.18 — multi-account correctness pass)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -677,6 +677,39 @@ DB-only).
 - Assert the miles→meters conversion handed to `<Map>` / `useEvents`.
   The Map component is mocked under Jest (see Reflection Q2); the
   conversion is a pure arithmetic boundary verified by inspection.
+
+---
+
+### 2.18 Multi-account correctness pass (post-§2.17 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §23._
+
+Fixes found verifying as a seeded mock user: profile photo no longer
+leaks across accounts, you're filtered out of "people nearby"/search,
+your `profiles` row self-heals on sign-in, and private profiles get a
+Send-request card whose request persists. The testable (mock-mode /
+pure-logic) pieces gained coverage; the photo reset and private-card
+render are live-/auth-only and verified against the hosted project.
+
+| File added/changed | Tests | What they assert |
+|---|---|---|
+| `tests/unit/people.test.ts` (new, 4 cases) | `excludeSelf` | Removes the current user by direct id, and by the UUID→mock-id mapping (live mode); returns the list unchanged when meId is undefined or absent. |
+| `tests/screens/home.test.tsx` (+1 case) | self-filter wiring | Signed in as the user mapping to mock `p1`, "Maya Chen" is absent from PEOPLE NEARBY. |
+| `tests/screens/other-profile.test.tsx` (+1 case) | private request | Pressing REQUEST on a private profile records an outgoing request (the same path that calls `api.sendFriendRequest` in live mode). |
+
+**Delivered count**: 352 / 352 (up from 346). 50 suites (up from 49).
+
+**What this section deliberately does NOT do:**
+
+- Unit-test the AuthBootstrap photo reset. It's a no-op in mock mode (the
+  only mode Jest runs); the user-change/sign-out clearing is exercised
+  against the hosted project.
+- Test the private-account *card* render. That path is live-only (mock
+  mode returns the full profile, so `useProfile` never yields null); the
+  `requestFriend` logic behind it is covered via the mock REQUEST case.
+- Verify migration `00016` or the `profiles` upsert. No DB under Jest —
+  the migration must be applied to the hosted project and is verified
+  there.
 
 ---
 

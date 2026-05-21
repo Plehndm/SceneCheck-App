@@ -116,17 +116,14 @@ export default function MapTab() {
 
       {/* Discovery-range chips — tapping one writes the persisted store
           radius (shared with the Settings slider). When the saved range
-          isn't one of the presets, a Custom button appears on the right
-          showing the value and deep-links to Settings for fine control. */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingHorizontal: 18, paddingVertical: 10,
-      }}>
+          isn't one of the presets, a Custom button appears on its own row
+          below, showing the value and deep-linking to Settings for fine
+          control. */}
+      <View style={{ paddingHorizontal: 18, paddingVertical: 10, gap: 8 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 6, alignItems: 'center' }}
-          style={{ flexShrink: 1 }}
         >
           {RADIUS_PRESETS_MI.map(mi => {
             const active = radius === mi;
@@ -154,6 +151,7 @@ export default function MapTab() {
             onPress={() => router.push('/settings' as never)}
             accessibilityLabel={`Custom discovery range, ${fmtMi(radius)} miles. Opens settings to adjust.`}
             style={({ pressed }) => [{
+              alignSelf: 'flex-start',
               flexDirection: 'row', alignItems: 'center', gap: 5,
               paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999,
               borderWidth: 1, backgroundColor: t.primary, borderColor: t.primary,

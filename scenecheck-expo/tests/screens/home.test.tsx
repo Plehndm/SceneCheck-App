@@ -6,7 +6,7 @@ import { fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import HomeScreen from '@/app/(tabs)/index';
 import { renderScreen, resetStore } from '../test-utils';
-import { SC_EVENTS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { SC_EVENTS, SC_VISIBLE_PEOPLE, SC_ME } from '@/data/mocks';
 
 beforeEach(() => {
   resetStore();
@@ -53,6 +53,14 @@ describe('HomeScreen', () => {
     SC_VISIBLE_PEOPLE.slice(0, 4).forEach(p => {
       expect(getByText(p.name)).toBeTruthy();
     });
+  });
+
+  test('does not list the signed-in user under people nearby', () => {
+    // Sign in as the live user whose UUID maps to mock p1 (Maya Chen):
+    // you should never see yourself in "people nearby".
+    resetStore({ me: { ...SC_ME, id: '00000000-0000-0000-0000-000000000002' } });
+    const { queryByText } = renderScreen(<HomeScreen />);
+    expect(queryByText('Maya Chen')).toBeNull();
   });
 
   test('SEE ALL → action pushes /events', () => {

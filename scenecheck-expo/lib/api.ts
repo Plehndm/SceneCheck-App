@@ -377,10 +377,12 @@ export const api = {
     const sb = requireClient();
     const user = await this.getCurrentUser();
     if (!user || !('id' in user)) throw new Error('Not authenticated');
+    // Upsert (not update) so a missing profiles row is created instead of
+    // silently matching zero rows + erroring on `.single()`. Keyed on
+    // user_id; the self-insert RLS policy is migration 00016.
     const { data, error } = await sb
       .from('profiles')
-      .update(fields)
-      .eq('user_id', user.id)
+      .upsert({ ...fields, user_id: user.id }, { onConflict: 'user_id' })
       .select()
       .single();
     if (error) throw error;

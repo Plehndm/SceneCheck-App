@@ -46,6 +46,17 @@ describe('OtherProfileScreen — person', () => {
     const { getByText } = renderScreen(<OtherProfileScreen />);
     expect(getByText('Profile unavailable')).toBeTruthy();
   });
+
+  test('tapping REQUEST on a private profile sends a friend request', () => {
+    // p4 (Theo) is private and not a default friend. In mock mode the full
+    // profile shows with a REQUEST button; pressing it records an outgoing
+    // request (in live mode this also persists via api.sendFriendRequest).
+    setRouteParams({ id: 'p4' });
+    useStore.setState({ friends: new Set(['p1', 'p3', 'p5']), outgoingRequests: new Set() });
+    const { getByText } = renderScreen(<OtherProfileScreen />);
+    fireEvent.press(getByText('REQUEST'));
+    expect(useStore.getState().outgoingRequests.has('p4')).toBe(true);
+  });
 });
 
 describe('OtherProfileScreen — org', () => {

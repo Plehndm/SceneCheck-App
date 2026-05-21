@@ -27,6 +27,7 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
+import { excludeSelf } from '@/lib/people';
 import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
@@ -35,7 +36,10 @@ export default function HomeScreen() {
   const t = useTokens();
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
+  const meId = useStore(s => s.me.id);
   const isJoinedNow = (id: string) => joined.has(id) && !pendingLeave.has(id);
+  // Never list yourself under "people nearby".
+  const peopleNearby = excludeSelf(SC_VISIBLE_PEOPLE, meId).slice(0, 4);
   // Live in live mode, fixture array in mock mode — see hooks/useEvents.
   const { events, loading } = useEvents();
   // Live date + (if location granted) reverse-geocoded city.
@@ -143,7 +147,7 @@ export default function HomeScreen() {
       {/* Nearby people */}
       <SCSection title="PEOPLE NEARBY">
         <SCCard>
-          {SC_VISIBLE_PEOPLE.slice(0, 4).map((p, idx) => (
+          {peopleNearby.map((p, idx) => (
             <View key={p.id}>
               {idx > 0 && <View style={{ height: 1, backgroundColor: t.line, marginHorizontal: 14 }} />}
               <SCPersonRow person={p} onPress={() => router.push(`/profile/${p.id}` as never)} />

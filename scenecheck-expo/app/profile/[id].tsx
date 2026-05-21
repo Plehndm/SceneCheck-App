@@ -23,7 +23,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useHostedEvents } from '@/hooks/useHostedEvents';
 import { useRatings } from '@/hooks/useRatings';
 import { api } from '@/lib/api';
-import { SC_VISIBLE_PERSON_BY_ID, SC_MY_ACCOUNTS } from '@/data/mocks';
+import { SC_VISIBLE_PERSON_BY_ID, SC_MY_ACCOUNTS, SC_ACCOUNT_BY_ID } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { summarizeRatings, ratingForEvent } from '@/lib/ratings';
 import { RADIUS } from '@/theme/tokens';
@@ -36,17 +36,19 @@ export default function OtherProfileScreen() {
   // `VISIBLE_PERSON_BY_ID` table — in live mode the RLS layer
   // already enforces visibility, so anything `useProfile` returns
   // is implicitly visible.
-  const { profile: person } = useProfile(id);
-  const isVisible = id
-    ? person?.type === 'org' || !!SC_VISIBLE_PERSON_BY_ID[id] || !api.isMock()
-    : false;
+  const { profile: person, loading } = useProfile(id);
+  // Minimal fallback identity for a private account whose full row RLS
+  // won't return to a non-friend (in live mode `useProfile` yields null).
+  // The id from a search/people row is a mock id, so SC_ACCOUNT_BY_ID
+  // resolves enough — name, avatar, privacy — to render a request card.
+  const fallback = id ? (SC_ACCOUNT_BY_ID[id] ?? null) : null;
 
   const friends = useStore(s => s.friends);
   const outgoing = useStore(s => s.outgoingRequests);
   const following = useStore(s => s.following);
   const addFriend = useStore(s => s.addFriend);
   const removeFriend = useStore(s => s.removeFriend);
-  const sendFriendRequest = useStore(s => s.sendFriendRequest);
+  const sendRequestLocal = useStore(s => s.sendFriendRequest);
   const toggleFollow = useStore(s => s.toggleFollow);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
@@ -58,30 +60,100 @@ export default function OtherProfileScreen() {
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
-  if (!person || !isVisible) {
-    return (
-      <Screen>
-        <SCTopBar onBack={() => router.back()} />
-        <View style={{ padding: 40, alignItems: 'center' }}>
-          <View style={{
-            width: 64, height: 64, borderRadius: 32, backgroundColor: t.subtle,
-            alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-          }}>
-            <SCIcon name="lock" size={24} color={t.ink3} />
+  const subject = person ?? fallback;          // whoever we can name
+  const subjectName = subject?.name ?? 'this person';
+  const isPrivate = subject?.privacy === 'private';
+  const isFriend = id ? friends.has(id) : false;
+  const isPending = id ? outgoing.has(id) : false;
+
+  // Send a friend request. Persists in live mode — the friendships INSERT
+  // RLS allows requesting ANY user, private accounts included — with an
+  // optimistic store update (re-synced from the DB on the next hydrate).
+  // In mock mode a public add is instant; private + every live add goes
+  // to "pending" since only the recipient can accept.
+  const requestFriend = () => {
+    if (!id || isFriend) return;
+    if (isPending) {
+      showToast({ message: 'Friend request pending.', kind: 'info' });
+      return;
+    }
+    const live = !api.isMock();
+    if (live || isPrivate) {
+      sendRequestLocal(id);
+      showToast({ message: `Request sent to ${subjectName}.`, kind: 'success' });
+      if (live) {
+        api.sendFriendRequest(id).catch(() =>
+          showToast({ message: "Couldn't send request. Try again.", kind: 'error' }),
+        );
+      }
+    } else {
+      addFriend(id);
+      showToast({ message: `${subjectName} added as a friend.`, kind: 'success' });
+    }
+  };
+
+  // ── Gating ──────────────────────────────────────────────────────────
+  // No full profile to show. While the live fetch is in flight, render
+  // just the bar (avoids flashing "unavailable"). If it resolved empty
+  // but the fallback tells us this is a PRIVATE account, show a minimal
+  // request card — you can ask to connect without seeing their content.
+  // Anything else is genuinely hidden (blocked, missing).
+  if (!person) {
+    if (loading) {
+      return (
+        <Screen>
+          <SCTopBar onBack={() => router.back()} />
+        </Screen>
+      );
+    }
+    if (fallback && isPrivate) {
+      return (
+        <Screen>
+          <SCTopBar onBack={() => router.back()} />
+          <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>
+            <SCAvatar person={fallback} size={96} />
+            <SCText variant="displayTight" size={28} style={{ marginTop: 12 }}>{fallback.name}</SCText>
+            {!!fallback.username && (
+              <SCText variant="mono" size={12} color={t.ink3} style={{ marginTop: 4 }}>
+                @{fallback.username}
+              </SCText>
+            )}
           </View>
-          <SCText size={17} weight="600">Profile unavailable</SCText>
-          <SCText size={13} color={t.ink3} style={{ marginTop: 6, textAlign: 'center' }}>
-            This account isn&apos;t visible to you.
-          </SCText>
-        </View>
-      </Screen>
-    );
+          <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+            <SCCard style={{ padding: 16, alignItems: 'center', gap: 8 }}>
+              <View style={{
+                width: 48, height: 48, borderRadius: 24, backgroundColor: t.subtle,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <SCIcon name="lock" size={20} color={t.ink3} />
+              </View>
+              <SCText size={15} weight="600">This account is private</SCText>
+              <SCText size={13} color={t.ink3} style={{ textAlign: 'center', lineHeight: 18 }}>
+                Send a friend request to connect. You&apos;ll see {fallback.name.split(' ')[0]}&apos;s
+                profile once they accept.
+              </SCText>
+            </SCCard>
+          </View>
+          <View style={{ paddingHorizontal: 18 }}>
+            <SCButton
+              label={isPending ? 'Request pending' : 'Send friend request'}
+              onPress={requestFriend}
+              variant={isPending ? 'secondary' : 'primary'}
+            />
+          </View>
+        </Screen>
+      );
+    }
+    return <Unavailable />;
   }
+
+  // Mock-mode visibility gate (the blocked-you fixtures). In live mode RLS
+  // already decided — anything `useProfile` returned is visible.
+  const isVisible = person.type === 'org' || (id ? !!SC_VISIBLE_PERSON_BY_ID[id] : false) || !api.isMock();
+  if (!isVisible) return <Unavailable />;
 
   const isOrg = person.type === 'org';
   const isManaged = SC_MY_ACCOUNTS.some(a => a.id === id);
-  const isFriend = id ? friends.has(id) : false;
-  const isPending = id ? outgoing.has(id) : false;
   const isFollowing = id ? following.has(id) : false;
 
   const handleFriendToggle = () => {
@@ -97,16 +169,8 @@ export default function OtherProfileScreen() {
           showToast({ message: `Unfriended ${person.name}.`, kind: 'info' });
         },
       });
-    } else if (isPending) {
-      showToast({ message: 'Friend request pending.', kind: 'info' });
     } else {
-      if (person.privacy === 'private') {
-        sendFriendRequest(id);
-        showToast({ message: `Request sent to ${person.name}.`, kind: 'success' });
-      } else {
-        addFriend(id);
-        showToast({ message: `${person.name} added as a friend.`, kind: 'success' });
-      }
+      requestFriend();
     }
   };
 
@@ -340,6 +404,29 @@ export default function OtherProfileScreen() {
           </SCCard>
         </View>
       )}
+    </Screen>
+  );
+}
+
+// Shown when a profile is genuinely hidden (blocked, or doesn't exist).
+// Private accounts get the dedicated request card instead (see above).
+function Unavailable() {
+  const t = useTokens();
+  return (
+    <Screen>
+      <SCTopBar onBack={() => router.back()} />
+      <View style={{ padding: 40, alignItems: 'center' }}>
+        <View style={{
+          width: 64, height: 64, borderRadius: 32, backgroundColor: t.subtle,
+          alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+        }}>
+          <SCIcon name="lock" size={24} color={t.ink3} />
+        </View>
+        <SCText size={17} weight="600">Profile unavailable</SCText>
+        <SCText size={13} color={t.ink3} style={{ marginTop: 6, textAlign: 'center' }}>
+          This account isn&apos;t visible to you.
+        </SCText>
+      </View>
     </Screen>
   );
 }

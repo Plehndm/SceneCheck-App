@@ -18,6 +18,16 @@
 -- It does NOT populate profiles, friendships, chats, ratings, or
 -- subscriptions — those come from real user activity once you sign
 -- up in the app.
+--
+-- ⚠️ Event dates are RELATIVE to now() (e.g. now() + interval '2 days').
+--   `rank_events_query` — the discovery RPC behind the Map + Home feed —
+--   only returns events with `start_at > now() - 2h`, so hardcoded past
+--   dates would make every event invisible. Because the dates are
+--   relative, the events INSERT uses ON CONFLICT (id) DO UPDATE (not DO
+--   NOTHING) for the time columns + status, so RE-RUNNING this seed
+--   refreshes already-inserted events to be upcoming again. creator_id
+--   is intentionally NOT overwritten so seed-hosted-social.sql's host
+--   reassignments survive a re-run.
 
 -- ═══ INTERESTS ═══
 INSERT INTO interests (id, name, description, subscriber_count, similar_tags) VALUES
@@ -39,44 +49,52 @@ INSERT INTO interests (id, name, description, subscriber_count, similar_tags) VA
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══ EVENTS (with PostGIS points near UCI, Irvine CA) ═══
+-- start_at / end_at are now()-relative so the events are always upcoming
+-- (see the ⚠️ note in the header for why hardcoded dates broke discovery).
 INSERT INTO events (id, creator_id, title, description, geog, location_name, start_at, end_at, capacity, subscriber_count, status, source, min_subscribers) VALUES
   ('20000000-0000-0000-0000-000000000001', NULL, 'Morning Ride — Back Bay loop',
    'Easy 14-mile loop around the Back Bay trail. Casual pace. Bring water. Coffee at Common Room after.',
    ST_MakePoint(-117.86, 33.64)::geography, 'Anteater Plaza → Back Bay',
-   '2026-05-09 14:00:00+00', '2026-05-09 16:00:00+00', 12, 6, 'published', 'user', 3),
+   now() + interval '2 days', now() + interval '2 days 2 hours', 12, 6, 'published', 'user', 3),
   ('20000000-0000-0000-0000-000000000002', NULL, 'Cooking Club: Dumpling Night',
    'We fold, we steam, we eat. $5 to cover ingredients. All skill levels.',
    ST_MakePoint(-117.83, 33.65)::geography, 'Mesa Court Kitchen',
-   '2026-05-09 01:30:00+00', '2026-05-10 04:00:00+00', 16, 14, 'published', 'user', 3),
+   now() + interval '3 days', now() + interval '3 days 2 hours 30 minutes', 16, 14, 'published', 'user', 3),
   ('20000000-0000-0000-0000-000000000003', NULL, 'Climbing — Beginner Night',
    'First-timers welcome. Jordan will show you the basics.',
    ST_MakePoint(-117.88, 33.63)::geography, 'TopOut Irvine',
-   '2026-05-09 02:00:00+00', '2026-05-09 04:30:00+00', 20, 9, 'published', 'user', 3),
+   now() + interval '4 days', now() + interval '4 days 2 hours 30 minutes', 20, 9, 'published', 'user', 3),
   ('20000000-0000-0000-0000-000000000004', NULL, 'Pickup Soccer @ Aldrich',
    'Open pickup, 5v5 rotating. Cleats not required.',
    ST_MakePoint(-117.84, 33.645)::geography, 'Aldrich Park East Field',
-   '2026-05-07 00:00:00+00', '2026-05-07 02:00:00+00', 30, 22, 'published', 'scraped', 1),
+   now() + interval '1 day', now() + interval '1 day 2 hours', 30, 22, 'published', 'scraped', 1),
   ('20000000-0000-0000-0000-000000000005', NULL, 'Open Mic — Common Room',
    'Acoustic, poetry, comedy — all welcome.',
    ST_MakePoint(-117.82, 33.645)::geography, 'Common Room Coffee',
-   '2026-05-08 03:00:00+00', '2026-05-08 05:30:00+00', 25, 11, 'published', 'scraped', 1),
+   now() + interval '5 days', now() + interval '5 days 2 hours 30 minutes', 25, 11, 'published', 'scraped', 1),
   ('20000000-0000-0000-0000-000000000006', NULL, 'Study Block: Finals Week',
    'Quiet pomodoros, 50/10 cycles. Bring your own laptop and snacks.',
    ST_MakePoint(-117.84, 33.65)::geography, 'Langson Library, 4F',
-   '2026-05-11 20:00:00+00', '2026-05-12 00:00:00+00', 60, 38, 'published', 'scraped', 1),
+   now() + interval '6 days', now() + interval '6 days 4 hours', 60, 38, 'published', 'scraped', 1),
   ('20000000-0000-0000-0000-000000000007', NULL, 'Beginner Bouldering Night',
    'Free top-rope intro. Day pass + rentals $18.',
    ST_MakePoint(-117.88, 33.635)::geography, 'TopOut Irvine',
-   '2026-05-09 02:30:00+00', '2026-05-09 05:00:00+00', 40, 28, 'published', 'user', 3),
+   now() + interval '4 days 6 hours', now() + interval '4 days 8 hours 30 minutes', 40, 28, 'published', 'user', 3),
   ('20000000-0000-0000-0000-000000000008', NULL, 'Tuesday Group Run · 5K',
    'Couch-to-5K pace group + open pace group. Stretch + boba after.',
    ST_MakePoint(-117.845, 33.646)::geography, 'Aldrich Park flagpole',
-   '2026-05-13 01:00:00+00', '2026-05-13 02:30:00+00', 50, 17, 'published', 'user', 3),
+   now() + interval '8 days', now() + interval '8 days 1 hour 30 minutes', 50, 17, 'published', 'user', 3),
   ('20000000-0000-0000-0000-000000000009', NULL, 'Saturday Sunrise Yoga',
    '60-minute all-levels flow on the lawn. Bring a mat.',
    ST_MakePoint(-117.845, 33.645)::geography, 'Aldrich Park lawn',
-   '2026-05-09 15:00:00+00', '2026-05-09 16:00:00+00', 30, 11, 'published', 'user', 3)
-ON CONFLICT (id) DO NOTHING;
+   now() + interval '9 days', now() + interval '9 days 1 hour', 30, 11, 'published', 'user', 3)
+ON CONFLICT (id) DO UPDATE SET
+  -- Refresh only the time window + publish state so a re-run un-stales
+  -- the demo events. creator_id is deliberately omitted so the host
+  -- reassignments in seed-hosted-social.sql aren't clobbered.
+  start_at = EXCLUDED.start_at,
+  end_at   = EXCLUDED.end_at,
+  status   = EXCLUDED.status;
 
 -- ═══ EVENT_INTERESTS ═══
 INSERT INTO event_interests (event_id, interest_id) VALUES

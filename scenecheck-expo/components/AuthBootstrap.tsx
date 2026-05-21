@@ -54,6 +54,16 @@ export function AuthBootstrap() {
     // AFTER this hydrate's profile read. Resolution order below is
     // therefore: live profiles.name → metadata name → email prefix.
     async function hydrate(userId: string, email: string | null, metaName?: string | null) {
+      // Account switch: drop the previous user's locally-picked photo
+      // overrides. `picture` / `orgPictures` are persisted and NOT tied to
+      // a user, so without this, signing in as someone else keeps your old
+      // avatar. `me.id` is persisted too, so it reliably names the last
+      // hydrated user: a plain reload (same id) keeps the photo; a
+      // different sign-in clears it.
+      if (useStore.getState().me.id !== userId) {
+        useStore.setState({ picture: null, orgPictures: {} });
+      }
+
       // Fire every read in parallel — none depend on each other.
       const [
         { data: profile },
@@ -91,6 +101,22 @@ export function AuthBootstrap() {
       const interests = (tagRows ?? [])
         .map(r => r.interests?.name)
         .filter((n): n is string => Boolean(n));
+
+      // Self-heal a missing profiles row. The handle_new_user trigger
+      // creates one at sign-up, but accounts made before that migration
+      // (or added via the dashboard) have an auth.users row with no
+      // matching profiles row — which is why they "don't show in the
+      // profiles table." Upsert a skeleton so the row exists. Best-effort:
+      // needs the self-insert RLS policy (migration 00016); a failure
+      // (e.g. policy not applied yet) must not break sign-in.
+      if (!profile) {
+        await supabase!.from('profiles')
+          .upsert(
+            { user_id: userId, account_type: 'person', name: metaName?.trim() || '' },
+            { onConflict: 'user_id' },
+          )
+          .then(() => {}, () => {});
+      }
 
       const dbName = (profile?.name as string | undefined)?.trim();
       const profilePatch: Partial<Account> = {
@@ -152,6 +178,10 @@ export function AuthBootstrap() {
         outgoingRequests: new Set(),
         incomingRequests: new Set(),
         subscribedInterests: new Set(),
+        // Clear the locally-picked photo overrides so a signed-out (or
+        // next) account doesn't inherit the previous user's avatar.
+        picture: null,
+        orgPictures: {},
       });
     }
 

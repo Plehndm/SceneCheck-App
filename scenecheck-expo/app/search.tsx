@@ -11,8 +11,10 @@ import { SCCard } from '@/components/SCCard';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
+import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
+import { excludeSelf } from '@/lib/people';
 import { SC_VISIBLE_PEOPLE, SC_ORGS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
@@ -27,6 +29,9 @@ export default function SearchScreen() {
   // array in mock mode. People + orgs are still on mocks; Phase 5
   // migrates them.
   const { events: allEvents } = useEvents();
+  const meId = useStore(s => s.me.id);
+  // Never surface yourself in people results.
+  const visiblePeople = useMemo(() => excludeSelf(SC_VISIBLE_PEOPLE, meId), [meId]);
 
   const lowered = query.trim().toLowerCase();
 
@@ -40,13 +45,13 @@ export default function SearchScreen() {
   }, [lowered, allEvents]);
 
   const people = useMemo(() => {
-    if (!lowered) return SC_VISIBLE_PEOPLE.slice(0, 6);
-    return SC_VISIBLE_PEOPLE.filter(p =>
+    if (!lowered) return visiblePeople.slice(0, 6);
+    return visiblePeople.filter(p =>
       p.name.toLowerCase().includes(lowered) ||
       (p.username ?? '').toLowerCase().includes(lowered) ||
       (p.interests ?? []).some(i => i.toLowerCase().includes(lowered))
     );
-  }, [lowered]);
+  }, [lowered, visiblePeople]);
 
   const orgs = useMemo(() => {
     if (!lowered) return SC_ORGS.slice(0, 6);

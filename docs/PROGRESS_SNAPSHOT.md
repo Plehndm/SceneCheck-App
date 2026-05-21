@@ -57,7 +57,9 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-20 | **Fixed display name showing as email after sign-up.** Root cause was a race: `AuthBootstrap` re-hydrates `me` from `profiles` on the `SIGNED_IN` event, and its (slow, 4-query) read of the just-created skeleton row often resolved BEFORE `api.signUp`'s separate `profiles.name` write landed — so it read `name=''` and fell back to the email, and that `setMe` ran *last*, clobbering the screen's correct `setMe({ name })`. Fix: `api.signUp` now also stamps the name into `auth.users` metadata via `options.data.display_name`, which rides on the same row the session carries; `AuthBootstrap.hydrate` reads it race-free as `session.user.user_metadata.display_name`. Name resolution is now `profiles.name → metadata display_name → email *prefix* → 'You'` (the full-email fallback is gone). The `profiles.name` write stays so other users / the ratings join see the name too. Existing accounts created before this fix show the email prefix until the name is set once via the profile-tab editor. |
 | 2026-05-20 | **Home map preview is now a real device-map snapshot.** The Home card was a hand-drawn faux map (colored blobs for park/water + one fake pin). Replaced it with the actual platform map (`Map` component → Apple Maps on iOS, Google Maps on Android, OSM/leaflet on web) centered on the user's location with the live event pins, rendered non-interactive so it reads as a tappable snapshot of "what's near me." Added an `interactive?: boolean` prop to `MapProps` (default true); when false the native map disables scroll/zoom/rotate/pitch/toolbar + sets `pointerEvents="none"`, and the web map disables dragging/scrollWheelZoom/doubleClickZoom/touchZoom/boxZoom/keyboard/zoomControl + `pointerEvents="none"` — so taps fall through to the card's Pressable which opens the Map tab. `MapPreview` pulls the user coords via `useLocation` (falls back to the UCI default region when permission isn't granted) and `me.interests` for pin coloring. 331/331 tests still green. Note: `npx tsc --noEmit` surfaced 5 *pre-existing* type errors (PostgREST nested-relation typing in `AuthBootstrap`/`api.ts`/a create-event test) unrelated to this change — flagged for a separate cleanup. |
 | 2026-05-21 | **Dynamic ratings + hosted-events on profiles + social seed data.** Profiles now compute ratings live instead of reading a static field: new `lib/ratings.ts` helpers (`summarizeRatings`, `ratingForEvent`, `formatRatingSummary`); new `api.fetchEventsByHost(hostId)` (all-statuses events by `creator_id`) + `hooks/useHostedEvents`. `app/profile/[id].tsx` now uses `useHostedEvents` + `useRatings` (was filtering `SC_EVENTS`/`SC_REVIEWS` mocks) — shows a Ratings summary card with the dynamic average or an explicit "No ratings yet", a hosted-events list with a per-event rating badge (or "No ratings yet" per event), and an empty state when a host has no events; rating display now shows for **people too**, not just orgs. `app/(tabs)/profile.tsx` HOSTED + RATING + "My ratings" stats are computed from the same hooks (was static `me.rating` / `SC_EVENTS` count). Added `supabase/seed-hosted-social.sql` — 6 mock auth.users (4 people + 2 orgs, password `scenecheck123`) + profiles + interests + event-host reassignment + ratings + friendships + a DM/group chat, so live mode has other users to verify against (RLS means chats/friends are visible by signing in *as* a mock user, or via the OPTIONAL "wire to your own account" block). +12 tests (ratings helpers, useHostedEvents, other-profile ratings/empty-state). 343/343. The 5 pre-existing PostgREST type errors are unchanged (no new ones). |
-| 2026-05-21 | **Map discovery range is now a persisted preference (+ type/seed cleanup).** The Map tab's radius chips were local `useState` in *meters*, disconnected from `store.radius` (the *miles* value the Settings slider owns) and reset to 5 mi on every mount — the choice never survived a reload. They now read/write the persisted `store.radius`, so a chip tap is the same write the slider makes and the two screens stay in sync. Presets widened to 1/3/5/10/25/50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling), and `radiusM = radius * MILES_TO_METERS` converts only at the `useEvents`/`<Map>` boundary. When the saved range is off-preset (e.g. 7.5 mi from the slider's 0.5-mi step) a **Custom · N mi** button appears to the right and deep-links to `/settings` for finer control. Folded in two previously-unrecorded fixes: the **5 PostgREST nested-relation `tsc` errors** flagged "pre-existing" in §58–§59 are resolved (`.overrideTypes<…, { merge:false }>()` declares the to-one embed shape supabase-js widens to an array without generated DB types — `AuthBootstrap` + `api.fetchFriends`/`fetchAttendees`; plus a `me.interests ?? []` guard in a create-event test) so `tsc --noEmit` is clean again; and `seed-hosted-social.sql`'s OPTIONAL "wire to your own account" block now upserts a `profiles` row before the friendship/chat inserts, fixing the `friendships_from_id_fkey … is not present in table profiles` error for accounts created before the `handle_new_user` trigger. +3 tests (346/346). See §22. |
+| 2026-05-21 | **Map discovery range is now a persisted preference (+ type/seed cleanup).** The Map tab's radius chips were local `useState` in *meters*, disconnected from `store.radius` (the *miles* value the Settings slider owns) and reset to 5 mi on every mount — the choice never survived a reload. They now read/write the persisted `store.radius`, so a chip tap is the same write the slider makes and the two screens stay in sync. Presets widened to 1/3/5/10/25/50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling), and `radiusM = radius * MILES_TO_METERS` converts only at the `useEvents`/`<Map>` boundary. When the saved range is off-preset (e.g. 7.5 mi from the slider's 0.5-mi step) a **Custom · N mi** button appears on its own row below the presets and deep-links to `/settings` for finer control. Folded in two previously-unrecorded fixes: the **5 PostgREST nested-relation `tsc` errors** flagged "pre-existing" in §58–§59 are resolved (`.overrideTypes<…, { merge:false }>()` declares the to-one embed shape supabase-js widens to an array without generated DB types — `AuthBootstrap` + `api.fetchFriends`/`fetchAttendees`; plus a `me.interests ?? []` guard in a create-event test) so `tsc --noEmit` is clean again; and `seed-hosted-social.sql`'s OPTIONAL "wire to your own account" block now upserts a `profiles` row before the friendship/chat inserts, fixing the `friendships_from_id_fkey … is not present in table profiles` error for accounts created before the `handle_new_user` trigger. +3 tests (346/346). See §22. |
+| 2026-05-21 | **Seeded events made visible (date fix) + Custom-range button moved below the chips.** Follow-up: seeded events weren't showing on the Map/Home feed because `rank_events_query` filters `start_at > now() - 2h` and every event in `seed.sql` / `seed-hosted.sql` was hardcoded to **2026-05-07…05-13** — all in the past by demo time (05-21). Both seeds now use **now()-relative** dates (`now() + interval 'N days'`); `seed-hosted.sql` also switched `ON CONFLICT DO NOTHING` → `DO UPDATE` on the time columns + status so re-running un-stales already-inserted rows (creator_id left untouched so the social seed's host reassignments survive). The two other "not showing" reports are by-design, not bugs: seeded **profiles** aren't in search (search still reads mocks, §7 #1) but are reachable by tapping an event host; seeded **chats/friendships** are RLS-scoped, so you must sign in as a mock user (`maya@scenecheck.dev` / `scenecheck123`) or run the OPTIONAL block to see them as yourself. Also moved the discovery-range **Custom** button to its own row below the preset chips (was inline right). No test-count change (346/346). See §22.5. |
+| 2026-05-21 | **Multi-account correctness pass (photo / self / DB row / private requests).** Five fixes surfaced while verifying as a seeded mock user. **(1) Profile photo leaked across accounts** — the locally-picked `picture`/`orgPictures` overrides are persisted and weren't tied to a user, so signing in as Maya kept the personal account's avatar. AuthBootstrap now clears them on a user change (compares the persisted `me.id`) and on sign-out. **(2) You saw yourself in "people nearby"** — the Home rail + Search read mock people unfiltered; new `lib/people.excludeSelf` drops the signed-in user (matched by id and the UUID→mock-id mapping). **(3) Your account had no row in the `profiles` table** — accounts predating the `handle_new_user` trigger (or added via the dashboard) had no profiles row, and the client couldn't create one (no INSERT RLS policy). New migration `00016_profiles_self_insert.sql` adds a self-insert policy; AuthBootstrap upserts a skeleton on sign-in and `api.updateProfile` is now an upsert. **(4) Couldn't friend-request private profiles** — RLS hides a private non-friend's row, so the screen dead-ended at "Profile unavailable" with no button, and the send was store-only (never persisted). `profile/[id].tsx` now shows a minimal private-account request card (name/avatar + Send request, content still hidden), and the request persists via `api.sendFriendRequest` (the friendships INSERT RLS already permits requesting anyone). **(5) Hosting count** — confirmed already dynamic (`useHostedEvents(me.id)`); shows 0 only until events' `creator_id` is populated (re-run the social seed). +6 tests (352/352). See §23. |
 
 ### Current layout
 
@@ -1454,7 +1456,7 @@ reads/writes). The chips moved the visible circle but the value reset to
 | Source of truth | local `useState` (meters) | `store.radius` (miles), persisted via the existing `partialize` allowlist |
 | Sync with Settings | none — two independent values | one value; a chip tap is the same write the Settings slider makes |
 | Presets | 1 / 3 / 5 / 10 mi (4, fixed row) | 1 / 3 / 5 / 10 / 25 / 50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling) |
-| Off-preset values | not representable | **Custom · N mi** button on the right that deep-links to Settings |
+| Off-preset values | not representable | **Custom · N mi** button on its own row below the presets that deep-links to Settings |
 | Units | radius *was* meters everywhere | `radiusM = radius * MILES_TO_METERS` converts only where `useEvents` / `<Map>` need meters |
 
 The **Custom button** renders only when `radius` isn't one of the
@@ -1508,9 +1510,162 @@ trigger firing on the seed's own `auth.users` inserts.
 
 See `docs/TEST_PLAN.md` §2.17 for the per-file test additions.
 
+### 22.5 Seeded events were invisible — all dated in the past
+
+A follow-up the same day: none of the seeded events showed on the Map
+or Home feed even in live mode. Root cause was *not* the app — it was
+the seed data. `rank_events_query` (the discovery RPC) filters
+`AND e.start_at > now() - INTERVAL '2 hours'`, but every event in
+`seed.sql` / `seed-hosted.sql` had a hardcoded `start_at` of
+**2026-05-07 … 05-13**, all comfortably in the past by the time the
+project was being demoed (2026-05-21). The rows existed; the RPC just
+filtered all nine out.
+
+Fix — both seed files now use **now()-relative** dates
+(`now() + interval 'N days'`, spread across the next ~9 days) so the
+demo events are always upcoming whenever the seed runs:
+
+- `seed-hosted.sql` additionally swaps `ON CONFLICT (id) DO NOTHING` →
+  `DO UPDATE SET start_at, end_at, status` so **re-running** un-stales
+  events that were already inserted with the old fixed dates.
+  `creator_id` is deliberately left out of the SET so the host
+  reassignments in `seed-hosted-social.sql` (§19 / the social seed)
+  survive the re-run.
+- `seed.sql` (local stack, run against a fresh DB) keeps its plain
+  INSERT — only the date literals changed.
+
+Two related "not showing" reports were **by design**, not bugs, and are
+called out here so they're not chased as regressions:
+
+- **Seeded profiles** aren't in the People/Org search results because
+  `app/search.tsx` still reads `SC_VISIBLE_PEOPLE` / `SC_ORGS` from
+  `data/mocks.ts` (the search-to-live wiring is the open item in §7 #1).
+  The seeded people *are* reachable in live mode by tapping an event's
+  host (the social seed sets `creator_id` to mock hosts → host link →
+  `profile/[id]` via the live `useProfile`).
+- **Seeded chats/friendships** are RLS-scoped to `auth.uid()`. The
+  seeded DM + group chat are between mock users, so your own account
+  can't see them. Sign in **as** a mock user
+  (`maya@scenecheck.dev` / `scenecheck123`) or run the OPTIONAL
+  "wire to your own account" block at the bottom of
+  `seed-hosted-social.sql` (now FK-safe per §22.3) to surface them for
+  your account.
+
+Also folded in here: the discovery-range **Custom button moved to its
+own row below the preset chips** (was inline to the right) per a UX
+follow-up.
+
 ---
 
-## 23. How to re-snapshot this file
+## 23. Multi-account correctness pass
+
+_Last updated: 2026-05-21_
+
+Five issues found while signing in as a seeded mock user (Maya) on the
+hosted project to verify the social graph. Four were real bugs; one was
+already done.
+
+### 23.1 Profile photo leaked across accounts
+
+The profile tab renders `picture ?? me.picture`, where the store-level
+`picture` (a locally-picked data URL) and `orgPictures` are persisted to
+AsyncStorage and were **never tied to a user**. Signing out and back in
+as a different account kept the previous account's photo. `me.picture`
+(the DB `avatar_url`) was hydrated correctly, but the stale local
+override won.
+
+Fix (`components/AuthBootstrap.tsx`): clear `picture` + `orgPictures`
+(a) on `SIGNED_OUT` (`reset()`), and (b) at the top of `hydrate()` when
+the incoming `userId` differs from the persisted `me.id`. Keying off the
+persisted `me.id` is what makes this safe across reloads — a plain reload
+(same id) keeps your photo; a different sign-in clears it. Each account
+now falls back to its own `avatar_url` (initials when null).
+
+### 23.2 You appeared in "people nearby"
+
+The Home "PEOPLE NEARBY" rail and Search both render `SC_VISIBLE_PEOPLE`
+unfiltered, so signed in as Maya (whose UUID maps to mock `p1` =
+"Maya Chen") you saw yourself. New `lib/people.ts → excludeSelf(list,
+meId)` drops the current user, matching on both the raw id and the
+`toMockId(meId)` mapping (covers mock + live ids). Wired into
+`app/(tabs)/index.tsx` and `app/search.tsx`. Unit-tested in
+`tests/unit/people.test.ts`.
+
+### 23.3 No row in the `profiles` table for your account
+
+`profiles` rows are created by the SECURITY-DEFINER `handle_new_user`
+trigger (migration 00002), which bypasses RLS — so there was never a
+client-facing INSERT policy. An account created *before* that trigger
+existed (or via the dashboard's "Add user") had an `auth.users` row but
+**no `profiles` row**, and the client couldn't create one (RLS denies
+INSERT with no matching policy). That's the same gap behind the earlier
+`friendships_from_id_fkey` seed error (§22.3), and why a profile edit (an
+UPDATE) silently matched zero rows.
+
+Fix:
+- `supabase/migrations/00016_profiles_self_insert.sql` — adds
+  `INSERT … WITH CHECK (user_id = auth.uid())` so a user can create their
+  own row.
+- `components/AuthBootstrap.tsx` — when the sign-in profile read comes
+  back empty, upserts a skeleton `{ user_id, account_type:'person',
+  name }` (best-effort; needs the migration applied).
+- `api.updateProfile` — now an **upsert** (was `.update().eq()`), so a
+  save creates the row if missing instead of erroring on `.single()`.
+
+⚠️ Migration 00016 must be applied to the hosted project (SQL Editor or
+`supabase db push`) for the self-insert path to work.
+
+### 23.4 Couldn't send friend requests to private profiles
+
+Two problems stacked: (a) for a private account you're not friends with,
+the profiles SELECT RLS (§00014) returns nothing, so `useProfile` yielded
+null and `profile/[id].tsx` dead-ended at "Profile unavailable" — no
+button to even try; and (b) the screen's friend action was **store-only**
+(`api.sendFriendRequest` was defined but never called), so requests never
+persisted in live mode.
+
+Fix (`app/profile/[id].tsx`):
+- When the full row isn't readable but the (mock) fallback identifies a
+  **private** account, render a minimal request card — avatar + name +
+  "This account is private" + **Send friend request** — with bio /
+  interests / hosted events still hidden until they accept.
+- The request now persists: `requestFriend()` does the optimistic store
+  update **and** calls `api.sendFriendRequest(id)` in live mode. The
+  friendships INSERT RLS (`from_id = auth.uid()`, any `to_id`) already
+  permits requesting a private user, so no backend change is needed for
+  the send itself.
+
+Note: the private card's name/avatar come from the mock fixture
+(`SC_ACCOUNT_BY_ID`), which is what the People/Search rows already use —
+so it covers the reachable (seeded) private users today. A fully general
+preview for arbitrary private accounts would want a `profile_card`
+SECURITY-DEFINER RPC exposing only name/username/avatar; that's a
+documented follow-up, not done here.
+
+### 23.5 Hosting count — already dynamic
+
+`app/(tabs)/profile.tsx` already computes the HOSTED stat from
+`useHostedEvents(me.id).length` (commit 9f2b587), and `fetchEventsByHost`
+passes the real UUID through `toUUID`. No change needed — it reads 0 only
+until an event's `creator_id` points at the account, which the social
+seed sets (re-run `seed-hosted-social.sql` if hosts show 0).
+
+### 23.6 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 352 / 352, 50 suites (+6: people unit ×4, home self-filter, private-request) |
+| Photo no longer carries across a sign-out/sign-in | ✅ AuthBootstrap clears `picture`/`orgPictures` on user change + sign-out |
+| Self excluded from people nearby / search | ✅ `tests/unit/people.test.ts` + `home.test.tsx` |
+| Private profile shows a Send-request card + persists | ✅ client tested in mock; live send via `api.sendFriendRequest` (needs hosted to verify) |
+| `profiles` self-insert | ⚠️ code ready; **migration 00016 must be applied** to hosted |
+
+See `docs/TEST_PLAN.md` §2.18 for the per-file test additions.
+
+---
+
+## 24. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
