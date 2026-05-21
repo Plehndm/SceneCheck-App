@@ -16,13 +16,18 @@ import {
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
   meInterests = [],
-  onPinPress, onRegionChange, style,
+  onPinPress, onRegionChange, interactive = true, style,
 }: MapProps) {
   const t = useTokens();
   const center = user ?? initialCenter;
 
   return (
-    <View style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}>
+    <View
+      // In preview (non-interactive) mode let touches fall through to a
+      // parent Pressable so tapping the snapshot opens the full Map tab.
+      pointerEvents={interactive ? 'auto' : 'none'}
+      style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}
+    >
       <MapView
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         style={{ flex: 1 }}
@@ -36,6 +41,13 @@ export function Map({
           onRegionChange?.({ latitude: region.latitude, longitude: region.longitude });
         }}
         showsUserLocation={!!user}
+        // Snapshot mode: kill every gesture so the card reads as a
+        // static map. `toolbarEnabled` is Android-only.
+        scrollEnabled={interactive}
+        zoomEnabled={interactive}
+        rotateEnabled={interactive}
+        pitchEnabled={interactive}
+        toolbarEnabled={interactive}
       >
         {user && radiusM > 0 && (
           <Circle

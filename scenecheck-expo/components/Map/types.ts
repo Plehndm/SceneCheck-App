@@ -29,6 +29,12 @@ export interface MapProps {
   // Optional callback when the user pans/zooms — Phase 5.x will use this
   // to refresh `events` from `api.fetchEvents(lat, lng, radius)`.
   onRegionChange?: (center: LatLng) => void;
+  // When false, the map renders real device-specific tiles + pins but
+  // disables every gesture (pan / zoom / rotate / pitch). Used by the
+  // Home-screen `MapPreview` to show a static "lay of the land"
+  // snapshot of the actual map the user would see on the Map tab.
+  // Defaults to true (the full interactive Map tab).
+  interactive?: boolean;
   // Accept any ViewStyle-compatible shape; the implementations cast.
   style?: unknown;
 }

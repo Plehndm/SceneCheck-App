@@ -39,18 +39,31 @@ function RegionChangeReporter({ onChange }: { onChange?: (c: LatLng) => void }) 
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
   meInterests = [],
-  onPinPress, onRegionChange, style,
+  onPinPress, onRegionChange, interactive = true, style,
 }: MapProps) {
   const t = useTokens();
   const center = user ?? initialCenter;
 
   return (
-    <View style={[{ width: '100%' as const, height: 300, overflow: 'hidden' as const }, style as StyleProp<ViewStyle>]}>
+    <View
+      // Non-interactive preview: let clicks fall through to the parent
+      // Pressable that opens the full Map tab.
+      pointerEvents={interactive ? 'auto' : 'none'}
+      style={[{ width: '100%' as const, height: 300, overflow: 'hidden' as const }, style as StyleProp<ViewStyle>]}
+    >
       <MapContainer
         center={[center.latitude, center.longitude]}
         zoom={13}
         style={{ width: '100%', height: '100%' }}
-        scrollWheelZoom
+        // Snapshot mode disables every leaflet interaction + the zoom
+        // control chrome so the preview reads as a static map.
+        scrollWheelZoom={interactive}
+        dragging={interactive}
+        doubleClickZoom={interactive}
+        touchZoom={interactive}
+        boxZoom={interactive}
+        keyboard={interactive}
+        zoomControl={interactive}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
