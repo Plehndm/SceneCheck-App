@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **356/356** across 50 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.19 — create-event / map-pin / attendees / interests fixes)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.20 — create-event location picker / stepper / default-date / time-picker loop)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -743,6 +743,38 @@ and live-publish pieces are verified against the hosted project.
   one-line arithmetic guard verified by the RPC resolving against hosted.
 - Persist interest toggles to `user_interests`. The display sync is
   tested; DB persistence (name→id + insert/delete) is a tracked follow-up.
+
+---
+
+### 2.20 Create-event location picker / stepper / default-date / time-picker loop (post-§2.19 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §25._
+
+A create-event map location picker, a real minus on the capacity stepper,
+a today-default date, and a fix for the `SCTimePicker` AM/PM infinite
+loop. Coverage went to the picker render/confirm and the date default;
+the loop fix is scroll-driven (not reproducible in jsdom) and verified on
+device, with the existing tap test guarding the unchanged path.
+
+| File added/changed | Tests | What they assert |
+|---|---|---|
+| `tests/components/LocationPickerSheet.test.tsx` (new, 2 cases) | picker | Renders the sheet chrome when visible; "Use this location" calls `onConfirm` with the center coords (the `initial` point when the mocked map doesn't pan). |
+| `tests/screens/create-event.test.tsx` (+1 case) | default date | A new event's date field shows `fmtDate(new Date())` (today). |
+
+**Delivered count**: 359 / 359 (up from 356). 51 suites (up from 50).
+
+**What this section deliberately does NOT do:**
+
+- Reproduce the time-picker loop in a test. The bug lived in
+  `onMomentumScrollEnd` ↔ animated `scrollTo` feedback, which jsdom
+  doesn't drive; the existing tap-to-select test (`SCTimePicker.test.tsx`)
+  guards the path that *is* testable, and the loop fix was verified on a
+  device.
+- Drive a real map pan in the picker test. `<Map>` is mocked under Jest
+  (no leaflet/native maps), so `onRegionChange` never fires — the test
+  confirms the no-pan case returns the initial center.
+- Add an icon snapshot for the new `minus` glyph (SVG; no behavioral
+  surface to assert).
 
 ---
 

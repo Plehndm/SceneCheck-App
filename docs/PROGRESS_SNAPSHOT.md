@@ -61,6 +61,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Seeded events made visible (date fix) + Custom-range button moved below the chips.** Follow-up: seeded events weren't showing on the Map/Home feed because `rank_events_query` filters `start_at > now() - 2h` and every event in `seed.sql` / `seed-hosted.sql` was hardcoded to **2026-05-07…05-13** — all in the past by demo time (05-21). Both seeds now use **now()-relative** dates (`now() + interval 'N days'`); `seed-hosted.sql` also switched `ON CONFLICT DO NOTHING` → `DO UPDATE` on the time columns + status so re-running un-stales already-inserted rows (creator_id left untouched so the social seed's host reassignments survive). The two other "not showing" reports are by-design, not bugs: seeded **profiles** aren't in search (search still reads mocks, §7 #1) but are reachable by tapping an event host; seeded **chats/friendships** are RLS-scoped, so you must sign in as a mock user (`maya@scenecheck.dev` / `scenecheck123`) or run the OPTIONAL block to see them as yourself. Also moved the discovery-range **Custom** button to its own row below the preset chips (was inline right). No test-count change (346/346). See §22.5. |
 | 2026-05-21 | **Multi-account correctness pass (photo / self / DB row / private requests).** Five fixes surfaced while verifying as a seeded mock user. **(1) Profile photo leaked across accounts** — the locally-picked `picture`/`orgPictures` overrides are persisted and weren't tied to a user, so signing in as Maya kept the personal account's avatar. AuthBootstrap now clears them on a user change (compares the persisted `me.id`) and on sign-out. **(2) You saw yourself in "people nearby"** — the Home rail + Search read mock people unfiltered; new `lib/people.excludeSelf` drops the signed-in user (matched by id and the UUID→mock-id mapping). **(3) Your account had no row in the `profiles` table** — accounts predating the `handle_new_user` trigger (or added via the dashboard) had no profiles row, and the client couldn't create one (no INSERT RLS policy). New migration `00016_profiles_self_insert.sql` adds a self-insert policy; AuthBootstrap upserts a skeleton on sign-in and `api.updateProfile` is now an upsert. **(4) Couldn't friend-request private profiles** — RLS hides a private non-friend's row, so the screen dead-ended at "Profile unavailable" with no button, and the send was store-only (never persisted). `profile/[id].tsx` now shows a minimal private-account request card (name/avatar + Send request, content still hidden), and the request persists via `api.sendFriendRequest` (the friendships INSERT RLS already permits requesting anyone). **(5) Hosting count** — confirmed already dynamic (`useHostedEvents(me.id)`); shows 0 only until events' `creator_id` is populated (re-run the social seed). +6 tests (352/352). See §23. |
 | 2026-05-21 | **Create-event + map-pin + attendees + interests-display fixes.** Five more issues from end-to-end use. **(1) Couldn't publish** — `api.createEvent` posted the raw `DraftForm` (friendly `"Sat May 16"` / `"7:00 AM"` strings + a location *name*), but the create-event Edge Function needs `start_at` ISO + `location:{lat,lng}`, so it 400'd every time. The screen now builds the proper payload (`friendlyToISO` for start/end, `useLocation` coords for the point, DB field names), `api.createEvent` resolves interest tag names → ids, and the empty-form default date is now upcoming (was a hardcoded past date). **(2) No draft-save notification** — `create-event` was `presentation:'modal'`, and native modals render above the root `ToastHost`/`ConfirmDialog`, hiding the "Saved to Drafts" + publish-error toasts; switched it to `presentation:'card'`. **(3) Pins missing on the full map** — regression from the discovery-range work: `rank_events_query.p_radius` is INT but the full map passed `radius × 1609.34` (a float), so the RPC failed to resolve and returned nothing (home used the int default, hence pins there). Rounded `radiusM` in the screen + defensively in `fetchEvents`; the existing focused-pin card already shows event info before opening. **(4) Attendees preview was static** — event detail showed a fixed `SC_VISIBLE_PEOPLE.slice(0,4)` + the seeded `subscriber_count`; now driven by `useAttendees` (real confirmed subscriptions), with the count/preview/CTA derived from it and yourself merged in optimistically on join. **(5) Profile interests didn't update** — the interests screen toggled `subscribedInterests` but the profile reads `me.interests`; `toggleInterestSub` now keeps `me.interests` in sync. +4 tests (356/356). ⚠️ Publish needs the `create-event` Edge Function deployed to the hosted project. See §24. |
+| 2026-05-21 | **Create-event polish: map location picker, capacity minus, today-default, time-picker loop fix.** **(1)** New `components/LocationPickerSheet.tsx` — a bottom-sheet interactive map with a fixed center pin; the host drags so the pin marks the spot, and the map center (via `onRegionChange`) is stored as `DraftForm.lat/lng` and used for publish + map placement (falls back to the host's location when not set). It passes `initialCenter` (not `user`) to `<Map>` to avoid the web recenter-on-pan loop. **(2)** Capacity decrement now uses a real `minus` icon (new in `SCIcon`) instead of an `x`. **(3)** The new-event default date is the dynamic current date (was a fixed +2d). **(4)** Fixed an infinite AM/PM loop in `SCTimePicker`: the snap `Wheel`'s `handleSettle` issued an *animated* `scrollTo`, whose `onMomentumScrollEnd` re-fired the handler — re-snapping + re-emitting `onChange` forever (repro: nudging 11 AM → 12 PM). Added a `programmatic` ref that skips the self-induced settle, and it only re-snaps when actually off-row. +3 tests (359/359). See §25. |
 
 ### Current layout
 
@@ -1762,7 +1763,73 @@ See `docs/TEST_PLAN.md` §2.19 for the per-file test additions.
 
 ---
 
-## 25. How to re-snapshot this file
+## 25. Create-event polish: location picker, stepper, default date, time-picker loop
+
+_Last updated: 2026-05-21_
+
+Four create-event refinements from continued use.
+
+### 25.1 Map location picker
+
+The Location field was a name-only text input, and publish fell back to
+the host's GPS for the event's coordinates — so you couldn't place an
+event anywhere but where you stood. New `components/LocationPickerSheet.tsx`
+is a bottom-sheet with the real interactive `<Map>` and a **fixed center
+pin**: drag the map so the pin sits on the spot, and the map center
+(reported via `onRegionChange`) becomes the event's `{lat,lng}`.
+
+- `DraftForm` gained optional `lat` / `lng`; `create-event.tsx` shows a
+  "Pin exact spot on map" button under the location name that opens the
+  sheet and then reads "Pinned · lat, lng". Publish sends `form.lat/lng`
+  when set, else the host's location.
+- The sheet passes `initialCenter` (not `user`) to `<Map>`. The `user`
+  prop drives a recenter effect on the web map that would fight every pan
+  (an endless recenter loop); `initialCenter` seeds it once and lets the
+  gesture move freely while the overlay pin marks the center.
+
+### 25.2 Capacity stepper uses a minus
+
+The capacity "decrease" button rendered an `x` (close) glyph. Added a
+`minus` icon to `SCIcon` and used it, so − / + read as a proper stepper.
+
+### 25.3 Default date is today
+
+`makeEmptyForm` now defaults `date` to `fmtDate(new Date())` (the dynamic
+current date) instead of a fixed offset. (Hosts should still pick a start
+time later than "now", since `rank_events_query` filters out past events.)
+
+### 25.4 Time-picker AM/PM infinite loop
+
+Setting a time could spin forever flipping AM↔PM (repro: start 11 AM, then
+nudging the end toward 12 PM). Root cause in `SCTimePicker`'s snap `Wheel`:
+`handleSettle` (the `onMomentumScrollEnd` / `onScrollEndDrag` handler)
+issued an **animated** `scrollTo` to snap the row — but an animated
+programmatic scroll itself fires `onMomentumScrollEnd`, so the handler
+re-ran, re-snapped, and re-emitted `onChange` indefinitely (amplified by
+the `externalIdx` effect re-scrolling on each `onChange`).
+
+Fix: a `programmatic` ref marks scrolls we initiate; the next settle event
+is recognized as self-induced and skipped, breaking the loop. The
+re-snap now also fires only when the wheel is actually off-row (a
+no-movement `scrollTo` wouldn't emit the momentum-end that clears the
+flag, which would otherwise swallow the user's next selection). The
+tap-to-select path is unchanged, so the existing picker test still passes.
+
+### 25.5 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 359 / 359, 51 suites (+3: LocationPickerSheet ×2, today-default) |
+| Location picker returns the center coords | ✅ `tests/components/LocationPickerSheet.test.tsx` |
+| New event defaults to today | ✅ `tests/screens/create-event.test.tsx` |
+| Time-picker tap still emits onChange | ✅ existing `tests/components/SCTimePicker.test.tsx` (loop itself is scroll-driven — not reproducible in jsdom; verified on device) |
+
+See `docs/TEST_PLAN.md` §2.20 for the per-file test additions.
+
+---
+
+## 26. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

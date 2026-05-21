@@ -5,6 +5,7 @@ import { fireEvent } from '@testing-library/react-native';
 import CreateEventScreen from '@/app/create-event';
 import { renderScreen, resetStore, setRouteParams } from '../test-utils';
 import { useStore } from '@/store/useStore';
+import { fmtDate } from '@/lib/date-time';
 
 beforeEach(() => {
   resetStore();
@@ -17,6 +18,11 @@ describe('CreateEventScreen', () => {
     expect(getByText('New event')).toBeTruthy();
     expect(getByPlaceholderText("What's the scene?")).toBeTruthy();
     expect(getByPlaceholderText('What should people expect?')).toBeTruthy();
+  });
+
+  test('defaults a new event to today\'s date', () => {
+    const { getByText } = renderScreen(<CreateEventScreen />);
+    expect(getByText(fmtDate(new Date()))).toBeTruthy();
   });
 
   test('PUBLISH without a title surfaces an error toast', () => {

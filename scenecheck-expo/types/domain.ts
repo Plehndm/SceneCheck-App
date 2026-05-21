@@ -114,6 +114,11 @@ export interface DraftForm {
   timeStart: string;
   timeEnd: string;
   location: string;
+  // Optional map-picked coordinates for the event. When set (via the
+  // location picker), publish uses these; otherwise it falls back to the
+  // host's current location. Optional so older drafts stay valid.
+  lat?: number;
+  lng?: number;
   cap: number;
   interests: string[];
   visibility: Visibility;

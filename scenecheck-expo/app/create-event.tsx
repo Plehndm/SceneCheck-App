@@ -15,6 +15,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { SCButton } from '@/components/SCAddButton';
 import { SCDatePicker } from '@/components/SCDatePicker';
 import { SCTimePicker } from '@/components/SCTimePicker';
+import { LocationPickerSheet } from '@/components/LocationPickerSheet';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
@@ -31,13 +32,12 @@ import type { DraftForm, Visibility } from '@/types/domain';
 const FALLBACK_INTERESTS = ['biking'] as const;
 
 function makeEmptyForm(meInterests: readonly string[]): DraftForm {
-  // Default to an upcoming date (2 days out) — a hardcoded past date would
-  // publish an event that rank_events_query immediately filters off the map.
-  const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  // Default to today's date (dynamic). Pick a start time later than now
+  // when creating, since rank_events_query filters out already-past events.
   return {
     title: '',
     desc: '',
-    date: fmtDate(soon),
+    date: fmtDate(new Date()),
     timeStart: '7:00 AM',
     timeEnd: '9:00 AM',
     location: 'Anteater Plaza',
@@ -80,6 +80,7 @@ export default function CreateEventScreen() {
   );
   const [tagQuery, setTagQuery] = useState('');
   const [publishing, setPublishing] = useState(false);
+  const [locPickerOpen, setLocPickerOpen] = useState(false);
 
   const set = <K extends keyof DraftForm>(k: K, v: DraftForm[K]) =>
     setForm(f => ({ ...f, [k]: v }));
@@ -128,7 +129,10 @@ export default function CreateEventScreen() {
         description: form.desc.trim(),
         start_at: friendlyToISO(form.date, form.timeStart),
         end_at: friendlyToISO(form.date, form.timeEnd),
-        location: { lat: coords.latitude, lng: coords.longitude },
+        location: {
+          lat: form.lat ?? coords.latitude,
+          lng: form.lng ?? coords.longitude,
+        },
         location_name: form.location.trim(),
         capacity: form.cap,
         min_subscribers: form.minSubs,
@@ -233,7 +237,9 @@ export default function CreateEventScreen() {
           </View>
         )}
 
-        {/* Location */}
+        {/* Location — a place name plus a map-picked point. The point is
+            what places the event on the discovery map; the name is the
+            human label shown on the event. */}
         <Field label="Location">
           <TextInput
             value={form.location}
@@ -242,6 +248,23 @@ export default function CreateEventScreen() {
             placeholderTextColor={t.ink3}
             style={inputStyle(t)}
           />
+          <Pressable
+            onPress={() => setLocPickerOpen(true)}
+            accessibilityLabel="Set event location on map"
+            style={({ pressed }) => [{
+              marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 10,
+              paddingHorizontal: 14, height: 44, borderRadius: RADIUS.md,
+              backgroundColor: t.subtle,
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon name="pin" size={16} color={t.primary} />
+            <SCText size={13} color={t.ink2} style={{ flex: 1 }}>
+              {form.lat != null && form.lng != null
+                ? `Pinned · ${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}`
+                : 'Pin exact spot on map'}
+            </SCText>
+            <SCIcon name="chevron-right" size={14} color={t.ink3} />
+          </Pressable>
         </Field>
 
         {/* Capacity */}
@@ -249,9 +272,10 @@ export default function CreateEventScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Pressable
               onPress={() => set('cap', Math.max(2, form.cap - 1))}
+              accessibilityLabel="Decrease capacity"
               style={({ pressed }) => [stepperBtn(t), pressed && { opacity: 0.85 }]}
             >
-              <SCIcon name="x" size={14} color={t.ink} />
+              <SCIcon name="minus" size={14} color={t.ink} />
             </Pressable>
             <SCText variant="display" size={20} style={{ flex: 1, textAlign: 'center' }}>
               {form.cap}
@@ -397,6 +421,13 @@ export default function CreateEventScreen() {
           />
         </View>
       </View>
+
+      <LocationPickerSheet
+        visible={locPickerOpen}
+        initial={form.lat != null && form.lng != null ? { lat: form.lat, lng: form.lng } : null}
+        onClose={() => setLocPickerOpen(false)}
+        onConfirm={(c) => setForm(f => ({ ...f, lat: c.lat, lng: c.lng }))}
+      />
     </Screen>
   );
 }

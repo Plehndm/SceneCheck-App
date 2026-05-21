@@ -10,7 +10,7 @@ import Svg, {
 
 export type IconName =
   | 'home' | 'chat' | 'profile' | 'settings'
-  | 'back' | 'plus' | 'check' | 'search' | 'pin' | 'calendar'
+  | 'back' | 'plus' | 'minus' | 'check' | 'search' | 'pin' | 'calendar'
   | 'people' | 'star' | 'send' | 'chevron-right' | 'globe'
   | 'lock' | 'bell' | 'logout' | 'shield' | 'flag' | 'help'
   | 'x' | 'edit' | 'mic' | 'camera' | 'switch'
@@ -40,6 +40,8 @@ export function SCIcon({ name, size = 20, color = 'currentColor' }: Props) {
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Polyline points="15 18 9 12 15 6" {...strokeProps} /></Svg>;
     case 'plus':
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Line x1="12" y1="5" x2="12" y2="19" {...strokeProps} /><Line x1="5" y1="12" x2="19" y2="12" {...strokeProps} /></Svg>;
+    case 'minus':
+      return <Svg width={size} height={size} viewBox="0 0 24 24"><Line x1="5" y1="12" x2="19" y2="12" {...strokeProps} /></Svg>;
     case 'check':
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Polyline points="20 6 9 17 4 12" {...strokeProps} /></Svg>;
     case 'search':

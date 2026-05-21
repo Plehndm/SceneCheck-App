@@ -133,10 +133,17 @@ function Wheel<T extends string | number>({ items, value, onChange, format }: Wh
   const scrollRef = useRef<ScrollView>(null);
   const externalIdx = Math.max(0, items.indexOf(value));
   const [localIdx, setLocalIdx] = useState(externalIdx);
+  // True while a scroll we triggered ourselves is settling. An *animated*
+  // programmatic scrollTo re-fires onMomentumScrollEnd, and reacting to
+  // that re-snaps + re-emits onChange — the feedback loop that made the
+  // AM/PM column oscillate forever (e.g. nudging 11 AM → 12 PM). We skip
+  // exactly one settle per self-induced scroll to break it.
+  const programmatic = useRef(false);
 
   // When the external value changes (e.g. wheel just mounted, or
   // another wheel's change reshaped the time), snap our scroll
-  // position to match without animating.
+  // position to match without animating (non-animated scrolls don't
+  // fire momentum-end, so they can't feed the loop).
   useEffect(() => {
     setLocalIdx(externalIdx);
     scrollRef.current?.scrollTo({ y: externalIdx * ROW, animated: false });
@@ -150,10 +157,20 @@ function Wheel<T extends string | number>({ items, value, onChange, format }: Wh
   };
 
   const handleSettle = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (programmatic.current) {
+      programmatic.current = false;
+      return;
+    }
     const y = e.nativeEvent.contentOffset.y;
-    const visIdx = Math.round(y / ROW);
-    const clamped = Math.max(0, Math.min(items.length - 1, visIdx));
-    scrollRef.current?.scrollTo({ y: clamped * ROW, animated: true });
+    const clamped = Math.max(0, Math.min(items.length - 1, Math.round(y / ROW)));
+    const target = clamped * ROW;
+    // Only re-snap if we're actually off the row; a redundant scrollTo to
+    // the current position may not fire momentum-end, which would strand
+    // the `programmatic` flag and swallow the user's next selection.
+    if (Math.abs(y - target) > 0.5) {
+      programmatic.current = true;
+      scrollRef.current?.scrollTo({ y: target, animated: true });
+    }
     const next = items[clamped];
     if (next !== value) onChange(next);
   };
