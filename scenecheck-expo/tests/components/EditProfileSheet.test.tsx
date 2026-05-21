@@ -43,6 +43,18 @@ describe('EditProfileSheet', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  test('editing the bio saves it into me', async () => {
+    const onClose = jest.fn();
+    const { getByText, getByPlaceholderText } = renderScreen(
+      <EditProfileSheet visible onClose={onClose} />,
+    );
+    fireEvent.changeText(getByPlaceholderText('A line about you'), 'Updated bio line');
+    fireEvent.press(getByText('SAVE CHANGES'));
+    await Promise.resolve();
+    expect(useStore.getState().me.bio).toBe('Updated bio line');
+    expect(onClose).toHaveBeenCalled();
+  });
+
   test('empty name produces an error toast + does not mutate me', () => {
     const onClose = jest.fn();
     const { getByText, getByDisplayValue } = renderScreen(

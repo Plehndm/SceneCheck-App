@@ -12,6 +12,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useInterests } from '@/hooks/useInterests';
+import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 
 const COLLAPSE_THRESHOLD = 6;
@@ -19,9 +20,23 @@ const COLLAPSE_THRESHOLD = 6;
 export default function InterestsScreen() {
   const t = useTokens();
   const subscribed = useStore(s => s.subscribedInterests);
-  const toggle = useStore(s => s.toggleInterestSub);
+  const toggleStore = useStore(s => s.toggleInterestSub);
+  const showToast = useStore(s => s.showToast);
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
+
+  // Toggle optimistically in the store (also syncs me.interests + persists
+  // locally via AsyncStorage), then commit to `user_interests` in live mode
+  // so the change survives a reload (AuthBootstrap re-hydrates from the DB).
+  const toggle = (tag: string) => {
+    const willSubscribe = !subscribed.has(tag);
+    toggleStore(tag);
+    if (!api.isMock()) {
+      api.setInterestSubscribed(tag, willSubscribe).catch(() => {
+        showToast({ message: "Couldn't save that interest. Try again.", kind: 'error' });
+      });
+    }
+  };
 
   // `useInterests(query)` hits the `interests` table in live mode and
   // SC_INTERESTS_SUGGESTED in mock mode — substring filter happens on

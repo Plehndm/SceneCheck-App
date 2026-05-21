@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.24 — private interests visible + location-biased search)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.25 — private bio visible, edit-bio, interest persistence)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -884,6 +884,34 @@ verified on device.
   Supabase; the mock path is exercised via the profile-screen test).
 - Test the Nominatim `viewbox` bias. It's a network call with no key;
   the param construction is verified by inspection and on device.
+
+---
+
+### 2.25 Private bio visible, edit-bio, interest persistence (post-§2.24 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §30._
+
+A private account now shows its bio (not just interests) to non-friends,
+the edit-profile sheet can edit the bio, and interest toggles persist to
+`user_interests` in live mode. Coverage went to the testable client
+state; the DB persistence is verified on the hosted project.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/other-profile.test.tsx` (updated) | private bio | A private non-friend's card now shows the bio + "Interests" but still no MESSAGE; the request still sends. |
+| `tests/components/EditProfileSheet.test.tsx` (+1) | edit bio | Editing the bio field and pressing SAVE CHANGES writes `me.bio` and closes the sheet. (Existing name-save / empty-name / pre-fill cases unchanged.) |
+
+**Delivered count**: 362 / 362 (up from 361). 51 suites.
+
+**What this section deliberately does NOT do:**
+
+- Test `api.setInterestSubscribed` end-to-end. It's a live DB write
+  (resolve/create interest + insert/delete `user_interests`); no Supabase
+  under Jest. The store sync that drives the UI is covered by
+  `tests/unit/store.test.ts`; persistence is verified on hosted.
+- Add a live `profile_card` RPC for arbitrary private accounts. The
+  private card's bio/name/avatar come from the mock fallback, which covers
+  the reachable (seeded) accounts; the RPC remains a documented follow-up.
 
 ---
 

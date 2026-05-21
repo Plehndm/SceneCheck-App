@@ -141,7 +141,14 @@ export default function OtherProfileScreen() {
           )}
         </View>
 
-        {/* Interests are public even on a private account. */}
+        {/* Bio + interests are shown on a private account; the rest isn't. */}
+        {!!subject.bio && (
+          <View style={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+            <SCText size={14} color={t.ink2} style={{ lineHeight: 20, textAlign: 'center' }}>
+              {subject.bio}
+            </SCText>
+          </View>
+        )}
         {userInterests.length > 0 && (
           <View style={{ paddingHorizontal: 18, paddingBottom: 16 }}>
             <SCText variant="labelCap" style={{ marginBottom: 8 }}>Interests</SCText>
@@ -163,8 +170,8 @@ export default function OtherProfileScreen() {
             </View>
             <SCText size={15} weight="600">This account is private</SCText>
             <SCText size={13} color={t.ink3} style={{ textAlign: 'center', lineHeight: 18 }}>
-              You can see {subject.name.split(' ')[0]}&apos;s interests. Send a friend request to
-              see the rest of their profile once they accept.
+              You can see {subject.name.split(' ')[0]}&apos;s bio and interests. Send a friend
+              request to see the rest of their profile once they accept.
             </SCText>
           </SCCard>
         </View>

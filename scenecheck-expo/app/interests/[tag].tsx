@@ -12,6 +12,7 @@ import { SCAddButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useInterest } from '@/hooks/useInterest';
+import { api } from '@/lib/api';
 
 export default function InterestDetailScreen() {
   const t = useTokens();
@@ -24,7 +25,20 @@ export default function InterestDetailScreen() {
   const i = interest
     ?? { tag: tag ?? '', others: 0, desc: 'A user-created interest tag.', similar: [] };
   const subscribed = useStore(s => s.subscribedInterests);
-  const toggle = useStore(s => s.toggleInterestSub);
+  const toggleStore = useStore(s => s.toggleInterestSub);
+  const showToast = useStore(s => s.showToast);
+
+  // Optimistic store toggle (syncs me.interests + persists locally), then
+  // commit to user_interests in live mode so it survives a reload.
+  const toggle = (t2: string) => {
+    const willSubscribe = !subscribed.has(t2);
+    toggleStore(t2);
+    if (!api.isMock()) {
+      api.setInterestSubscribed(t2, willSubscribe).catch(() => {
+        showToast({ message: "Couldn't save that interest. Try again.", kind: 'error' });
+      });
+    }
+  };
 
   return (
     <Screen>

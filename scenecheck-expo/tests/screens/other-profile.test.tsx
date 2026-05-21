@@ -49,16 +49,17 @@ describe('OtherProfileScreen — person', () => {
     expect(getByText('Profile unavailable')).toBeTruthy();
   });
 
-  test('a private non-friend sees interests ONLY — no bio / message / safety', () => {
-    // p4 (Theo) is private and not a friend → request card. Interests are
-    // shown (public even on private accounts); bio + message/safety are not.
+  test('a private non-friend sees bio + interests, but not message/safety', () => {
+    // p4 (Theo) is private and not a friend → request card. Bio + interests
+    // are shown (public on a private account); message/safety + the rest
+    // stay hidden until they accept.
     setRouteParams({ id: 'p4' });
     useStore.setState({ friends: new Set(['p1', 'p3', 'p5']), outgoingRequests: new Set() });
     const { getByText, queryByText } = renderScreen(<OtherProfileScreen />);
     expect(getByText('This account is private')).toBeTruthy();
     expect(getByText('Interests')).toBeTruthy();
     const p = SC_ACCOUNT_BY_ID.p4;
-    if (p.bio) expect(queryByText(p.bio)).toBeNull();
+    if (p.bio) expect(getByText(p.bio)).toBeTruthy();
     expect(queryByText('MESSAGE')).toBeNull();
     fireEvent.press(getByText('SEND FRIEND REQUEST'));
     expect(useStore.getState().outgoingRequests.has('p4')).toBe(true);

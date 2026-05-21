@@ -13,6 +13,7 @@ import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
+import type { Account } from '@/types/domain';
 
 interface Props {
   visible: boolean;
@@ -26,33 +27,41 @@ export function EditProfileSheet({ visible, onClose }: Props) {
   const showToast = useStore(s => s.showToast);
 
   const [name, setName] = useState(me.name);
+  const [bio, setBio] = useState(me.bio ?? '');
   const [saving, setSaving] = useState(false);
 
-  // Reset the local field whenever the sheet (re-)opens, so canceling
+  // Reset the local fields whenever the sheet (re-)opens, so canceling
   // and re-opening doesn't carry edits across.
   useEffect(() => {
     if (visible) {
       setName(me.name);
+      setBio(me.bio ?? '');
       setSaving(false);
     }
-  }, [visible, me.name]);
+  }, [visible, me.name, me.bio]);
 
   const handleSave = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       showToast({ message: 'Display name is required.', kind: 'error' });
       return;
     }
-    if (trimmed === me.name) {
+    const trimmedBio = bio.trim();
+    const nameChanged = trimmedName !== me.name;
+    const bioChanged = trimmedBio !== (me.bio ?? '');
+    if (!nameChanged && !bioChanged) {
       onClose();
       return;
     }
+    // Only send what changed — `name`/`bio` are real `profiles` columns
+    // (api.updateProfile upserts; mock echoes the patch back).
+    const patch: Partial<Account> = {};
+    if (nameChanged) patch.name = trimmedName;
+    if (bioChanged) patch.bio = trimmedBio;
     setSaving(true);
     try {
-      // updateProfile maps Account.name → profiles.name in live mode.
-      // In mock mode it just echoes the patch back.
-      await api.updateProfile({ name: trimmed });
-      setMe({ name: trimmed });
+      await api.updateProfile(patch);
+      setMe(patch);
       showToast({ message: 'Profile updated.', kind: 'success' });
       onClose();
     } catch (e) {
@@ -113,6 +122,28 @@ export function EditProfileSheet({ visible, onClose }: Props) {
                 borderRadius: RADIUS.md,
                 paddingHorizontal: 12,
                 color: t.ink, fontSize: 14,
+              }}
+            />
+          </View>
+
+          <View style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <SCText variant="labelCap">Bio</SCText>
+              <SCText variant="mono" size={10} color={t.ink3}>{bio.length}/160</SCText>
+            </View>
+            <TextInput
+              value={bio}
+              onChangeText={(v) => setBio(v.slice(0, 160))}
+              placeholder="A line about you"
+              placeholderTextColor={t.ink3}
+              multiline
+              style={{
+                minHeight: 72,
+                backgroundColor: t.surface,
+                borderColor: t.line, borderWidth: 1,
+                borderRadius: RADIUS.md,
+                paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
+                color: t.ink, fontSize: 14, textAlignVertical: 'top',
               }}
             />
           </View>

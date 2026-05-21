@@ -613,6 +613,36 @@ export const api = {
       .filter((n): n is string => Boolean(n));
   },
 
+  // Subscribe/unsubscribe the current user to an interest BY TAG NAME, so
+  // the choice persists to `user_interests` (and survives reload, where
+  // AuthBootstrap re-hydrates interests from the DB). Resolves the tag to
+  // its `interests.id`, creating the interest row for a brand-new custom
+  // tag. Idempotent. Mock mode is a no-op (the store + AsyncStorage hold it).
+  async setInterestSubscribed(tag: string, subscribed: boolean) {
+    if (isMock()) return { ok: true as const };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { data: existing } = await sb.from('interests').select('id').eq('name', tag).maybeSingle();
+    let interestId = (existing?.id as string | undefined) ?? undefined;
+    if (subscribed) {
+      if (!interestId) {
+        const { data: created, error: cErr } = await sb
+          .from('interests').insert({ name: tag }).select('id').single();
+        if (cErr) throw cErr;
+        interestId = created.id as string;
+      }
+      const { error } = await sb.from('user_interests')
+        .upsert({ user_id: user.id, interest_id: interestId }, { onConflict: 'user_id,interest_id', ignoreDuplicates: true });
+      if (error) throw error;
+    } else if (interestId) {
+      const { error } = await sb.from('user_interests')
+        .delete().eq('user_id', user.id).eq('interest_id', interestId);
+      if (error) throw error;
+    }
+    return { ok: true as const };
+  },
+
   // ── Chat ──
   async getChats(): Promise<Chat[]> {
     if (isMock()) return SC_CHATS;

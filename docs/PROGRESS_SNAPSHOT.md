@@ -66,6 +66,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Friend-request flow, map key persistence, location search + branch message cleanup.** **(1)** The `Co-Authored-By` trailer was stripped from all branch commit messages (`git filter-branch --msg-filter`) per request; new commits omit it too. **(2)** Selecting an event on the Map now keeps the colour **Key** visible — the focused-event card renders *above* the legend instead of replacing it. **(3)** Sending a friend request showed BOTH "request sent" and "send failed": `api.sendFriendRequest` invoked an Edge Function that wasn't reliably deployed. It now does a direct, idempotent `friendships` insert (the INSERT RLS already allows requesting anyone), and `profile/[id]` awaits it to show exactly one toast. **(4)** Added a real place to manage requests: the requests screen lists **Requests for you** (accept/decline) *and* **Sent by you** (Cancel), backed by a new `useOutgoingRequests` hook + `cancelOutgoingRequest` store action, and it's reachable from a new **Friend requests** row on the Profile tab (was only linked from Settings for private accounts). **(5)** The location picker gained **search by name/address** (geocoded via OpenStreetMap Nominatim, recentering the map) alongside drag-to-pin. +1 test (360/360). See §27. |
 | 2026-05-21 | **Private-profile privacy gate + location search autocomplete.** **(1)** A private account leaked its interests (and bio / hosted events / message + safety actions) to non-friends: the request-only card only triggered when `useProfile` returned null, but in mock mode (no RLS) — and live mode as a friend — the full profile rendered. `profile/[id]` now computes `privateLocked = isPrivate && !isFriend && !isSelf` and shows the minimal request card whenever it's set, in **every** mode, so a private account exposes only name/avatar + Send-request to non-friends (the live RLS still backstops the server). **(2)** The location picker's search is now a live **autocomplete dropdown** — typing (≥3 chars, 350 ms debounce) lists up to 5 OpenStreetMap Nominatim matches; tapping one recenters the map, so users don't need the exact place name. +1 test (361/361). See §28. |
 | 2026-05-21 | **Refine §28: private accounts show interests (only); search biased to the user.** Per follow-up: a private account should expose its **interests** to non-friends — just not bio/events/etc. New `api.getInterestsForUser` (reads the publicly-readable `user_interests`, so it works for any account) + `useUserInterests` hook; the private request card now renders an Interests section, and the full profile uses the hook too (which also fixes interests never loading in live mode, since `getProfile` doesn't return them). The location-search dropdown is now **biased to the user's location** — Nominatim `viewbox` + `bounded=1` centred on `coords` (default region when no permission) — so suggestions are nearby/accurate instead of global. 361/361. See §29. |
+| 2026-05-21 | **Private bio visible too + edit-bio + interests persist across sessions.** **(1)** A private account now also shows its **bio** to non-friends (the private request card renders `subject.bio` alongside interests; everything else stays gated). **(2)** The Edit-profile sheet gained a **bio** field (multiline, 160 cap) — saved via `api.updateProfile({ name, bio })` (an upsert) into the `me` slice. **(3)** Interest toggles now **persist across reloads** in live mode: new `api.setInterestSubscribed(tag, on)` resolves the tag → `interests.id` (creating the row for a custom tag) and inserts/deletes `user_interests`; both interest screens call it after the optimistic store toggle. Previously the toggle was store-only, so AuthBootstrap's DB re-hydrate reset interests on the next launch. +1 test (362/362). See §30. |
 
 ### Current layout
 
@@ -2040,7 +2041,67 @@ See `docs/TEST_PLAN.md` §2.24.
 
 ---
 
-## 30. How to re-snapshot this file
+## 30. Private bio visible, edit-bio, interest persistence
+
+_Last updated: 2026-05-21_
+
+### 30.1 Private accounts also show their bio
+
+Extending §29.1: a private account's **bio** is shown to non-friends too,
+alongside interests. `app/profile/[id].tsx`'s private request card now
+renders `subject.bio` (centred, under the name) when present; bio +
+interests are the only things a non-friend sees, everything else stays
+hidden until they accept.
+
+Live note: the card's name / avatar / bio come from `subject`
+(`person ?? fallback`). For a private non-friend in live mode the
+`profiles` row is RLS-hidden, so `subject` is the mock fallback — which
+covers the seeded/reachable accounts. A general live solution for
+arbitrary private accounts (exposing name/avatar/bio publicly) still
+wants a `profile_card` SECURITY-DEFINER RPC; interests already work
+universally via the publicly-readable `user_interests` (§29.1).
+
+### 30.2 Edit your bio
+
+`components/EditProfileSheet.tsx` previously edited the display name only.
+It now has a **Bio** field (multiline, 160-char cap). Save sends only the
+changed columns through `api.updateProfile({ name?, bio? })` (an upsert —
+`name`/`bio` are real `profiles` columns) and mirrors them into the `me`
+slice, so the profile tab + your own card update instantly.
+
+### 30.3 Interests persist across sessions
+
+Toggling an interest was store-only. In mock mode that survives via
+AsyncStorage, but in **live** mode AuthBootstrap re-hydrates interests
+from `user_interests` on every launch, so changes reset.
+
+New `api.setInterestSubscribed(tag, subscribed)`:
+- resolves the tag → `interests.id` by name (`interests.name` is UNIQUE),
+  creating the interest row for a brand-new custom tag (RLS allows any
+  authenticated user to insert an interest);
+- inserts (`upsert`, idempotent) or deletes the `user_interests` row for
+  the current user (RLS scopes both to `auth.uid()`).
+
+`app/interests/index.tsx` and `app/interests/[tag].tsx` now call it after
+the optimistic store toggle (best-effort; a failure toasts). So a reload
+re-hydrates the same set. Mock mode is a no-op (the store + AsyncStorage
+already persist it).
+
+### 30.4 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 362 / 362, 51 suites (+1: edit-bio save) |
+| Private non-friend sees bio + interests | ✅ `tests/screens/other-profile.test.tsx` |
+| Bio edit saves into `me` | ✅ `tests/components/EditProfileSheet.test.tsx` |
+| Interests persist (live) | ✅ wired via `api.setInterestSubscribed` (DB write — verified on the hosted project, not under Jest) |
+
+See `docs/TEST_PLAN.md` §2.25.
+
+---
+
+## 31. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
