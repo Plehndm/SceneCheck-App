@@ -74,3 +74,21 @@ describe('OtherProfileScreen — org', () => {
     expect(useStore.getState().following.has('orgC')).toBe(true);
   });
 });
+
+describe('OtherProfileScreen — ratings + hosted events', () => {
+  test('always renders the Ratings + hosting section headers', () => {
+    // orgA has both reviews + hosted events in the fixtures.
+    setRouteParams({ id: 'orgA' });
+    const { getByText } = renderScreen(<OtherProfileScreen />);
+    expect(getByText('Ratings')).toBeTruthy();
+    expect(getByText('Events posted')).toBeTruthy();
+  });
+
+  test('shows "No ratings yet" + empty hosting state for a host with neither', () => {
+    // orgC has no reviews and hosts no events in the fixtures.
+    setRouteParams({ id: 'orgC' });
+    const { getByText } = renderScreen(<OtherProfileScreen />);
+    expect(getByText('No ratings yet')).toBeTruthy();
+    expect(getByText('No events posted yet.')).toBeTruthy();
+  });
+});

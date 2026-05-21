@@ -254,6 +254,24 @@ export const api = {
     );
   },
 
+  // All events created by a given host, regardless of status (so the
+  // profile screen can show past + cancelled events too, not just the
+  // discovery-ranked published ones `fetchEvents` returns). Ordered
+  // newest-start first. Mock mode filters SC_EVENTS by hostId.
+  async fetchEventsByHost(hostId: string): Promise<SCEvent[]> {
+    if (isMock()) return SC_EVENTS.filter(e => e.hostId === hostId);
+    const sb = requireClient();
+    const { data, error } = await sb
+      .from('events')
+      .select('*, event_interests(interest_id(name))')
+      .eq('creator_id', toUUID(hostId))
+      .order('start_at', { ascending: false });
+    if (error) throw error;
+    const user = await this.getCurrentUser();
+    const meId = (user && 'id' in user) ? user.id : null;
+    return (data ?? []).map((row) => transformEventRow(row as EventRow, meId));
+  },
+
   async getEventById(eventId: string): Promise<SCEvent | null> {
     if (isMock()) return SC_EVENT_BY_ID[eventId] || null;
     const sb = requireClient();

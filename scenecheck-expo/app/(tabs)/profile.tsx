@@ -14,9 +14,11 @@ import { SCSection } from '@/components/SCSection';
 import { SCIcon, type IconName } from '@/components/SCIcon';
 import { EditProfileSheet } from '@/components/EditProfileSheet';
 import { useImagePicker } from '@/hooks/useImagePicker';
+import { useHostedEvents } from '@/hooks/useHostedEvents';
+import { useRatings } from '@/hooks/useRatings';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_EVENTS } from '@/data/mocks';
+import { summarizeRatings } from '@/lib/ratings';
 import { RADIUS } from '@/theme/tokens';
 
 export default function ProfileTab() {
@@ -32,7 +34,12 @@ export default function ProfileTab() {
   const showConfirm = useStore(s => s.showConfirm);
 
   const { picking, pick, error } = useImagePicker();
-  const hostedCount = SC_EVENTS.filter(e => e.hostId === 'me').length;
+  // Dynamic stats: events you host + your rating summary, computed
+  // from the same live hooks the other-profile screen uses.
+  const { events: hostedEvents } = useHostedEvents(me.id);
+  const { ratings: myRatings } = useRatings(me.id);
+  const hostedCount = hostedEvents.length;
+  const ratingSummary = summarizeRatings(myRatings);
 
   const handleChangePhoto = async () => {
     const next = await pick();
@@ -108,12 +115,16 @@ export default function ProfileTab() {
         <SCText size={14} color={t.ink2} style={{ lineHeight: 20 }}>{me.bio}</SCText>
       </View>
 
-      {/* Stats */}
+      {/* Stats — HOSTED + RATING are computed live from hosted events
+          and received ratings; "—" when you have no ratings yet. */}
       <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
         <SCCard style={{ flexDirection: 'row', padding: 14, justifyContent: 'space-around' }}>
-          <Stat label="HOSTED" value={String(me.events_hosted ?? 0)} />
+          <Stat label="HOSTED" value={String(hostedCount)} />
           <Stat label="ATTENDED" value={String(me.events_attended ?? 0)} />
-          <Stat label="RATING" value={String(me.rating ?? '—')} />
+          <Stat
+            label="RATING"
+            value={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★` : '—'}
+          />
         </SCCard>
       </View>
 
@@ -136,7 +147,7 @@ export default function ProfileTab() {
           <Row icon="calendar" label="Events I'm hosting" v={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
           <Row icon="people" label="Friends" v={String(friends.size)} onPress={() => router.push('/my-friends' as never)} />
           <Row icon="people" label="Following" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
-          <Row icon="star" label="My ratings" v={String(me.rating ?? '—')} onPress={() => router.push(`/ratings/${me.id}` as never)} />
+          <Row icon="star" label="My ratings" v={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★ · ${ratingSummary.count}` : 'None yet'} onPress={() => router.push(`/ratings/${me.id}` as never)} />
           {drafts.length > 0 && (
             <Row icon="edit" label="Drafts" v={String(drafts.length)} onPress={() => router.push('/drafts' as never)} />
           )}

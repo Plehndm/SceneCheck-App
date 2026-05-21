@@ -121,9 +121,9 @@ in `.env`._
 
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
-| **Unit tests** | Required | ≥ 5 | 5 files (`scenecheck-expo/tests/unit/`), 104 test cases |
-| **Integration tests** | Required | ≥ 3 | 35 files (10 components + 18 screens + 7 hooks), 222 test cases |
-| **Total tests** | — | — | **326 tests, 47 suites** |
+| **Unit tests** | Required | ≥ 5 | 6 files (`scenecheck-expo/tests/unit/`), 111 test cases |
+| **Integration tests** | Required | ≥ 3 | 36 files (10 components + 18 screens + 8 hooks), 232 test cases |
+| **Total tests** | — | — | **343 tests, 49 suites** |
 
 ### 2.2 Migration note
 
@@ -269,11 +269,11 @@ Approximate run-times:
 
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
-| Unit (5 files) | 104 | <1s | local + CI |
+| Unit (6 files) | 111 | <1s | local + CI |
 | Component (10 files) | 43 | <1s | local + CI |
-| Hook (7 files) | 30 | <1s | local + CI |
-| Screen integration (25 files) | 149 | ~3s | local + CI |
-| **Total (Jest)** | **326** | **~5s** | local + CI |
+| Hook (8 files) | 33 | <1s | local + CI |
+| Screen integration (25 files) | 151 | ~3s | local + CI |
+| **Total (Jest)** | **343** | **~5s** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved

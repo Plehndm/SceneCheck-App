@@ -7,7 +7,6 @@
 // Both surfaces share the events-by-this-account list and the ratings
 // chip if there are reviews.
 
-import { useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -21,11 +20,12 @@ import { SCButton } from '@/components/SCAddButton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useProfile } from '@/hooks/useProfile';
+import { useHostedEvents } from '@/hooks/useHostedEvents';
+import { useRatings } from '@/hooks/useRatings';
 import { api } from '@/lib/api';
-import {
-  SC_EVENTS, SC_VISIBLE_PERSON_BY_ID, SC_REVIEWS, SC_MY_ACCOUNTS,
-} from '@/data/mocks';
+import { SC_VISIBLE_PERSON_BY_ID, SC_MY_ACCOUNTS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
+import { summarizeRatings, ratingForEvent } from '@/lib/ratings';
 import { RADIUS } from '@/theme/tokens';
 
 export default function OtherProfileScreen() {
@@ -51,17 +51,12 @@ export default function OtherProfileScreen() {
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
 
-  const hostedEvents = useMemo(
-    () => (id ? SC_EVENTS.filter(e => e.hostId === id) : []),
-    [id],
-  );
-  const reviews = useMemo(
-    () => (id ? SC_REVIEWS.filter(r => r.hostId === id) : []),
-    [id],
-  );
-  const avgRating = reviews.length > 0
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : null;
+  // Live in live mode, fixture-filtered in mock mode. Both hooks key
+  // off `id` (the host's user id).
+  const { events: hostedEvents } = useHostedEvents(id);
+  const { ratings: reviews } = useRatings(id);
+  const ratingSummary = summarizeRatings(reviews);
+  const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
   if (!person || !isVisible) {
     return (
@@ -234,39 +229,85 @@ export default function OtherProfileScreen() {
         </View>
       )}
 
-      {/* Hosted events */}
-      {hostedEvents.length > 0 && (
-        <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
-          <SCText variant="labelCap" style={{ marginBottom: 8 }}>
-            {isOrg ? 'Events posted' : 'Hosting'}
-          </SCText>
+      {/* Ratings summary — shown for both people and orgs. Dynamically
+          computed from this host's reviews; explicit "no ratings yet"
+          when there are none. Tapping opens the full ratings list. */}
+      <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
+        <SCText variant="labelCap" style={{ marginBottom: 8 }}>Ratings</SCText>
+        <Pressable
+          onPress={ratingSummary.count > 0 ? () => router.push(`/ratings/${id}` as never) : undefined}
+          disabled={ratingSummary.count === 0}
+          style={({ pressed }) => [pressed && ratingSummary.count > 0 ? { opacity: 0.9 } : null]}
+        >
+          <SCCard style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <SCIcon name="star" size={18} color={ratingSummary.average != null ? t.warn : t.ink3} />
+            {ratingSummary.average != null ? (
+              <>
+                <SCText variant="displayTight" size={20}>{avgRating}</SCText>
+                <SCText variant="mono" size={11} color={t.ink3} style={{ flex: 1 }}>
+                  · {ratingSummary.count} {ratingSummary.count === 1 ? 'review' : 'reviews'}
+                </SCText>
+                <SCIcon name="chevron-right" size={14} color={t.ink3} />
+              </>
+            ) : (
+              <SCText size={13} color={t.ink3} style={{ flex: 1 }}>
+                No ratings yet
+              </SCText>
+            )}
+          </SCCard>
+        </Pressable>
+      </View>
+
+      {/* Hosted events — each with its own per-event rating. */}
+      <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
+        <SCText variant="labelCap" style={{ marginBottom: 8 }}>
+          {isOrg ? 'Events posted' : 'Hosting'}
+        </SCText>
+        {hostedEvents.length === 0 ? (
+          <SCCard style={{ padding: 16, alignItems: 'center' }}>
+            <SCText size={13} color={t.ink3}>
+              {isOrg ? 'No events posted yet.' : 'Not hosting anything right now.'}
+            </SCText>
+          </SCCard>
+        ) : (
           <View style={{ gap: 8 }}>
-            {hostedEvents.map(e => (
-              <Pressable
-                key={e.id}
-                onPress={() => router.push(`/event/${e.id}` as never)}
-                style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-              >
-                <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                  <View style={{
-                    width: 36, height: 36, borderRadius: RADIUS.md, backgroundColor: t.primarySoft,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <SCIcon name="calendar" size={16} color={t.primary} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <SCText variant="display" size={14}>{e.title}</SCText>
-                    <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                      {whenRange(e)} · {e.attendees}/{e.cap}
-                    </SCText>
-                  </View>
-                  <SCIcon name="chevron-right" size={14} color={t.ink3} />
-                </SCCard>
-              </Pressable>
-            ))}
+            {hostedEvents.map(e => {
+              const er = ratingForEvent(reviews, e.id);
+              return (
+                <Pressable
+                  key={e.id}
+                  onPress={() => router.push(`/event/${e.id}` as never)}
+                  style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+                >
+                  <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                    <View style={{
+                      width: 36, height: 36, borderRadius: RADIUS.md, backgroundColor: t.primarySoft,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <SCIcon name="calendar" size={16} color={t.primary} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <SCText variant="display" size={14}>{e.title}</SCText>
+                      <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+                        {whenRange(e)} · {e.attendees}/{e.cap}
+                      </SCText>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <SCIcon name="star" size={11} color={er.average != null ? t.warn : t.ink3} />
+                        <SCText variant="mono" size={10} color={t.ink3}>
+                          {er.average != null
+                            ? `${er.average.toFixed(1)} · ${er.count} ${er.count === 1 ? 'review' : 'reviews'}`
+                            : 'No ratings yet'}
+                        </SCText>
+                      </View>
+                    </View>
+                    <SCIcon name="chevron-right" size={14} color={t.ink3} />
+                  </SCCard>
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
-      )}
+        )}
+      </View>
 
       {/* Safety actions (people only — orgs use Report flow elsewhere) */}
       {!isOrg && (
