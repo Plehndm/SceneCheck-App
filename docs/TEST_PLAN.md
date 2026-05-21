@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.20 — create-event location picker / stepper / default-date / time-picker loop)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.21 — map pin colours aligned to the legend)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -775,6 +775,30 @@ device, with the existing tap test guarding the unchanged path.
   confirms the no-pan case returns the initial center.
 - Add an icon snapshot for the new `minus` glyph (SVG; no behavioral
   surface to assert).
+
+---
+
+### 2.21 Map pin colours aligned to the legend (post-§2.20 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §26._
+
+`pinColor` now maps each event to the legend bucket for its type — the
+key fix being that a friend-hosted event is always "Friends"
+(`accentFriend`), not grey ("Other") when interests don't overlap. The
+shared `tests/unit/map-types.test.ts` was updated to lock the corrected
+mapping; no net count change (one case re-pointed, one added).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/unit/map-types.test.ts` | friend / org buckets | A `friend` event resolves to `accentFriend` with **and** without a shared interest; an `org` event resolves to `accentBlue` when it shares an interest and to `mapPinMute` ("Other") when it doesn't. (`yours → primary`, `recommended → accentBlue` unchanged.) |
+
+**Delivered count**: 359 / 359. 51 suites.
+
+**What this section deliberately does NOT do:**
+
+- Reconcile the event-detail header accent for `org` events (it stays
+  `accentBlue`; the map shows `mapPinMute` when there's no shared
+  interest). The map legend is the surface this change targets.
 
 ---
 

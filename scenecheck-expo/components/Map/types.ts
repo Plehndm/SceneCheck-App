@@ -60,17 +60,30 @@ export function eventLatLng(e: SCEvent): LatLng {
   };
 }
 
-// Pin color for a given event, mirroring the SVG map's legacy palette.
-// Components import this so the legend stays in sync with both map
-// implementations.
+// Pin color for a given event. Each color maps 1:1 to a map-legend
+// entry, chosen by the event's relationship to you (highest-priority
+// bucket wins):
+//
+//   primary      → "Your events"  — you host it (kind 'yours')
+//   accentFriend → "Friends"      — a friend hosts it (kind 'friend')
+//   accentBlue   → "Recommended"  — app-discovered (kind 'recommended')
+//                                    or it matches one of your interests
+//   mapPinMute   → "Other"        — anything else (e.g. an org event you
+//                                    have no interest connection to)
+//
+// Components import this so both map implementations + the legend stay in
+// sync.
 export function pinColor(
   e: SCEvent,
   tokens: { primary: string; accentFriend: string; accentBlue: string; mapPinMute: string },
   meInterests: string[] = [],
 ): string {
-  const sharesTag = e.interests.some(tag => meInterests.includes(tag));
-  const isRec = e.kind === 'recommended' || sharesTag;
   if (e.kind === 'yours') return tokens.primary;
-  if (e.kind === 'friend') return isRec ? tokens.accentFriend : tokens.mapPinMute;
-  return isRec ? tokens.accentBlue : tokens.mapPinMute;
+  // A friend's event is always "Friends" — previously this was gated on a
+  // shared interest, so a friend's event you had no tag in common with
+  // mis-coloured as "Other".
+  if (e.kind === 'friend') return tokens.accentFriend;
+  const sharesInterest = e.interests.some(tag => meInterests.includes(tag));
+  if (e.kind === 'recommended' || sharesInterest) return tokens.accentBlue;
+  return tokens.mapPinMute;
 }

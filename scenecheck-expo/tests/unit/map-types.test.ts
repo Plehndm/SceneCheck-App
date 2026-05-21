@@ -34,22 +34,24 @@ describe('pinColor', () => {
     expect(pinColor(SC_EVENT_BY_ID.e1, TOKENS, [])).toBe(TOKENS.primary);
   });
 
-  test('returns accentFriend for kind: friend when interests overlap', () => {
-    // e2 (friend) has interests ['cooking','uci']; "uci" overlaps below.
+  test('returns accentFriend ("Friends") for a friend-hosted event, regardless of interests', () => {
+    // e2 (friend) — a friend's event is "Friends" whether or not it shares
+    // a tag with you (this is the legend-alignment fix).
     expect(pinColor(SC_EVENT_BY_ID.e2, TOKENS, ['uci'])).toBe(TOKENS.accentFriend);
-  });
-
-  test('returns mapPinMute for kind: friend with no shared interests', () => {
-    expect(pinColor(SC_EVENT_BY_ID.e2, TOKENS, ['nothing-relevant'])).toBe(TOKENS.mapPinMute);
+    expect(pinColor(SC_EVENT_BY_ID.e2, TOKENS, ['nothing-relevant'])).toBe(TOKENS.accentFriend);
   });
 
   test('returns accentBlue for recommended events', () => {
     expect(pinColor(SC_EVENT_BY_ID.e4, TOKENS, [])).toBe(TOKENS.accentBlue);
   });
 
-  test('returns accentBlue for org events that share an interest with the user', () => {
+  test('returns accentBlue ("Recommended") for an org event that shares an interest', () => {
     // e9 is kind:org with interest 'uci' — user has 'uci', so it's "recommended".
     expect(pinColor(SC_EVENT_BY_ID.e9, TOKENS, ['uci'])).toBe(TOKENS.accentBlue);
+  });
+
+  test('returns mapPinMute ("Other") for an org event with no shared interest', () => {
+    expect(pinColor(SC_EVENT_BY_ID.e9, TOKENS, [])).toBe(TOKENS.mapPinMute);
   });
 });
 

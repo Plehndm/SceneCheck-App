@@ -62,6 +62,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Multi-account correctness pass (photo / self / DB row / private requests).** Five fixes surfaced while verifying as a seeded mock user. **(1) Profile photo leaked across accounts** — the locally-picked `picture`/`orgPictures` overrides are persisted and weren't tied to a user, so signing in as Maya kept the personal account's avatar. AuthBootstrap now clears them on a user change (compares the persisted `me.id`) and on sign-out. **(2) You saw yourself in "people nearby"** — the Home rail + Search read mock people unfiltered; new `lib/people.excludeSelf` drops the signed-in user (matched by id and the UUID→mock-id mapping). **(3) Your account had no row in the `profiles` table** — accounts predating the `handle_new_user` trigger (or added via the dashboard) had no profiles row, and the client couldn't create one (no INSERT RLS policy). New migration `00016_profiles_self_insert.sql` adds a self-insert policy; AuthBootstrap upserts a skeleton on sign-in and `api.updateProfile` is now an upsert. **(4) Couldn't friend-request private profiles** — RLS hides a private non-friend's row, so the screen dead-ended at "Profile unavailable" with no button, and the send was store-only (never persisted). `profile/[id].tsx` now shows a minimal private-account request card (name/avatar + Send request, content still hidden), and the request persists via `api.sendFriendRequest` (the friendships INSERT RLS already permits requesting anyone). **(5) Hosting count** — confirmed already dynamic (`useHostedEvents(me.id)`); shows 0 only until events' `creator_id` is populated (re-run the social seed). +6 tests (352/352). See §23. |
 | 2026-05-21 | **Create-event + map-pin + attendees + interests-display fixes.** Five more issues from end-to-end use. **(1) Couldn't publish** — `api.createEvent` posted the raw `DraftForm` (friendly `"Sat May 16"` / `"7:00 AM"` strings + a location *name*), but the create-event Edge Function needs `start_at` ISO + `location:{lat,lng}`, so it 400'd every time. The screen now builds the proper payload (`friendlyToISO` for start/end, `useLocation` coords for the point, DB field names), `api.createEvent` resolves interest tag names → ids, and the empty-form default date is now upcoming (was a hardcoded past date). **(2) No draft-save notification** — `create-event` was `presentation:'modal'`, and native modals render above the root `ToastHost`/`ConfirmDialog`, hiding the "Saved to Drafts" + publish-error toasts; switched it to `presentation:'card'`. **(3) Pins missing on the full map** — regression from the discovery-range work: `rank_events_query.p_radius` is INT but the full map passed `radius × 1609.34` (a float), so the RPC failed to resolve and returned nothing (home used the int default, hence pins there). Rounded `radiusM` in the screen + defensively in `fetchEvents`; the existing focused-pin card already shows event info before opening. **(4) Attendees preview was static** — event detail showed a fixed `SC_VISIBLE_PEOPLE.slice(0,4)` + the seeded `subscriber_count`; now driven by `useAttendees` (real confirmed subscriptions), with the count/preview/CTA derived from it and yourself merged in optimistically on join. **(5) Profile interests didn't update** — the interests screen toggled `subscribedInterests` but the profile reads `me.interests`; `toggleInterestSub` now keeps `me.interests` in sync. +4 tests (356/356). ⚠️ Publish needs the `create-event` Edge Function deployed to the hosted project. See §24. |
 | 2026-05-21 | **Create-event polish: map location picker, capacity minus, today-default, time-picker loop fix.** **(1)** New `components/LocationPickerSheet.tsx` — a bottom-sheet interactive map with a fixed center pin; the host drags so the pin marks the spot, and the map center (via `onRegionChange`) is stored as `DraftForm.lat/lng` and used for publish + map placement (falls back to the host's location when not set). It passes `initialCenter` (not `user`) to `<Map>` to avoid the web recenter-on-pan loop. **(2)** Capacity decrement now uses a real `minus` icon (new in `SCIcon`) instead of an `x`. **(3)** The new-event default date is the dynamic current date (was a fixed +2d). **(4)** Fixed an infinite AM/PM loop in `SCTimePicker`: the snap `Wheel`'s `handleSettle` issued an *animated* `scrollTo`, whose `onMomentumScrollEnd` re-fired the handler — re-snapping + re-emitting `onChange` forever (repro: nudging 11 AM → 12 PM). Added a `programmatic` ref that skips the self-induced settle, and it only re-snaps when actually off-row. +3 tests (359/359). See §25. |
+| 2026-05-21 | **Map pin colors now match the legend by event type.** `pinColor` mis-coloured a **friend-hosted** event as "Other" (`mapPinMute`, grey) whenever it shared no interest tag with you — it was gated on `isRec`. Pins now map 1:1 to the legend by relationship: `yours → primary` ("Your events"), `friend → accentFriend` ("Friends", always), `recommended` or interest-match `→ accentBlue` ("Recommended"), else `→ mapPinMute` ("Other", e.g. an org event you have no interest connection to). No new test count (re-pointed the friend case + added an "Other" case); 359/359. See §26. |
 
 ### Current layout
 
@@ -1829,7 +1830,42 @@ See `docs/TEST_PLAN.md` §2.20 for the per-file test additions.
 
 ---
 
-## 26. How to re-snapshot this file
+## 26. Map pin colors aligned to the legend
+
+_Last updated: 2026-05-21_
+
+The map legend (Home + Map tab) lists four buckets — **Your events**
+(`primary`), **Friends** (`accentFriend`), **Recommended** (`accentBlue`),
+**Other** (`mapPinMute`) — but `components/Map/types.ts → pinColor`
+didn't honor them by type. The friend branch read
+`isRec ? accentFriend : mapPinMute`, so a friend's event you shared no
+interest tag with rendered grey ("Other") instead of the "Friends"
+colour.
+
+`pinColor` now resolves the highest-priority bucket directly:
+
+| Event | Colour | Legend |
+|---|---|---|
+| `kind === 'yours'` | `primary` | Your events |
+| `kind === 'friend'` | `accentFriend` | Friends (now **always**, not gated on interests) |
+| `kind === 'recommended'`, or any kind sharing one of your interests | `accentBlue` | Recommended |
+| anything else (e.g. an `org` event with no shared interest) | `mapPinMute` | Other |
+
+So every pin's colour now matches the legend swatch for its type, on both
+the native and web maps (they share this resolver). `tests/unit/
+map-types.test.ts` was updated: the friend case now asserts `accentFriend`
+regardless of interest overlap, plus a new case covers the `mapPinMute`
+("Other") bucket. 359/359.
+
+Note: the event-detail screen's own accent still treats `org` as
+`accentBlue` ("Recommended · app-created") unconditionally — it has no
+"Other" concept — so an org event with no shared interest shows grey on
+the map but blue in the detail header. Left as-is; the map legend is the
+surface this fix targets.
+
+---
+
+## 27. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
