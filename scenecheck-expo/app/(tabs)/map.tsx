@@ -168,9 +168,11 @@ export default function MapTab() {
         )}
       </View>
 
-      {/* Focused event card OR legend */}
-      <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
-        {focused ? (
+      {/* Focused event card (when a pin is selected) + the colour key.
+          The key stays visible at all times so the pin colours are
+          always decodable, even with an event focused. */}
+      <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+        {focused && (
           <SCCard style={{ padding: 14 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
               <SCText variant="labelCap">Focused on map</SCText>
@@ -192,20 +194,21 @@ export default function MapTab() {
               </View>
             </Pressable>
           </SCCard>
-        ) : (
-          <SCCard style={{ padding: 14, gap: 8 }}>
-            <SCText variant="labelCap">Key</SCText>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-              <LegendDot color={t.primary} label="Your events" />
-              <LegendDot color={t.accentFriend} label="Friends" />
-              <LegendDot color={t.accentBlue} label="Recommended" />
-              <LegendDot color={t.mapPinMute} label="Other" />
-            </View>
+        )}
+        <SCCard style={{ padding: 14, gap: 8 }}>
+          <SCText variant="labelCap">Key</SCText>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            <LegendDot color={t.primary} label="Your events" />
+            <LegendDot color={t.accentFriend} label="Friends" />
+            <LegendDot color={t.accentBlue} label="Recommended" />
+            <LegendDot color={t.mapPinMute} label="Other" />
+          </View>
+          {!focused && (
             <SCText size={11} color={t.ink3} style={{ lineHeight: 16 }}>
               Pins show events only. People&apos;s locations are never displayed.
             </SCText>
-          </SCCard>
-        )}
+          )}
+        </SCCard>
       </View>
     </Screen>
   );

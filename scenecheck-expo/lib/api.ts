@@ -404,11 +404,24 @@ export const api = {
   // ── Social ──
   async sendFriendRequest(targetId: string) {
     if (isMock()) return { status: 'pending' as const };
-    const { data, error } = await requireClient().functions.invoke('send-friend-request', {
-      body: { target_id: toUUID(targetId) },
-    });
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    // Insert the pending friendship directly. The friendships INSERT RLS
+    // allows from_id = auth.uid() to any to_id (private accounts included),
+    // so this needs no Edge Function — which removes the failure that made
+    // the UI show BOTH a "request sent" and a "send failed" toast. It's
+    // idempotent (re-requesting the same person is a no-op, not a UNIQUE
+    // violation). The notification fan-out the send-friend-request function
+    // did is dropped here; persisting the request is what the UI needs.
+    const { error } = await sb
+      .from('friendships')
+      .upsert(
+        { from_id: user.id, to_id: toUUID(targetId), status: 'pending' },
+        { onConflict: 'from_id,to_id', ignoreDuplicates: true },
+      );
     if (error) throw error;
-    return data;
+    return { status: 'pending' as const };
   },
 
   async acceptFriendRequest(friendshipId: string) {

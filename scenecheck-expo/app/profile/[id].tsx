@@ -71,24 +71,30 @@ export default function OtherProfileScreen() {
   // optimistic store update (re-synced from the DB on the next hydrate).
   // In mock mode a public add is instant; private + every live add goes
   // to "pending" since only the recipient can accept.
-  const requestFriend = () => {
+  const requestFriend = async () => {
     if (!id || isFriend) return;
     if (isPending) {
       showToast({ message: 'Friend request pending.', kind: 'info' });
       return;
     }
-    const live = !api.isMock();
-    if (live || isPrivate) {
-      sendRequestLocal(id);
+    if (api.isMock()) {
+      // Mock: public add is instant; private goes to "pending".
+      if (isPrivate) sendRequestLocal(id); else addFriend(id);
+      showToast({
+        message: isPrivate ? `Request sent to ${subjectName}.` : `${subjectName} added as a friend.`,
+        kind: 'success',
+      });
+      return;
+    }
+    // Live: every add is a pending request (only the recipient can accept).
+    // Optimistically flip the button to "Pending", then persist — and show
+    // exactly ONE toast (success XOR error), not both.
+    sendRequestLocal(id);
+    try {
+      await api.sendFriendRequest(id);
       showToast({ message: `Request sent to ${subjectName}.`, kind: 'success' });
-      if (live) {
-        api.sendFriendRequest(id).catch(() =>
-          showToast({ message: "Couldn't send request. Try again.", kind: 'error' }),
-        );
-      }
-    } else {
-      addFriend(id);
-      showToast({ message: `${subjectName} added as a friend.`, kind: 'success' });
+    } catch {
+      showToast({ message: "Couldn't send request. Try again.", kind: 'error' });
     }
   };
 

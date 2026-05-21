@@ -8,20 +8,25 @@ import { useStore } from '@/store/useStore';
 beforeEach(() => resetStore());
 
 describe('RequestsScreen', () => {
-  test('renders the inbox header with the right count', () => {
+  test('renders the header + both-direction counts', () => {
     const { getByText } = renderScreen(<RequestsScreen />);
-    // "Inbox" is now the SCTopBar subtitle, rendered uppercase.
-    expect(getByText('INBOX')).toBeTruthy();
-    expect(getByText('Follow requests')).toBeTruthy();
-    // The "2 PEOPLE WANT TO ADD YOU" string renders as separate child
-    // text nodes inside a single SCText; query by the constant tail.
-    expect(getByText(/TO ADD YOU/i)).toBeTruthy();
+    expect(getByText('REQUESTS')).toBeTruthy();        // SCTopBar subtitle
+    expect(getByText('Friend requests')).toBeTruthy(); // title
+    expect(getByText(/TO APPROVE · \d+ SENT/i)).toBeTruthy(); // "2 TO APPROVE · 1 SENT"
   });
 
-  test('renders the empty state when there are no incoming requests', () => {
-    useStore.setState({ incomingRequests: new Set() });
+  test('renders the empty state only when BOTH directions are empty', () => {
+    useStore.setState({ incomingRequests: new Set(), outgoingRequests: new Set() });
     const { getByText } = renderScreen(<RequestsScreen />);
     expect(getByText("You're all caught up")).toBeTruthy();
+  });
+
+  test('lists outgoing requests under "Sent by you"; CANCEL removes them', () => {
+    // resetStore seeds outgoingRequests = { 'p2' } (Jordan Park).
+    const { getByText } = renderScreen(<RequestsScreen />);
+    expect(getByText('Sent by you')).toBeTruthy();
+    fireEvent.press(getByText('CANCEL'));
+    expect(useStore.getState().outgoingRequests.has('p2')).toBe(false);
   });
 
   test('ACCEPT moves the requester into friends and clears the inbox row', () => {

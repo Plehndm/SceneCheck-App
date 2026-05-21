@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.21 — map pin colours aligned to the legend)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.22 — friend-request flow / map key / location search)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -799,6 +799,39 @@ mapping; no net count change (one case re-pointed, one added).
 - Reconcile the event-detail header accent for `org` events (it stays
   `accentBlue`; the map shows `mapPinMute` when there's no shared
   interest). The map legend is the surface this change targets.
+
+---
+
+### 2.22 Friend-request flow / map key / location search (post-§2.21 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §27._
+
+Friend requests now persist via a direct insert and show one toast; the
+requests screen manages both directions and is reachable from the Profile
+tab; the map keeps its colour key when an event is selected; and the
+location picker can search by name. Coverage went to the requests screen's
+new outgoing section; the others are render-structure or network/scroll
+surfaces verified on device.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/requests.test.tsx` (updated, +1 net) | both directions | Header shows "Friend requests" + "N TO APPROVE · M SENT"; empty state needs BOTH directions empty; the seeded outgoing request (Jordan) lists under "Sent by you" and CANCEL clears it from `outgoingRequests`. Accept/Decline incoming unchanged. |
+
+**Delivered count**: 360 / 360 (up from 359). 51 suites.
+
+**What this section deliberately does NOT do:**
+
+- Test the live friend-request insert or the single-toast path. The insert
+  needs Supabase (no client under Jest); the double-toast it fixes was a
+  live-only Edge-Function failure. Mock mode shows one toast and the
+  existing other-profile REQUEST test guards the store write.
+- Test the map "key stays visible" via a focused pin. `<Map>` is mocked,
+  so `onPinPress` can't fire in jsdom; the legend card is now
+  unconditional in `map.tsx` (the existing legend test covers its render).
+- Test the Nominatim search. It's a network call (no key); exercised on
+  device. The recenter-via-remount is a render concern.
+- Cover `useOutgoingRequests` in live mode (needs `api.getProfile` over a
+  real DB); the requests-screen test exercises the mock path.
 
 ---
 

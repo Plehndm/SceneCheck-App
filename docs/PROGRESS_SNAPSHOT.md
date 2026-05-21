@@ -63,6 +63,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Create-event + map-pin + attendees + interests-display fixes.** Five more issues from end-to-end use. **(1) Couldn't publish** — `api.createEvent` posted the raw `DraftForm` (friendly `"Sat May 16"` / `"7:00 AM"` strings + a location *name*), but the create-event Edge Function needs `start_at` ISO + `location:{lat,lng}`, so it 400'd every time. The screen now builds the proper payload (`friendlyToISO` for start/end, `useLocation` coords for the point, DB field names), `api.createEvent` resolves interest tag names → ids, and the empty-form default date is now upcoming (was a hardcoded past date). **(2) No draft-save notification** — `create-event` was `presentation:'modal'`, and native modals render above the root `ToastHost`/`ConfirmDialog`, hiding the "Saved to Drafts" + publish-error toasts; switched it to `presentation:'card'`. **(3) Pins missing on the full map** — regression from the discovery-range work: `rank_events_query.p_radius` is INT but the full map passed `radius × 1609.34` (a float), so the RPC failed to resolve and returned nothing (home used the int default, hence pins there). Rounded `radiusM` in the screen + defensively in `fetchEvents`; the existing focused-pin card already shows event info before opening. **(4) Attendees preview was static** — event detail showed a fixed `SC_VISIBLE_PEOPLE.slice(0,4)` + the seeded `subscriber_count`; now driven by `useAttendees` (real confirmed subscriptions), with the count/preview/CTA derived from it and yourself merged in optimistically on join. **(5) Profile interests didn't update** — the interests screen toggled `subscribedInterests` but the profile reads `me.interests`; `toggleInterestSub` now keeps `me.interests` in sync. +4 tests (356/356). ⚠️ Publish needs the `create-event` Edge Function deployed to the hosted project. See §24. |
 | 2026-05-21 | **Create-event polish: map location picker, capacity minus, today-default, time-picker loop fix.** **(1)** New `components/LocationPickerSheet.tsx` — a bottom-sheet interactive map with a fixed center pin; the host drags so the pin marks the spot, and the map center (via `onRegionChange`) is stored as `DraftForm.lat/lng` and used for publish + map placement (falls back to the host's location when not set). It passes `initialCenter` (not `user`) to `<Map>` to avoid the web recenter-on-pan loop. **(2)** Capacity decrement now uses a real `minus` icon (new in `SCIcon`) instead of an `x`. **(3)** The new-event default date is the dynamic current date (was a fixed +2d). **(4)** Fixed an infinite AM/PM loop in `SCTimePicker`: the snap `Wheel`'s `handleSettle` issued an *animated* `scrollTo`, whose `onMomentumScrollEnd` re-fired the handler — re-snapping + re-emitting `onChange` forever (repro: nudging 11 AM → 12 PM). Added a `programmatic` ref that skips the self-induced settle, and it only re-snaps when actually off-row. +3 tests (359/359). See §25. |
 | 2026-05-21 | **Map pin colors now match the legend by event type.** `pinColor` mis-coloured a **friend-hosted** event as "Other" (`mapPinMute`, grey) whenever it shared no interest tag with you — it was gated on `isRec`. Pins now map 1:1 to the legend by relationship: `yours → primary` ("Your events"), `friend → accentFriend` ("Friends", always), `recommended` or interest-match `→ accentBlue` ("Recommended"), else `→ mapPinMute` ("Other", e.g. an org event you have no interest connection to). No new test count (re-pointed the friend case + added an "Other" case); 359/359. See §26. |
+| 2026-05-21 | **Friend-request flow, map key persistence, location search + branch message cleanup.** **(1)** The `Co-Authored-By` trailer was stripped from all branch commit messages (`git filter-branch --msg-filter`) per request; new commits omit it too. **(2)** Selecting an event on the Map now keeps the colour **Key** visible — the focused-event card renders *above* the legend instead of replacing it. **(3)** Sending a friend request showed BOTH "request sent" and "send failed": `api.sendFriendRequest` invoked an Edge Function that wasn't reliably deployed. It now does a direct, idempotent `friendships` insert (the INSERT RLS already allows requesting anyone), and `profile/[id]` awaits it to show exactly one toast. **(4)** Added a real place to manage requests: the requests screen lists **Requests for you** (accept/decline) *and* **Sent by you** (Cancel), backed by a new `useOutgoingRequests` hook + `cancelOutgoingRequest` store action, and it's reachable from a new **Friend requests** row on the Profile tab (was only linked from Settings for private accounts). **(5)** The location picker gained **search by name/address** (geocoded via OpenStreetMap Nominatim, recentering the map) alongside drag-to-pin. +1 test (360/360). See §27. |
 
 ### Current layout
 
@@ -1865,7 +1866,80 @@ surface this fix targets.
 
 ---
 
-## 27. How to re-snapshot this file
+## 27. Friend-request flow, map key, location search, message cleanup
+
+_Last updated: 2026-05-21_
+
+### 27.1 Branch commit messages — `Co-Authored-By` removed
+
+All commits on `map-discovery-range` were rewritten with
+`git filter-branch --msg-filter` (a perl one-liner) to strip the
+`Co-Authored-By:` trailer. New commits in this session omit it too, per
+request. The branch is local/unpushed, so the history rewrite is safe;
+new commit hashes resulted.
+
+### 27.2 Map key stays visible when an event is selected
+
+`app/(tabs)/map.tsx` previously swapped the legend out for the
+focused-event card (`{focused ? card : key}`), so tapping a pin hid the
+colour key. The "Key" card now renders **always**, with the focused-event
+card stacked above it when a pin is selected — so pin colours stay
+decodable while inspecting an event.
+
+### 27.3 Friend request: one toast, and it persists
+
+`api.sendFriendRequest` invoked the `send-friend-request` Edge Function;
+when that wasn't deployed/working it threw, so the UI showed a "request
+sent" toast (optimistic) **and** a "send failed" error. It now performs a
+direct, idempotent insert into `friendships`
+(`from_id = auth.uid()`, `status='pending'`, `onConflict ignoreDuplicates`)
+— the INSERT RLS already permits requesting anyone (private included), so
+no Edge Function is needed. `profile/[id].tsx`'s `requestFriend` is now
+`async` and `await`s the call, showing exactly **one** toast (success XOR
+error). (The notification fan-out the function did is dropped; persisting
+the request is what the UI needs.)
+
+### 27.4 Manage friend requests — both directions, reachable
+
+The requests screen only showed incoming requests and was only linked
+from Settings (and only for private accounts). It now has two sections:
+
+- **Requests for you** — incoming, Accept / Decline (unchanged behaviour).
+- **Sent by you** — outgoing requests, each with **Cancel** (drops the
+  pending row via `api.removeFriend` + the new `cancelOutgoingRequest`
+  store action).
+
+New `hooks/useOutgoingRequests.ts` resolves the `outgoingRequests` ids to
+profiles (mock fixtures / `api.getProfile` in live). The screen is now
+reachable from a **Friend requests** row in the Profile tab's "My stuff"
+(`N in · M sent`), not just Settings.
+
+### 27.5 Location picker: search by name
+
+`LocationPickerSheet` gained a search box: type a place or address, and
+it geocodes via OpenStreetMap **Nominatim** (no API key, CORS-enabled,
+works on web + native) and recenters the map on the result. Recentering
+is done by remounting `<Map>` via a changing `key` (avoids the
+`user`-prop recenter loop). Drag-to-pin still works; the center pin marks
+the chosen point either way.
+
+### 27.6 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 360 / 360, 51 suites (+1: outgoing-requests case) |
+| Branch messages free of `Co-Authored-By` | ✅ `git log main..HEAD` shows none |
+| Map key visible with an event focused | ✅ legend card is unconditional in `map.tsx` |
+| One toast per friend request | ✅ `requestFriend` awaits a single path |
+| Outgoing requests listed + cancelable | ✅ `tests/screens/requests.test.tsx` |
+| Location search | ✅ wired (Nominatim is a network call — exercised on device, not under Jest) |
+
+See `docs/TEST_PLAN.md` §2.22 for the per-file test additions.
+
+---
+
+## 28. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

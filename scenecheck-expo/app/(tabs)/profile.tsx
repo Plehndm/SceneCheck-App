@@ -29,6 +29,8 @@ export default function ProfileTab() {
   const setPicture = useStore(s => s.setPicture);
   const friends = useStore(s => s.friends);
   const following = useStore(s => s.following);
+  const incomingRequests = useStore(s => s.incomingRequests);
+  const outgoingRequests = useStore(s => s.outgoingRequests);
   const drafts = useStore(s => s.drafts);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
@@ -146,6 +148,7 @@ export default function ProfileTab() {
         <SCCard>
           <Row icon="calendar" label="Events I'm hosting" v={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
           <Row icon="people" label="Friends" v={String(friends.size)} onPress={() => router.push('/my-friends' as never)} />
+          <Row icon="user-plus" label="Friend requests" v={`${incomingRequests.size} in · ${outgoingRequests.size} sent`} onPress={() => router.push('/requests' as never)} />
           <Row icon="people" label="Following" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
           <Row icon="star" label="My ratings" v={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★ · ${ratingSummary.count}` : 'None yet'} onPress={() => router.push(`/ratings/${me.id}` as never)} />
           {drafts.length > 0 && (

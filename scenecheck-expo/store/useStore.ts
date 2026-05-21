@@ -137,6 +137,7 @@ interface State {
   addFriend: (personId: string) => void;
   removeFriend: (personId: string) => void;
   sendFriendRequest: (personId: string) => void;
+  cancelOutgoingRequest: (personId: string) => void;
   acceptFriendRequest: (requestId: string, personId: string) => void;
   declineFriendRequest: (requestId: string) => void;
 
@@ -255,6 +256,10 @@ export const useStore = create<State>()(
       }),
       sendFriendRequest: (personId) => set(s => {
         const next = new Set(s.outgoingRequests); next.add(personId);
+        return { outgoingRequests: next };
+      }),
+      cancelOutgoingRequest: (personId) => set(s => {
+        const next = new Set(s.outgoingRequests); next.delete(personId);
         return { outgoingRequests: next };
       }),
       acceptFriendRequest: (requestId, personId) => set(s => {
