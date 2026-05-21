@@ -99,3 +99,17 @@ export function isoToWhen(isoStr: string | null | undefined): string {
   const d = new Date(isoStr);
   return `${fmtDate(d)} · ${isoToTime(isoStr)}`;
 }
+
+// Combine a friendly date ("Sat May 16") + time ("7:00 AM") into an ISO
+// timestamp. The friendly date carries no year, so `parseDate` infers it
+// (bumping to next year if the month already passed). Used by Create
+// Event to build start_at / end_at for the create-event Edge Function,
+// which needs real timestamps — the form only holds display strings.
+export function friendlyToISO(dateStr: string, timeStr: string): string {
+  const d = parseDate(dateStr);
+  const { h, m, ap } = parseTime(timeStr);
+  let hr = h % 12;
+  if (ap === 'PM') hr += 12;
+  d.setHours(hr, m, 0, 0);
+  return d.toISOString();
+}

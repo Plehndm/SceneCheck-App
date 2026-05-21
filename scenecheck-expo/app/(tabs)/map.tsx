@@ -45,7 +45,10 @@ export default function MapTab() {
   const radius = useStore(s => s.radius);
   const setRadius = useStore(s => s.setRadius);
   const isCustomRadius = !RADIUS_PRESETS_MI.includes(radius);
-  const radiusM = radius * MILES_TO_METERS;
+  // Round to a whole number of meters — rank_events_query's p_radius is an
+  // INT, and passing a float (e.g. 5 × 1609.34 = 8046.7) makes the RPC
+  // call fail to resolve, which is why pins vanished from the full map.
+  const radiusM = Math.round(radius * MILES_TO_METERS);
   // Same live date + city label the Home header uses.
   const dateCityLabel = useDateCityLabel();
   const [focused, setFocused] = useState<SCEvent | null>(null);

@@ -176,6 +176,13 @@ describe('preferences slice', () => {
     expect(useStore.getState().subscribedInterests.has('study')).toBe(false);
   });
 
+  test('toggleInterestSub keeps me.interests in sync (so the profile updates)', () => {
+    useStore.getState().toggleInterestSub('study');
+    expect(useStore.getState().me.interests).toContain('study');
+    useStore.getState().toggleInterestSub('study');
+    expect(useStore.getState().me.interests ?? []).not.toContain('study');
+  });
+
   test('unblockUser removes from blocked list', () => {
     useStore.getState().unblockUser('b1');
     expect(useStore.getState().blocked.find(b => b.id === 'b1')).toBeUndefined();

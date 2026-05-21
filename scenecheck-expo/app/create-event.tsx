@@ -19,7 +19,8 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
 import { useInterests } from '@/hooks/useInterests';
-import { timeToMin } from '@/lib/date-time';
+import { useLocation } from '@/hooks/useLocation';
+import { timeToMin, fmtDate, friendlyToISO } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { DraftForm, Visibility } from '@/types/domain';
 
@@ -30,10 +31,13 @@ import type { DraftForm, Visibility } from '@/types/domain';
 const FALLBACK_INTERESTS = ['biking'] as const;
 
 function makeEmptyForm(meInterests: readonly string[]): DraftForm {
+  // Default to an upcoming date (2 days out) — a hardcoded past date would
+  // publish an event that rank_events_query immediately filters off the map.
+  const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   return {
     title: '',
     desc: '',
-    date: 'Sat May 16',
+    date: fmtDate(soon),
     timeStart: '7:00 AM',
     timeEnd: '9:00 AM',
     location: 'Anteater Plaza',
@@ -58,6 +62,10 @@ export default function CreateEventScreen() {
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
   const meInterests = useStore(s => s.me.interests ?? []);
+  // The event location defaults to where the host is (the discovery map +
+  // RPC are geo-based, so a published event needs real coordinates). The
+  // hook falls back to the UCI default region when permission isn't granted.
+  const { coords } = useLocation();
 
   const initialDraft = useMemo(
     () => (draftId ? drafts.find(d => d.id === draftId) : null),
@@ -112,7 +120,20 @@ export default function CreateEventScreen() {
     }
     setPublishing(true);
     try {
-      const result = await api.createEvent({ ...form });
+      // Map the form's display strings to the shape the create-event Edge
+      // Function expects: ISO start/end, a {lat,lng} location, and DB-named
+      // fields. (api.createEvent resolves interest tag names → ids.)
+      const result = await api.createEvent({
+        title: form.title.trim(),
+        description: form.desc.trim(),
+        start_at: friendlyToISO(form.date, form.timeStart),
+        end_at: friendlyToISO(form.date, form.timeEnd),
+        location: { lat: coords.latitude, lng: coords.longitude },
+        location_name: form.location.trim(),
+        capacity: form.cap,
+        min_subscribers: form.minSubs,
+        interests: form.interests,
+      });
       if (initialDraft) removeDraft(initialDraft.id);
       router.replace({ pathname: '/event-published', params: { eventId: (result as { event_id?: string })?.event_id ?? 'e1', title: form.title } } as never);
     } catch (e) {

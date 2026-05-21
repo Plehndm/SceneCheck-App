@@ -245,7 +245,9 @@ export const api = {
     const { data, error } = await sb.rpc('rank_events_query', {
       p_lat: lat ?? 33.6461,
       p_lng: lng ?? -117.8427,
-      p_radius: radiusM ?? 8047,
+      // p_radius is an INT in the RPC signature — round so a fractional
+      // meters value (miles × 1609.34) doesn't fail function resolution.
+      p_radius: Math.round(radiusM ?? 8047),
       p_user_id: (user && 'id' in user) ? user.id : null,
     });
     if (error) throw error;
@@ -287,7 +289,17 @@ export const api = {
 
   async createEvent(form: Record<string, unknown>) {
     if (isMock()) return { event_id: 'mock_' + Date.now() };
-    const { data, error } = await requireClient().functions.invoke('create-event', { body: form });
+    const sb = requireClient();
+    // The create-event function links tags by interest_id (UUID), but the
+    // form carries tag *names*. Resolve names → ids so the tags actually
+    // attach; unknown tags are simply dropped rather than failing publish.
+    const body = { ...form };
+    const names = form.interests as string[] | undefined;
+    if (Array.isArray(names) && names.length) {
+      const { data: rows } = await sb.from('interests').select('id, name').in('name', names);
+      body.interests = (rows ?? []).map((r) => r.id as string);
+    }
+    const { data, error } = await sb.functions.invoke('create-event', { body });
     if (error) throw error;
     return data;
   },

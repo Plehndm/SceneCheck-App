@@ -6,7 +6,7 @@ import { fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import EventDetailScreen from '@/app/event/[id]';
 import { renderScreen, resetStore, setRouteParams } from '../test-utils';
-import { SC_EVENT_BY_ID } from '@/data/mocks';
+import { SC_EVENT_BY_ID, SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { useStore } from '@/store/useStore';
 
 beforeEach(() => {
@@ -34,6 +34,15 @@ describe('EventDetailScreen', () => {
     setRouteParams({ id: 'e2' });
     const { getByText } = renderScreen(<EventDetailScreen />);
     expect(getByText('FRIEND HOSTING')).toBeTruthy();
+  });
+
+  test('attendee count is driven by the attendees list, not e.attendees', () => {
+    // e3 isn't joined (resetStore joins only e1). In mock mode useAttendees
+    // returns SC_VISIBLE_PEOPLE, so the preview count reflects that list —
+    // proving the section is dynamic rather than the static subscriber_count.
+    setRouteParams({ id: 'e3' });
+    const { getByText } = renderScreen(<EventDetailScreen />);
+    expect(getByText(`${SC_VISIBLE_PEOPLE.length} going`)).toBeTruthy();
   });
 
   test('renders host edit / cancel buttons only on hosted events', () => {

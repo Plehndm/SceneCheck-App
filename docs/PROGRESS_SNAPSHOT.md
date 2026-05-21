@@ -60,6 +60,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Map discovery range is now a persisted preference (+ type/seed cleanup).** The Map tab's radius chips were local `useState` in *meters*, disconnected from `store.radius` (the *miles* value the Settings slider owns) and reset to 5 mi on every mount — the choice never survived a reload. They now read/write the persisted `store.radius`, so a chip tap is the same write the slider makes and the two screens stay in sync. Presets widened to 1/3/5/10/25/50 mi (horizontally scrollable; top matches the slider's 50-mi ceiling), and `radiusM = radius * MILES_TO_METERS` converts only at the `useEvents`/`<Map>` boundary. When the saved range is off-preset (e.g. 7.5 mi from the slider's 0.5-mi step) a **Custom · N mi** button appears on its own row below the presets and deep-links to `/settings` for finer control. Folded in two previously-unrecorded fixes: the **5 PostgREST nested-relation `tsc` errors** flagged "pre-existing" in §58–§59 are resolved (`.overrideTypes<…, { merge:false }>()` declares the to-one embed shape supabase-js widens to an array without generated DB types — `AuthBootstrap` + `api.fetchFriends`/`fetchAttendees`; plus a `me.interests ?? []` guard in a create-event test) so `tsc --noEmit` is clean again; and `seed-hosted-social.sql`'s OPTIONAL "wire to your own account" block now upserts a `profiles` row before the friendship/chat inserts, fixing the `friendships_from_id_fkey … is not present in table profiles` error for accounts created before the `handle_new_user` trigger. +3 tests (346/346). See §22. |
 | 2026-05-21 | **Seeded events made visible (date fix) + Custom-range button moved below the chips.** Follow-up: seeded events weren't showing on the Map/Home feed because `rank_events_query` filters `start_at > now() - 2h` and every event in `seed.sql` / `seed-hosted.sql` was hardcoded to **2026-05-07…05-13** — all in the past by demo time (05-21). Both seeds now use **now()-relative** dates (`now() + interval 'N days'`); `seed-hosted.sql` also switched `ON CONFLICT DO NOTHING` → `DO UPDATE` on the time columns + status so re-running un-stales already-inserted rows (creator_id left untouched so the social seed's host reassignments survive). The two other "not showing" reports are by-design, not bugs: seeded **profiles** aren't in search (search still reads mocks, §7 #1) but are reachable by tapping an event host; seeded **chats/friendships** are RLS-scoped, so you must sign in as a mock user (`maya@scenecheck.dev` / `scenecheck123`) or run the OPTIONAL block to see them as yourself. Also moved the discovery-range **Custom** button to its own row below the preset chips (was inline right). No test-count change (346/346). See §22.5. |
 | 2026-05-21 | **Multi-account correctness pass (photo / self / DB row / private requests).** Five fixes surfaced while verifying as a seeded mock user. **(1) Profile photo leaked across accounts** — the locally-picked `picture`/`orgPictures` overrides are persisted and weren't tied to a user, so signing in as Maya kept the personal account's avatar. AuthBootstrap now clears them on a user change (compares the persisted `me.id`) and on sign-out. **(2) You saw yourself in "people nearby"** — the Home rail + Search read mock people unfiltered; new `lib/people.excludeSelf` drops the signed-in user (matched by id and the UUID→mock-id mapping). **(3) Your account had no row in the `profiles` table** — accounts predating the `handle_new_user` trigger (or added via the dashboard) had no profiles row, and the client couldn't create one (no INSERT RLS policy). New migration `00016_profiles_self_insert.sql` adds a self-insert policy; AuthBootstrap upserts a skeleton on sign-in and `api.updateProfile` is now an upsert. **(4) Couldn't friend-request private profiles** — RLS hides a private non-friend's row, so the screen dead-ended at "Profile unavailable" with no button, and the send was store-only (never persisted). `profile/[id].tsx` now shows a minimal private-account request card (name/avatar + Send request, content still hidden), and the request persists via `api.sendFriendRequest` (the friendships INSERT RLS already permits requesting anyone). **(5) Hosting count** — confirmed already dynamic (`useHostedEvents(me.id)`); shows 0 only until events' `creator_id` is populated (re-run the social seed). +6 tests (352/352). See §23. |
+| 2026-05-21 | **Create-event + map-pin + attendees + interests-display fixes.** Five more issues from end-to-end use. **(1) Couldn't publish** — `api.createEvent` posted the raw `DraftForm` (friendly `"Sat May 16"` / `"7:00 AM"` strings + a location *name*), but the create-event Edge Function needs `start_at` ISO + `location:{lat,lng}`, so it 400'd every time. The screen now builds the proper payload (`friendlyToISO` for start/end, `useLocation` coords for the point, DB field names), `api.createEvent` resolves interest tag names → ids, and the empty-form default date is now upcoming (was a hardcoded past date). **(2) No draft-save notification** — `create-event` was `presentation:'modal'`, and native modals render above the root `ToastHost`/`ConfirmDialog`, hiding the "Saved to Drafts" + publish-error toasts; switched it to `presentation:'card'`. **(3) Pins missing on the full map** — regression from the discovery-range work: `rank_events_query.p_radius` is INT but the full map passed `radius × 1609.34` (a float), so the RPC failed to resolve and returned nothing (home used the int default, hence pins there). Rounded `radiusM` in the screen + defensively in `fetchEvents`; the existing focused-pin card already shows event info before opening. **(4) Attendees preview was static** — event detail showed a fixed `SC_VISIBLE_PEOPLE.slice(0,4)` + the seeded `subscriber_count`; now driven by `useAttendees` (real confirmed subscriptions), with the count/preview/CTA derived from it and yourself merged in optimistically on join. **(5) Profile interests didn't update** — the interests screen toggled `subscribedInterests` but the profile reads `me.interests`; `toggleInterestSub` now keeps `me.interests` in sync. +4 tests (356/356). ⚠️ Publish needs the `create-event` Edge Function deployed to the hosted project. See §24. |
 
 ### Current layout
 
@@ -1665,7 +1666,103 @@ See `docs/TEST_PLAN.md` §2.18 for the per-file test additions.
 
 ---
 
-## 24. How to re-snapshot this file
+## 24. Create-event, map pins, attendees, interests display
+
+_Last updated: 2026-05-21_
+
+Five issues from exercising the full create → discover → join → profile
+loop on the hosted project.
+
+### 24.1 Event publish was rejected by the Edge Function
+
+`api.createEvent` invoked the `create-event` function with the raw
+`DraftForm`, whose fields are display strings: `date: "Sat May 16"`,
+`timeStart: "7:00 AM"`, `location: "Anteater Plaza"` (a name). The
+function requires `start_at` (ISO), `end_at`, and `location: { lat, lng }`
+(it builds a PostGIS point), plus DB-named `capacity` / `description` /
+`min_subscribers` and interest **ids**. So `requireFields` /
+`validateLocation` failed and publish 400'd — silently, because the error
+toast was also hidden (§24.2).
+
+Fix:
+- New `lib/date-time.ts → friendlyToISO(date, time)` builds an ISO
+  timestamp from the friendly strings (`parseDate` infers the year).
+- `app/create-event.tsx` now reads `useLocation()` for the event point
+  (UCI fallback), and `handlePublish` posts a structured payload
+  (`start_at` / `end_at` / `location:{lat,lng}` / `location_name` /
+  `capacity` / `min_subscribers` / `interests` names).
+- `api.createEvent` resolves interest tag **names → ids** (`interests`
+  table lookup) before invoking, so tags actually attach.
+- `makeEmptyForm`'s default date is now `now()+2d` (was the hardcoded,
+  already-past `"Sat May 16"`, which would publish straight into the
+  rank_events_query past-filter).
+
+⚠️ This makes the client send the shape the **existing** function expects
+— no function change — but the `create-event` function must be deployed
+to the hosted project for publish to succeed there.
+
+### 24.2 Draft-save / publish toasts were invisible
+
+`create-event` was registered with `presentation: 'modal'`. On native, a
+modal route presents in a layer **above** the root `<ToastHost>` /
+`<ConfirmDialog>` (rendered once in `app/_layout.tsx`), so every toast it
+fired — "Saved to Drafts", publish errors — and the save-draft confirm
+were hidden behind the modal. Switched the route to
+`presentation: 'card'` (like the other stacked screens), so the overlays
+sit above it. (`new-chat` is still a modal; same pattern if its toasts
+ever need to show.)
+
+### 24.3 Pins vanished from the full Map screen
+
+A regression from §22's discovery-range change. `rank_events_query`'s
+`p_radius` parameter is `INT`, but the full map computed
+`radiusM = radius × 1609.34` — a float (e.g. 8046.7) — and passed it to
+`fetchEvents` → the RPC. A non-integer arg makes PostgREST fail to
+resolve the function, so the call errored and the map got zero events.
+The Home preview still worked because it calls `useEvents()` with no
+radius, falling back to the integer default `8047`. Fixed by rounding
+`radiusM` in `app/(tabs)/map.tsx` and defensively in `api.fetchEvents`.
+(The "see info before entering" ask is already served by the focused-pin
+card — it just needed pins to render.)
+
+### 24.4 Attendees preview is now real
+
+Event detail hardcoded the preview to `SC_VISIBLE_PEOPLE.slice(0, 4)` and
+showed the seeded `subscriber_count` as the going count. It now uses
+`useAttendees(id)` (live: confirmed `event_subscriptions ⨝ profiles`;
+mock: `SC_VISIBLE_PEOPLE`). The going count, the `n/cap` line, the
+waitlist CTA, and the cancel-confirm copy all derive from that list, and
+you're merged into it optimistically when you join (so it reflects your
+RSVP before the next fetch). Empty events show "No one's joined yet".
+
+### 24.5 Profile interests now reflect additions
+
+The interests catalog screen toggles `subscribedInterests`, but the
+profile tab (and create-event auto-fill) read `me.interests` — two
+fields seeded from the same `user_interests` source that then diverged,
+so adding an interest never showed on the profile. `toggleInterestSub`
+now updates `me.interests` alongside the set. (DB persistence of the
+toggle — `user_interests` insert/delete with name→id resolution — remains
+a follow-up; the change shows immediately and persists locally, but a
+live re-hydrate still reads the DB.)
+
+### 24.6 Verification
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ clean |
+| `npm test` | ✅ 356 / 356, 50 suites (+4: friendlyToISO ×2, interests-sync, dynamic-attendees) |
+| Full map shows pins | ✅ radius rounded to INT; verified the RPC call resolves |
+| Draft-save toast visible | ✅ create-event is now a card route |
+| Attendee preview dynamic | ✅ `tests/screens/event-detail.test.tsx` asserts the count tracks the attendees list |
+| Profile reflects added interests | ✅ `tests/unit/store.test.ts` |
+| Publish | ⚠️ payload fixed client-side; **needs the create-event function deployed** to hosted to verify end-to-end |
+
+See `docs/TEST_PLAN.md` §2.19 for the per-file test additions.
+
+---
+
+## 25. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

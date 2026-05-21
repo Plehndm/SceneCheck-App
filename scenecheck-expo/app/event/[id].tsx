@@ -22,8 +22,9 @@ import { EditEventSheet } from '@/components/EditEventSheet';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvent } from '@/hooks/useEvent';
+import { useAttendees } from '@/hooks/useAttendees';
 import { api } from '@/lib/api';
-import { SC_CHATS, SC_VISIBLE_PEOPLE } from '@/data/mocks';
+import { SC_CHATS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
@@ -82,7 +83,11 @@ export default function EventDetailScreen() {
   const cancelPendingLeave = useStore(s => s.cancelPendingLeave);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
-  const meId = useStore(s => s.me.id);
+  const me = useStore(s => s.me);
+  const meId = me.id;
+  // Real attendees — live mode: confirmed event_subscriptions ⨝ profiles;
+  // mock mode: SC_VISIBLE_PEOPLE. Drives the count + preview avatars.
+  const { attendees } = useAttendees(id);
 
   if (!baseEvent) {
     return (
@@ -106,6 +111,13 @@ export default function EventDetailScreen() {
   }
 
   const e = { ...baseEvent, ...(override ?? {}) };
+  // People actually attending. Merge yourself in optimistically when
+  // you've joined (the attendees fetch won't have refreshed yet) so the
+  // count + preview reflect your RSVP immediately.
+  const goingPeople = (isJoined && !attendees.some(a => a.id === meId))
+    ? [me, ...attendees]
+    : attendees;
+  const goingCount = goingPeople.length;
   // `kind === 'yours'` is the canonical signal from transformEventRow;
   // hostId comparison falls back to me.id (not the literal string 'me')
   // so host actions also appear in live mode where hostId is a UUID.
@@ -162,7 +174,7 @@ export default function EventDetailScreen() {
     if (!id) return;
     showConfirm({
       title: 'Cancel this event?',
-      body: `"${e.title}" will be removed from the map and all ${e.attendees} attendees will be notified. This can't be undone.`,
+      body: `"${e.title}" will be removed from the map and all ${goingCount} attendees will be notified. This can't be undone.`,
       confirmLabel: 'CANCEL EVENT',
       cancelLabel: 'KEEP IT',
       tone: 'danger',
@@ -240,7 +252,7 @@ export default function EventDetailScreen() {
           <DetailRow
             icon="calendar"
             k={whenRange(e)}
-            v={`${e.attendees}/${e.cap} going${e.attendees >= e.cap ? ' · waitlist' : ''}`}
+            v={`${goingCount}/${e.cap} going${goingCount >= e.cap ? ' · waitlist' : ''}`}
           />
           <DetailRow
             icon="pin"
@@ -306,27 +318,31 @@ export default function EventDetailScreen() {
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           marginBottom: 8,
         }}>
-          <SCText variant="labelCap">{e.attendees} going</SCText>
+          <SCText variant="labelCap">{goingCount} going</SCText>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <SCText variant="mono" size={11} color={t.ink3}>VIEW ALL</SCText>
             <SCIcon name="chevron-right" size={12} color={t.ink3} />
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {SC_VISIBLE_PEOPLE.slice(0, 4).map((p, i) => (
-            <View key={p.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
-              <SCAvatar person={p} size={36} />
-            </View>
-          ))}
-          {e.attendees > 4 && (
-            <View style={{
-              width: 36, height: 36, borderRadius: 18, backgroundColor: t.subtle,
-              alignItems: 'center', justifyContent: 'center', marginLeft: -8,
-            }}>
-              <SCText variant="mono" size={11} weight="600">+{e.attendees - 4}</SCText>
-            </View>
-          )}
-        </View>
+        {goingCount === 0 ? (
+          <SCText size={13} color={t.ink3}>No one&apos;s joined yet — be the first.</SCText>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {goingPeople.slice(0, 4).map((p, i) => (
+              <View key={p.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
+                <SCAvatar person={p} size={36} />
+              </View>
+            ))}
+            {goingCount > 4 && (
+              <View style={{
+                width: 36, height: 36, borderRadius: 18, backgroundColor: t.subtle,
+                alignItems: 'center', justifyContent: 'center', marginLeft: -8,
+              }}>
+                <SCText variant="mono" size={11} weight="600">+{goingCount - 4}</SCText>
+              </View>
+            )}
+          </View>
+        )}
       </Pressable>
 
       {/* Bottom CTA */}
@@ -349,7 +365,7 @@ export default function EventDetailScreen() {
           <SCAddButton
             joined={isJoined}
             onPress={handleToggleJoin}
-            label={e.attendees >= e.cap ? 'JOIN WAITLIST' : 'JOIN EVENT'}
+            label={goingCount >= e.cap ? 'JOIN WAITLIST' : 'JOIN EVENT'}
           />
         </View>
       </View>

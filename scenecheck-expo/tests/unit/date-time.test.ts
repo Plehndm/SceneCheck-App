@@ -4,8 +4,23 @@
 
 import {
   fmtDate, parseDate, fmtTime, parseTime,
-  timeToMin, minToTime, whenRange,
+  timeToMin, minToTime, whenRange, friendlyToISO,
 } from '@/lib/date-time';
+
+describe('friendlyToISO', () => {
+  test('combines a friendly date + time into a round-trippable timestamp', () => {
+    const d = new Date(friendlyToISO('Sat May 16', '7:30 PM'));
+    expect(d.getHours()).toBe(19);
+    expect(d.getMinutes()).toBe(30);
+    expect(d.getMonth()).toBe(4); // May
+    expect(d.getDate()).toBe(16);
+  });
+
+  test('handles the 12 AM / 12 PM boundaries', () => {
+    expect(new Date(friendlyToISO('Jan 1', '12:00 AM')).getHours()).toBe(0);
+    expect(new Date(friendlyToISO('Jan 1', '12:00 PM')).getHours()).toBe(12);
+  });
+});
 
 describe('fmtDate', () => {
   test('formats a Saturday in May correctly', () => {

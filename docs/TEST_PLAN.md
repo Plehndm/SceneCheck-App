@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **352/352** across 50 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.18 — multi-account correctness pass)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **356/356** across 50 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.19 — create-event / map-pin / attendees / interests fixes)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -710,6 +710,39 @@ render are live-/auth-only and verified against the hosted project.
 - Verify migration `00016` or the `profiles` upsert. No DB under Jest —
   the migration must be applied to the hosted project and is verified
   there.
+
+---
+
+### 2.19 Create-event / map-pin / attendees / interests fixes (post-§2.18 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §24._
+
+Five usage-found fixes: event publish now sends the shape the Edge
+Function expects, create-event toasts are visible (modal→card), the full
+map's pins render again (RPC radius rounded to INT), the attendee preview
+is driven by `useAttendees`, and added interests now show on the profile.
+Coverage went to the pure logic + state changes; the route-presentation
+and live-publish pieces are verified against the hosted project.
+
+| File added/changed | Tests | What they assert |
+|---|---|---|
+| `tests/unit/date-time.test.ts` (+2 cases) | `friendlyToISO` | A friendly date + time round-trips to the right local hour/minute/month/day; 12 AM / 12 PM map to hours 0 / 12. |
+| `tests/unit/store.test.ts` (+1 case) | interests sync | `toggleInterestSub` adds/removes the tag from `me.interests` (what the profile renders), not just `subscribedInterests`. |
+| `tests/screens/event-detail.test.tsx` (+1 case) | dynamic attendees | An unjoined event's going count equals the attendees-list length (mock `SC_VISIBLE_PEOPLE`), proving it's not the static `subscriber_count`. |
+
+**Delivered count**: 356 / 356 (up from 352). 50 suites.
+
+**What this section deliberately does NOT do:**
+
+- Test the create-event → Edge Function publish end-to-end. There's no
+  Supabase/Deno under Jest; the payload transform (`friendlyToISO`,
+  field mapping) is unit-covered, and the live invoke is verified on the
+  hosted project (function must be deployed there).
+- Test the modal→card route change or the map radius rounding. The first
+  is route config (no render assertion adds signal); the second is a
+  one-line arithmetic guard verified by the RPC resolving against hosted.
+- Persist interest toggles to `user_interests`. The display sync is
+  tested; DB persistence (name→id + insert/delete) is a tracked follow-up.
 
 ---
 

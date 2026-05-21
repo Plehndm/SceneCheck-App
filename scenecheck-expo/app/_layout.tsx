@@ -50,7 +50,11 @@ export default function RootLayout() {
           <Stack.Screen name="interests/[tag]" options={{ presentation: 'card' }} />
           <Stack.Screen name="ratings/[hostId]" options={{ presentation: 'card' }} />
           <Stack.Screen name="new-chat" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="create-event" options={{ presentation: 'modal' }} />
+          {/* Card (not modal): native modals render in a separate layer
+              above the root ToastHost/ConfirmDialog, which hid the
+              "Saved to Drafts" / publish-error toasts + the save-draft
+              confirm. A card route keeps those overlays visible. */}
+          <Stack.Screen name="create-event" options={{ presentation: 'card' }} />
           <Stack.Screen name="event-published" options={{ presentation: 'card' }} />
           <Stack.Screen name="drafts" options={{ presentation: 'card' }} />
           {/* Sign-in is the unauthenticated entry point (AuthGate

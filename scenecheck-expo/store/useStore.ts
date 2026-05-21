@@ -329,7 +329,11 @@ export const useStore = create<State>()(
       toggleInterestSub: (tag) => set(s => {
         const next = new Set(s.subscribedInterests);
         if (next.has(tag)) next.delete(tag); else next.add(tag);
-        return { subscribedInterests: next };
+        // Keep `me.interests` in sync — both are seeded from the same
+        // `user_interests` source on hydrate, and the profile screen +
+        // create-event auto-fill read `me.interests`. Without this, adding
+        // an interest updated the catalog screen but never the profile.
+        return { subscribedInterests: next, me: { ...s.me, interests: Array.from(next) } };
       }),
 
       // ── overlays ──
