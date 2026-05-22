@@ -2311,7 +2311,7 @@ See `docs/TEST_PLAN.md` §2.30.
 
 ## 36. Interest-gated recommendations + incoming friend-request fixes
 
-_Last updated: 2026-05-22_
+_Last updated: 2026-05-22 (commit 4cd7e47)_
 
 Three reported issues, fixed together.
 
