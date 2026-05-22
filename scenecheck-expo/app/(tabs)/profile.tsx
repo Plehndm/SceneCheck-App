@@ -20,6 +20,7 @@ import { useFriendRequests } from '@/hooks/useFriendRequests';
 import { useOutgoingRequests } from '@/hooks/useOutgoingRequests';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
+import { api } from '@/lib/api';
 import { summarizeRatings } from '@/lib/ratings';
 import { RADIUS } from '@/theme/tokens';
 
@@ -29,6 +30,7 @@ export default function ProfileTab() {
   const me = useStore(s => s.me);
   const picture = useStore(s => s.picture);
   const setPicture = useStore(s => s.setPicture);
+  const setMe = useStore(s => s.setMe);
   const friends = useStore(s => s.friends);
   const following = useStore(s => s.following);
   // Request counts come from the same hooks the /requests screen uses, so the
@@ -50,11 +52,24 @@ export default function ProfileTab() {
 
   const handleChangePhoto = async () => {
     const next = await pick();
-    if (next) {
-      setPicture(next);
+    if (!next) {
+      if (error) showToast({ message: error, kind: 'error' });
+      return;
+    }
+    // Optimistic preview, then upload to Supabase Storage + persist the public
+    // URL on profiles.avatar_url (so it's retained + loads on every device).
+    setPicture(next);
+    try {
+      const url = await api.uploadAvatar(next);
+      setPicture(url);
+      setMe({ picture: url });
       showToast({ message: 'Profile photo updated.', kind: 'success' });
-    } else if (error) {
-      showToast({ message: error, kind: 'error' });
+    } catch (e) {
+      setPicture(me.picture ?? null); // revert the optimistic preview
+      showToast({
+        message: e instanceof Error ? `Couldn't save photo: ${e.message}` : "Couldn't save photo.",
+        kind: 'error',
+      });
     }
   };
 
@@ -64,9 +79,18 @@ export default function ProfileTab() {
       body: 'Your avatar will revert to your initials.',
       confirmLabel: 'REMOVE',
       tone: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
+        const prev = picture ?? me.picture ?? null;
         setPicture(null);
-        showToast({ message: 'Photo removed.', kind: 'info' });
+        setMe({ picture: null });
+        try {
+          await api.removeAvatar();
+          showToast({ message: 'Photo removed.', kind: 'info' });
+        } catch {
+          setPicture(prev);
+          setMe({ picture: prev });
+          showToast({ message: "Couldn't remove photo.", kind: 'error' });
+        }
       },
     });
   };
@@ -111,7 +135,7 @@ export default function ProfileTab() {
         <SCText variant="mono" size={12} color={t.ink3} style={{ marginTop: 4 }}>
           @{me.username} · {me.city}
         </SCText>
-        {picture && (
+        {(picture ?? me.picture) && (
           <Pressable onPress={handleRemovePhoto} style={{ marginTop: 6 }}>
             <SCText variant="mono" size={10} weight="600" color={t.ink3}>REMOVE PHOTO</SCText>
           </Pressable>
@@ -154,7 +178,7 @@ export default function ProfileTab() {
           <Row icon="calendar" label="Events I'm hosting" v={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
           <Row icon="people" label="Friends" v={String(friends.size)} onPress={() => router.push('/my-friends' as never)} />
           <Row icon="user-plus" label="Friend requests" v={`${incomingReqs.length} in · ${outgoingReqs.length} sent`} onPress={() => router.push('/requests' as never)} />
-          <Row icon="people" label="Following" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
+          <Row icon="people" label="Orgs" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
           <Row icon="star" label="My ratings" v={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★ · ${ratingSummary.count}` : 'None yet'} onPress={() => router.push(`/ratings/${me.id}` as never)} />
           {drafts.length > 0 && (
             <Row icon="edit" label="Drafts" v={String(drafts.length)} onPress={() => router.push('/drafts' as never)} />

@@ -45,4 +45,10 @@ describe('MyFriendsScreen', () => {
     // Skip: we already test the unfriend flow in the store unit tests.
     expect(getAllByText('FIND MORE PEOPLE')[0]).toBeTruthy();
   });
+
+  test('"Find more people" opens search with the people filter pre-selected', () => {
+    const { getByText } = renderScreen(<MyFriendsScreen />);
+    fireEvent.press(getByText('FIND MORE PEOPLE'));
+    expect(router.push).toHaveBeenCalledWith('/search?tab=people');
+  });
 });

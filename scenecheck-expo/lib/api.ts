@@ -496,6 +496,54 @@ export const api = {
     return data;
   },
 
+  // Upload a picked image to the `avatars` storage bucket and persist its
+  // public URL on profiles.avatar_url (which AuthBootstrap loads into
+  // me.picture). Returns the URL. Mock mode just echoes the local uri so the
+  // picker preview still works offline. fetch() yields bytes for both web
+  // (data/blob URL) and native (file:// URI).
+  async uploadAvatar(uri: string): Promise<string> {
+    if (isMock()) return uri;
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const res = await fetch(uri);
+    const bytes = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const ext = contentType.includes('png') ? 'png'
+      : contentType.includes('webp') ? 'webp' : 'jpg';
+    // Keyed under the user's own folder (storage RLS, migration 00022).
+    const path = `${user.id}/avatar_${Date.now()}.${ext}`;
+    const { error: upErr } = await sb.storage
+      .from('avatars')
+      .upload(path, bytes, { contentType, upsert: true });
+    if (upErr) throw upErr;
+    const url = sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+    const { error: profErr } = await sb.from('profiles')
+      .update({ avatar_url: url })
+      .eq('user_id', user.id);
+    if (profErr) throw profErr;
+    return url;
+  },
+
+  // Clear the stored avatar (profiles.avatar_url → null) and best-effort
+  // remove the user's objects from the bucket.
+  async removeAvatar(): Promise<void> {
+    if (isMock()) return;
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('profiles')
+      .update({ avatar_url: null })
+      .eq('user_id', user.id);
+    if (error) throw error;
+    try {
+      const { data: list } = await sb.storage.from('avatars').list(user.id);
+      if (list?.length) {
+        await sb.storage.from('avatars').remove(list.map(f => `${user.id}/${f.name}`));
+      }
+    } catch { /* non-fatal — the profile no longer points at them */ }
+  },
+
   // Delete the caller's account. Runs through the `delete-account` Edge
   // Function (service role) because invalidating the login credentials
   // needs admin privileges the client doesn't have. The function

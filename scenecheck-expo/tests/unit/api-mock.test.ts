@@ -86,6 +86,16 @@ describe('api.getProfilesByIds (mock)', () => {
   });
 });
 
+describe('api avatar (mock)', () => {
+  test('uploadAvatar echoes the local uri (no backend in mock mode)', async () => {
+    expect(await api.uploadAvatar('file:///tmp/pic.jpg')).toBe('file:///tmp/pic.jpg');
+  });
+
+  test('removeAvatar resolves to a no-op in mock mode', async () => {
+    await expect(api.removeAvatar()).resolves.toBeUndefined();
+  });
+});
+
 describe('api.searchInterests (mock)', () => {
   test('filters by query', async () => {
     const results = await api.searchInterests('bik');

@@ -1,11 +1,13 @@
-// Search — unified search across events, people, and orgs. Filters by
-// tab and renders typed result rows. People + orgs come from Supabase via
-// useSearchPeople / useSearchOrgs (which fall back to the SC_* fixtures in
-// mock mode); events come from useEvents and are filtered client-side.
+// Search — unified search across events, people, and orgs. The ALL tab shows
+// all three in one feed; the EVENTS / PEOPLE / ORGS tabs narrow to one type.
+// An optional `?tab=` param auto-selects a tab (e.g. "Browse orgs" → orgs,
+// "Find people" → people). People + orgs come from Supabase via
+// useSearchPeople / useSearchOrgs (SC_* fixtures in mock mode); events come
+// from useEvents and are filtered client-side.
 
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -19,13 +21,19 @@ import { useSearchPeople, useSearchOrgs } from '@/hooks/useSearch';
 import { excludeSelf } from '@/lib/people';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
+import type { SCEvent, Account } from '@/types/domain';
 
-type Tab = 'events' | 'people' | 'orgs';
+type Tab = 'all' | 'events' | 'people' | 'orgs';
+const TABS: Tab[] = ['all', 'events', 'people', 'orgs'];
 
 export default function SearchScreen() {
   const t = useTokens();
+  // ?tab= auto-selects a filter on open; default to the combined ALL feed.
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(params.tab as Tab) ? (params.tab as Tab) : 'all',
+  );
   const [query, setQuery] = useState('');
-  const [tab, setTab] = useState<Tab>('events');
   const meId = useStore(s => s.me.id);
   const lowered = query.trim().toLowerCase();
 
@@ -50,6 +58,86 @@ export default function SearchScreen() {
   const peopleVisible = excludeSelf(peopleAll, meId);
   const people = lowered ? peopleVisible : peopleVisible.slice(0, 6);
   const orgs = lowered ? orgsAll : orgsAll.slice(0, 6);
+
+  const showEvents = tab === 'all' || tab === 'events';
+  const showPeople = tab === 'all' || tab === 'people';
+  const showOrgs = tab === 'all' || tab === 'orgs';
+  const visibleCount =
+    (showEvents ? events.length : 0) +
+    (showPeople ? people.length : 0) +
+    (showOrgs ? orgs.length : 0);
+
+  const renderEvent = (e: SCEvent) => (
+    <Pressable
+      key={`e-${e.id}`}
+      onPress={() => router.push(`/event/${e.id}` as never)}
+      style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+    >
+      <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        <View style={{
+          width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: t.accentBlue,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <SCIcon name="pin" size={16} color="white" />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SCText variant="display" size={14}>{e.title}</SCText>
+          <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+            {whenRange(e)} · {e.where}
+          </SCText>
+        </View>
+        <SCIcon name="chevron-right" size={14} color={t.ink3} />
+      </SCCard>
+    </Pressable>
+  );
+
+  const renderPerson = (p: Account) => (
+    <Pressable
+      key={`p-${p.id}`}
+      onPress={() => router.push(`/profile/${p.id}` as never)}
+      style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+    >
+      <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        <SCAvatar person={p} size={42} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SCText variant="display" size={14}>{p.name}</SCText>
+          <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+            @{p.username}{p.mutual != null ? ` · ${p.mutual} mutual` : ''}
+          </SCText>
+        </View>
+        <SCIcon name="chevron-right" size={14} color={t.ink3} />
+      </SCCard>
+    </Pressable>
+  );
+
+  const renderOrg = (o: Account) => {
+    const handle = o.handle ?? (o.username ? `@${o.username}` : '');
+    return (
+      <Pressable
+        key={`o-${o.id}`}
+        onPress={() => router.push(`/profile/${o.id}` as never)}
+        style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+      >
+        <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+          <SCAvatar person={o} size={42} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <SCText variant="display" size={14}>{o.name}</SCText>
+            <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+              {handle}{o.followers != null ? ` · ${o.followers} followers` : ''}
+            </SCText>
+          </View>
+          <SCIcon name="chevron-right" size={14} color={t.ink3} />
+        </SCCard>
+      </Pressable>
+    );
+  };
+
+  // In the ALL feed, label each block; single-type tabs need no header.
+  const sectionLabel = (text: string) => (
+    <SCText variant="labelCap" color={t.ink3} style={{ marginTop: 6, paddingHorizontal: 4 }}>
+      {text}
+    </SCText>
+  );
 
   return (
     <Screen onRefresh={() => { reloadEvents(); reloadPeople(); reloadOrgs(); }}>
@@ -91,6 +179,7 @@ export default function SearchScreen() {
         contentContainerStyle={{ paddingHorizontal: 14, gap: 6, paddingBottom: 14 }}
       >
         {([
+          { k: 'all', label: `ALL · ${events.length + people.length + orgs.length}` },
           { k: 'events', label: `EVENTS · ${events.length}` },
           { k: 'people', label: `PEOPLE · ${people.length}` },
           { k: 'orgs', label: `ORGS · ${orgs.length}` },
@@ -114,74 +203,26 @@ export default function SearchScreen() {
 
       {/* Results */}
       <View style={{ paddingHorizontal: 14, gap: 8 }}>
-        {tab === 'events' && events.map(e => (
-          <Pressable
-            key={e.id}
-            onPress={() => router.push(`/event/${e.id}` as never)}
-            style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-          >
-            <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              <View style={{
-                width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: t.accentBlue,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <SCIcon name="pin" size={16} color="white" />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <SCText variant="display" size={14}>{e.title}</SCText>
-                <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                  {whenRange(e)} · {e.where}
-                </SCText>
-              </View>
-              <SCIcon name="chevron-right" size={14} color={t.ink3} />
-            </SCCard>
-          </Pressable>
-        ))}
+        {showEvents && (
+          <>
+            {tab === 'all' && events.length > 0 && sectionLabel('Events')}
+            {events.map(renderEvent)}
+          </>
+        )}
+        {showPeople && (
+          <>
+            {tab === 'all' && people.length > 0 && sectionLabel('People')}
+            {people.map(renderPerson)}
+          </>
+        )}
+        {showOrgs && (
+          <>
+            {tab === 'all' && orgs.length > 0 && sectionLabel('Orgs')}
+            {orgs.map(renderOrg)}
+          </>
+        )}
 
-        {tab === 'people' && people.map(p => (
-          <Pressable
-            key={p.id}
-            onPress={() => router.push(`/profile/${p.id}` as never)}
-            style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-          >
-            <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              <SCAvatar person={p} size={42} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <SCText variant="display" size={14}>{p.name}</SCText>
-                <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                  @{p.username}{p.mutual != null ? ` · ${p.mutual} mutual` : ''}
-                </SCText>
-              </View>
-              <SCIcon name="chevron-right" size={14} color={t.ink3} />
-            </SCCard>
-          </Pressable>
-        ))}
-
-        {tab === 'orgs' && orgs.map(o => {
-          const handle = o.handle ?? (o.username ? `@${o.username}` : '');
-          return (
-            <Pressable
-              key={o.id}
-              onPress={() => router.push(`/profile/${o.id}` as never)}
-              style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-            >
-              <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                <SCAvatar person={o} size={42} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <SCText variant="display" size={14}>{o.name}</SCText>
-                  <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                    {handle}{o.followers != null ? ` · ${o.followers} followers` : ''}
-                  </SCText>
-                </View>
-                <SCIcon name="chevron-right" size={14} color={t.ink3} />
-              </SCCard>
-            </Pressable>
-          );
-        })}
-
-        {((tab === 'events' && events.length === 0) ||
-          (tab === 'people' && people.length === 0) ||
-          (tab === 'orgs' && orgs.length === 0)) && (
+        {visibleCount === 0 && (
           <SCCard style={{ padding: 24, alignItems: 'center' }}>
             <SCText variant="displayTight" size={20}>No matches</SCText>
             <SCText size={13} color={t.ink3} style={{ marginTop: 6 }}>

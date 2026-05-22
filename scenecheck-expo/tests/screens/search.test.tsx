@@ -5,11 +5,12 @@
 import { fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import SearchScreen from '@/app/search';
-import { renderScreen, resetStore } from '../test-utils';
+import { renderScreen, resetStore, setRouteParams } from '../test-utils';
 import { SC_EVENTS, SC_VISIBLE_PEOPLE, SC_ORGS } from '@/data/mocks';
 
 beforeEach(() => {
   resetStore();
+  setRouteParams({}); // default: no ?tab= → the ALL feed
   (router.push as jest.Mock).mockClear();
 });
 
@@ -51,5 +52,27 @@ describe('SearchScreen', () => {
     const { getByText } = renderScreen(<SearchScreen />);
     fireEvent.press(getByText(SC_EVENTS[0].title));
     expect(router.push).toHaveBeenCalledWith(`/event/${SC_EVENTS[0].id}`);
+  });
+
+  test('the default ALL tab shows events, people, and orgs together', () => {
+    const { getByText } = renderScreen(<SearchScreen />);
+    expect(getByText(/ALL · \d+/)).toBeTruthy();
+    expect(getByText(SC_EVENTS[0].title)).toBeTruthy();
+    expect(getByText(SC_VISIBLE_PEOPLE[0].name)).toBeTruthy();
+    expect(getByText(SC_ORGS[0].name)).toBeTruthy();
+  });
+
+  test('?tab=orgs auto-selects the orgs filter (events hidden)', () => {
+    setRouteParams({ tab: 'orgs' });
+    const { getByText, queryByText } = renderScreen(<SearchScreen />);
+    expect(getByText(SC_ORGS[0].name)).toBeTruthy();
+    expect(queryByText(SC_EVENTS[0].title)).toBeNull();
+  });
+
+  test('?tab=people auto-selects the people filter (orgs hidden)', () => {
+    setRouteParams({ tab: 'people' });
+    const { getByText, queryByText } = renderScreen(<SearchScreen />);
+    expect(getByText(SC_VISIBLE_PEOPLE[0].name)).toBeTruthy();
+    expect(queryByText(SC_ORGS[0].name)).toBeNull();
   });
 });

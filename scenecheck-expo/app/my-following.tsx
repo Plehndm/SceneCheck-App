@@ -38,7 +38,7 @@ export default function MyFollowingScreen() {
             <SCText size={12} color={t.ink3} style={{ marginTop: 4, marginBottom: 14, textAlign: 'center' }}>
               Browse organizations and follow ones whose events you&apos;d want to see.
             </SCText>
-            <SCButton label="Browse orgs" onPress={() => router.push('/search' as never)} />
+            <SCButton label="Browse orgs" onPress={() => router.push('/search?tab=orgs' as never)} />
           </SCCard>
         </View>
       ) : (

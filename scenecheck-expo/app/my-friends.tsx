@@ -68,7 +68,7 @@ export default function MyFriendsScreen() {
             <SCText size={12} color={t.ink3} style={{ marginTop: 4, marginBottom: 14 }}>
               Find people from your interests, mutual events, or campus.
             </SCText>
-            <SCButton label="Find people" onPress={() => router.push('/search' as never)} />
+            <SCButton label="Find people" onPress={() => router.push('/search?tab=people' as never)} />
           </SCCard>
         </View>
       ) : (
@@ -102,7 +102,7 @@ export default function MyFriendsScreen() {
             </SCCard>
           ))}
           <Pressable
-            onPress={() => router.push('/search' as never)}
+            onPress={() => router.push('/search?tab=people' as never)}
             style={({ pressed }) => [{
               padding: 12, borderRadius: RADIUS.lg,
               borderWidth: 1.5, borderStyle: 'dashed', borderColor: t.line,

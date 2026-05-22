@@ -25,6 +25,13 @@ describe('MyFollowingScreen', () => {
     expect(getByText('Not following anyone yet')).toBeTruthy();
   });
 
+  test('"Browse orgs" opens search with the orgs filter pre-selected', () => {
+    useStore.setState({ following: new Set() });
+    const { getByText } = renderScreen(<MyFollowingScreen />);
+    fireEvent.press(getByText('BROWSE ORGS')); // SCButton uppercases its label
+    expect(router.push).toHaveBeenCalledWith('/search?tab=orgs');
+  });
+
   test('tapping a row navigates to that org profile', () => {
     const orgs = SC_ORGS.filter(o => useStore.getState().following.has(o.id));
     if (orgs.length === 0) return;
