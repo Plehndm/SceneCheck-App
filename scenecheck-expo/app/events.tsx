@@ -15,6 +15,7 @@ import { ConflictChip } from '@/components/ConflictChip';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvents } from '@/hooks/useEvents';
+import { isRecommendedFor } from '@/lib/events';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
@@ -31,8 +32,8 @@ export default function EventsListScreen() {
   // Home tab + Map tab use.
   const { events: allEvents } = useEvents();
 
-  const isRecommended = (e: SCEvent) =>
-    e.kind === 'recommended' || e.interests.some(tag => meInterests.includes(tag));
+  // "FOR YOU" = events that match one of your interests (see lib/events).
+  const isRecommended = (e: SCEvent) => isRecommendedFor(e, meInterests);
 
   const list = allEvents.filter(e =>
     filter === 'all' ? true :

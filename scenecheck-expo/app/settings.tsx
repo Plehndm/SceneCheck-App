@@ -16,6 +16,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { ChangeEmailSheet } from '@/components/ChangeEmailSheet';
 import { ChangePasswordSheet } from '@/components/ChangePasswordSheet';
 import { useStore } from '@/store/useStore';
+import { useFriendRequests } from '@/hooks/useFriendRequests';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
 import { PALETTES, RADIUS, type PaletteName } from '@/theme/tokens';
@@ -54,7 +55,6 @@ export default function SettingsScreen() {
   const setNotifPref = useStore(s => s.setNotifPref);
   const blocked = useStore(s => s.blocked);
   const linkedCalendar = useStore(s => s.linkedCalendar);
-  const incomingRequests = useStore(s => s.incomingRequests);
   const tweaks = useStore(s => s.tweaks);
   const setTweak = useStore(s => s.setTweak);
   const palette = useStore(s => s.palette);
@@ -65,7 +65,10 @@ export default function SettingsScreen() {
   const showToast = useStore(s => s.showToast);
   const clearDrafts = useStore(s => s.clearDrafts);
 
-  const requestCount = incomingRequests.size;
+  // Live incoming-request count (matches the /requests screen) instead of a
+  // store-set snapshot, so the "waiting on your approval" hint stays accurate.
+  const { requests: incomingReqs } = useFriendRequests();
+  const requestCount = incomingReqs.length;
   const calLabel = linkedCalendar
     ? linkedCalendar.charAt(0).toUpperCase() + linkedCalendar.slice(1)
     : 'None';

@@ -9,6 +9,7 @@ import { SCText } from './SCText';
 import { SCTag } from './SCTag';
 import { ConflictChip } from './ConflictChip';
 import { whenRange } from '@/lib/date-time';
+import { isRecommendedFor } from '@/lib/events';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -17,21 +18,27 @@ interface Props {
   joined: boolean;
   showConflict?: boolean;
   onPress?: () => void;
+  // Your subscribed interests — decides whether a scraped/app-discovered
+  // event reads as "RECOMMENDED" (matches an interest) or "NEARBY" (doesn't).
+  meInterests?: string[];
 }
 
-const KIND_LABEL: Record<SCEvent['kind'], string> = {
-  yours: 'YOUR EVENT',
-  friend: 'FRIEND HOSTING',
-  org: 'ORG · POSTED',
-  recommended: 'RECOMMENDED',
-};
-
-export function SCEventCard({ event, joined, showConflict, onPress }: Props) {
+export function SCEventCard({ event, joined, showConflict, onPress, meInterests = [] }: Props) {
   const t = useTokens();
+  // A scraped event (kind 'recommended') is only "RECOMMENDED" when it matches
+  // one of your interests; otherwise it's just "NEARBY". yours/friend/org keep
+  // their intrinsic label + color.
+  const recommended = isRecommendedFor(event, meInterests);
+  const label =
+    event.kind === 'yours' ? 'YOUR EVENT' :
+    event.kind === 'friend' ? 'FRIEND HOSTING' :
+    event.kind === 'org' ? 'ORG · POSTED' :
+    recommended ? 'RECOMMENDED' : 'NEARBY';
   const accent =
     event.kind === 'yours' ? t.primary :
     event.kind === 'friend' ? t.accentFriend :
-    t.accentBlue;
+    event.kind === 'org' ? t.accentBlue :
+    recommended ? t.accentBlue : t.mapPinMute;
   return (
     <Pressable
       onPress={onPress}
@@ -46,7 +53,7 @@ export function SCEventCard({ event, joined, showConflict, onPress }: Props) {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: accent }} />
         <SCText variant="mono" size={9.5} weight="600" color={accent}>
-          {KIND_LABEL[event.kind]}
+          {label}
         </SCText>
         {joined && (
           <View style={{

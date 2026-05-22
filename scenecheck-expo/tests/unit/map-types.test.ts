@@ -41,8 +41,12 @@ describe('pinColor', () => {
     expect(pinColor(SC_EVENT_BY_ID.e2, TOKENS, ['nothing-relevant'])).toBe(TOKENS.accentFriend);
   });
 
-  test('returns accentBlue for recommended events', () => {
-    expect(pinColor(SC_EVENT_BY_ID.e4, TOKENS, [])).toBe(TOKENS.accentBlue);
+  test('a scraped/recommended event is "Recommended" only when it shares an interest', () => {
+    // e4 (kind:'recommended') has interests ['running','uci']. It's only blue
+    // when the user shares one of those — being scraped is no longer enough.
+    expect(pinColor(SC_EVENT_BY_ID.e4, TOKENS, ['uci'])).toBe(TOKENS.accentBlue);
+    expect(pinColor(SC_EVENT_BY_ID.e4, TOKENS, [])).toBe(TOKENS.mapPinMute);
+    expect(pinColor(SC_EVENT_BY_ID.e4, TOKENS, ['cooking'])).toBe(TOKENS.mapPinMute);
   });
 
   test('returns accentBlue ("Recommended") for an org event that shares an interest', () => {

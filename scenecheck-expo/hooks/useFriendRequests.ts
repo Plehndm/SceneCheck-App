@@ -50,10 +50,21 @@ export function useFriendRequests(): UseFriendRequestsResult {
     (async () => {
       try {
         const rows = await api.fetchFriendRequests();
-        const withProfiles = await Promise.all(rows.map(async r => ({
-          ...r,
-          person: await api.getProfile(r.personId),
-        })));
+        // Resolve each requester's profile independently. A single failure
+        // (e.g. a profile that still isn't readable) must NOT blank the whole
+        // list — fall back to a minimal placeholder so the request stays
+        // visible + actionable. Migration 00021 makes a pending requester's
+        // profile readable, so the real name normally loads.
+        const withProfiles = await Promise.all(rows.map(async r => {
+          const person = await api.getProfile(r.personId).catch((): Account => ({
+            id: r.personId,
+            type: 'person',
+            name: 'SceneCheck user',
+            privacy: 'private',
+            picture: null,
+          }));
+          return { ...r, person };
+        }));
         if (cancelled) return;
         setRequests(withProfiles);
         setLoading(false);

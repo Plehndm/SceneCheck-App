@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **377/377** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.30 — cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase)._
+_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **378/378** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.31 — interest-gated recommendations + incoming friend-request fixes)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1009,6 +1009,32 @@ runs in mock mode, so those are verified manually on the hosted project after
 applying `00019`/`00020` and re-running the social seed (see PROGRESS_SNAPSHOT
 §35.5). The local `following` set + managed-account switching remain user-state
 (no follows table), so they aren't re-tested as live data.
+
+---
+
+### 2.31 Interest-gated recommendations + incoming friend-request fixes (post-§2.30 delta)
+
+_Captured 2026-05-22 alongside `docs/PROGRESS_SNAPSHOT.md` §36._
+
+Three fixes: (1) "Recommended" is now per-user interest-driven (a scraped event
+you have no interest in is "Other"); (2) incoming friend requests from a private
+account weren't showing (RLS hid the requester + an un-caught `Promise.all`);
+(3) the friend-request hint counts now come from the live hooks. New migration
+`00021` (pending-request profile visibility); new `lib/events.isRecommendedFor`.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/unit/map-types.test.ts` (±0) | recommended needs an interest | `pinColor` returns blue for a scraped event only when the user shares one of its interests; muted otherwise (replaces the old "scraped ⇒ always blue" case). |
+| `tests/components/SCEventCard.test.tsx` (+1) | scraped label is interest-gated | A scraped card shows "RECOMMENDED" with a matching `meInterests`, and "NEARBY" (not RECOMMENDED) without. |
+
+**Delivered count**: 378 / 378 (up from 377). 52 suites.
+
+**What this section deliberately does NOT do:** exercise the live RLS path of
+migration `00021` or the live recommended-by-interest classification — Jest runs
+in mock mode, so those are verified manually on the hosted project after applying
+the migration (the private seeded requester, e.g. Jordan, becomes visible to the
+recipient and the incoming list + counts populate). The friend-request count
+hooks are the same ones already covered by the requests-screen tests.
 
 ---
 

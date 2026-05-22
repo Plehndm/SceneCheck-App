@@ -16,6 +16,8 @@ import { EditProfileSheet } from '@/components/EditProfileSheet';
 import { useImagePicker } from '@/hooks/useImagePicker';
 import { useHostedEvents } from '@/hooks/useHostedEvents';
 import { useRatings } from '@/hooks/useRatings';
+import { useFriendRequests } from '@/hooks/useFriendRequests';
+import { useOutgoingRequests } from '@/hooks/useOutgoingRequests';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { summarizeRatings } from '@/lib/ratings';
@@ -29,8 +31,11 @@ export default function ProfileTab() {
   const setPicture = useStore(s => s.setPicture);
   const friends = useStore(s => s.friends);
   const following = useStore(s => s.following);
-  const incomingRequests = useStore(s => s.incomingRequests);
-  const outgoingRequests = useStore(s => s.outgoingRequests);
+  // Request counts come from the same hooks the /requests screen uses, so the
+  // hint always reflects the true, current in/out numbers (and matches what
+  // you'll see on that screen) instead of a snapshot of the store sets.
+  const { requests: incomingReqs } = useFriendRequests();
+  const { people: outgoingReqs } = useOutgoingRequests();
   const drafts = useStore(s => s.drafts);
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
@@ -148,7 +153,7 @@ export default function ProfileTab() {
         <SCCard>
           <Row icon="calendar" label="Events I'm hosting" v={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
           <Row icon="people" label="Friends" v={String(friends.size)} onPress={() => router.push('/my-friends' as never)} />
-          <Row icon="user-plus" label="Friend requests" v={`${incomingRequests.size} in · ${outgoingRequests.size} sent`} onPress={() => router.push('/requests' as never)} />
+          <Row icon="user-plus" label="Friend requests" v={`${incomingReqs.length} in · ${outgoingReqs.length} sent`} onPress={() => router.push('/requests' as never)} />
           <Row icon="people" label="Following" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
           <Row icon="star" label="My ratings" v={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★ · ${ratingSummary.count}` : 'None yet'} onPress={() => router.push(`/ratings/${me.id}` as never)} />
           {drafts.length > 0 && (

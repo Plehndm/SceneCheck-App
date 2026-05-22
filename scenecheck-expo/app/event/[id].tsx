@@ -26,6 +26,7 @@ import { useAttendees } from '@/hooks/useAttendees';
 import { api } from '@/lib/api';
 import { SC_CHATS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
+import { isRecommendedFor } from '@/lib/events';
 import { RADIUS } from '@/theme/tokens';
 
 interface DetailRowProps {
@@ -124,14 +125,19 @@ export default function EventDetailScreen() {
   // so host actions also appear in live mode where hostId is a UUID.
   // Round-2 code-review finding §2 Important.
   const isHost = e.kind === 'yours' || e.hostId === meId;
+  // A scraped/app-created event only reads as "RECOMMENDED" when it matches one
+  // of your interests; otherwise it's just app-created (and muted).
+  const recommended = isRecommendedFor(e, me.interests ?? []);
   const accent =
     e.kind === 'yours' ? t.primary :
     e.kind === 'friend' ? t.accentFriend :
-    t.accentBlue;
+    e.kind === 'org' ? t.accentBlue :
+    recommended ? t.accentBlue : t.mapPinMute;
   const label =
     e.kind === 'yours' ? 'YOUR EVENT' :
     e.kind === 'friend' ? 'FRIEND HOSTING' :
-    'RECOMMENDED · APP-CREATED';
+    e.kind === 'org' ? 'ORG · POSTED' :
+    recommended ? 'RECOMMENDED · APP-CREATED' : 'APP-CREATED';
 
   const handleToggleJoin = async () => {
     if (!id) return;

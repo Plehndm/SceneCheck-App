@@ -4,6 +4,7 @@
 // platform implementation might need is declared once.
 
 import type { SCEvent } from '@/types/domain';
+import { isRecommendedFor } from '@/lib/events';
 
 export interface LatLng {
   latitude: number;
@@ -66,10 +67,12 @@ export function eventLatLng(e: SCEvent): LatLng {
 //
 //   primary      → "Your events"  — you host it (kind 'yours')
 //   accentFriend → "Friends"      — a friend hosts it (kind 'friend')
-//   accentBlue   → "Recommended"  — app-discovered (kind 'recommended')
-//                                    or it matches one of your interests
-//   mapPinMute   → "Other"        — anything else (e.g. an org event you
-//                                    have no interest connection to)
+//   accentBlue   → "Recommended"  — it matches one of your interests (this is
+//                                    the only thing that makes an event
+//                                    recommended now; a scraped/app-discovered
+//                                    event you have no interest in is "Other")
+//   mapPinMute   → "Other"        — anything else (e.g. an org/scraped event
+//                                    you have no interest connection to)
 //
 // Components import this so both map implementations + the legend stay in
 // sync.
@@ -83,7 +86,8 @@ export function pinColor(
   // shared interest, so a friend's event you had no tag in common with
   // mis-coloured as "Other".
   if (e.kind === 'friend') return tokens.accentFriend;
-  const sharesInterest = e.interests.some(tag => meInterests.includes(tag));
-  if (e.kind === 'recommended' || sharesInterest) return tokens.accentBlue;
+  // "Recommended" is purely interest-driven (see lib/events.isRecommendedFor):
+  // a scraped event with no matching interest now falls through to "Other".
+  if (isRecommendedFor(e, meInterests)) return tokens.accentBlue;
   return tokens.mapPinMute;
 }

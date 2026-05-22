@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
   const meId = useStore(s => s.me.id);
+  const meInterests = useStore(s => s.me.interests ?? []);
   const isJoinedNow = (id: string) => joined.has(id) && !pendingLeave.has(id);
   // "People nearby" — public people from Supabase (fixtures in mock mode).
   // Live mode excludes self in the query; excludeSelf also drops self in mock
@@ -140,6 +141,7 @@ export default function HomeScreen() {
                 event={e}
                 joined={isJoinedNow(e.id)}
                 showConflict
+                meInterests={meInterests}
                 onPress={() => router.push(`/event/${e.id}` as never)}
               />
             ))}

@@ -31,11 +31,21 @@ describe('SCEventCard', () => {
     expect(getByText('FRIEND HOSTING')).toBeTruthy();
   });
 
-  test('shows "RECOMMENDED" label for kind: recommended', () => {
+  test('shows "RECOMMENDED" for a scraped event that matches an interest', () => {
+    // e4 has interests ['running','uci']; passing a matching interest makes it
+    // recommended for this user.
     const { getByText } = renderWithTheme(
-      <SCEventCard event={recommendedEvent} joined={false} onPress={() => {}} />,
+      <SCEventCard event={recommendedEvent} joined={false} meInterests={['uci']} onPress={() => {}} />,
     );
     expect(getByText('RECOMMENDED')).toBeTruthy();
+  });
+
+  test('shows "NEARBY" (not RECOMMENDED) for a scraped event with no matching interest', () => {
+    const { getByText, queryByText } = renderWithTheme(
+      <SCEventCard event={recommendedEvent} joined={false} meInterests={['cooking']} onPress={() => {}} />,
+    );
+    expect(getByText('NEARBY')).toBeTruthy();
+    expect(queryByText('RECOMMENDED')).toBeNull();
   });
 
   test('shows "JOINED" badge when joined=true', () => {

@@ -72,6 +72,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Keyboard avoidance now has an upper bound (top of screen).** The bottom-sheet modals lifted by the full keyboard height with no cap, so a tall sheet could push its top above the screen. Each sheet's `maxHeight` is now clamped to `windowHeight − topInset − keyboardHeight` (top can't pass the safe area): **EditProfileSheet** content became a `ScrollView` so it scrolls instead of overflowing, and **LocationPickerSheet** shrinks its map (260 → 130) while the keyboard is open so the search field + button stay visible. 362/362. See §33. |
 | 2026-05-21 | **Chat tab gained a compose button.** The Chat tab had no way to reach the new-chat composer (the screen existed but was unreachable). Added an **edit-icon compose button** in the header → `/new-chat` (matching the legacy `SCChatList` button) plus an empty state. The composer itself is already complete (pick a friend → DM, or several → group → `api.createChat` → thread). +1 test (363/363). See §34. |
 | 2026-05-21 | **Cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase.** Six fixes. **(1) Account deletion now "reassign, then delete row":** new RPC `reassign_then_delete_account` (migration `00020`) re-points the user's events + reviews to a fixed `[deleted user]` placeholder profile, then DELETEs the real `profiles` row (cascading interests/friendships/chats/etc.); the `delete-account` Edge Function calls it then `auth.admin.deleteUser` (frees the email). Local drafts are wiped client-side via a new `clearDrafts` store action. **(2) Sign-up identity:** migration `00019` adds `profiles.email` + rewrites `handle_new_user` to stamp `name` (from the display_name metadata), a **unique** `username` (email-slug + numeric fallback), and the email — plus a backfill for existing rows; the racey client-side name write in `api.signUp` is gone. `EditProfileSheet` gains a username field with friendly UNIQUE-violation copy. Profile SELECTs narrowed to omit `email` (stored, never shipped to other clients). **(3) Pull-to-refresh:** `Screen` gained an `onRefresh` prop → `RefreshControl` on native, a `rotate-ccw` button on web; `reload()` added to the param hooks (`useProfile`/`useHostedEvents`/`useRatings`/`useAttendees`/`useUserInterests`/`useSearch*`); wired into home/search/chat/profile/event/friends/requests/my-following. **(4–6) De-mock (live = 100% Supabase):** new `api.searchPeople`/`searchOrgs`/`getProfilesByIds`, enriched `getChats` (DM title = other member's name, last message) + `fetchRatings` (reviewer + event title via joins); every live screen now reads Supabase — search/home rail (`useSearch*`), my-following (`useFollowedOrgs`), chat list + thread, ratings, new-chat chips, profile — with `SC_*` retained **only** behind `isMock()` for the test/offline fixture. `seed-hosted-social.sql` extended with the missing fixtures (p5/p6/orgC/orgD) so all four orgs exist in `profiles`. +12 tests (377/377); `tsc` clean. See §35. |
+| 2026-05-22 | **Interest-gated recommendations + incoming friend-request fixes.** Three issues. **(1) "Recommended" is now interest-driven, per user:** a scraped/app-discovered event used to always count as "Recommended"; now an event is recommended only when it shares one of your subscribed interests (new `lib/events.isRecommendedFor`), so a scraped event you have no interest in shows as "Other/Nearby". Applied consistently across `pinColor` (map), the events-list "FOR YOU" filter, `SCEventCard` (new `meInterests` prop), and the event-detail hero label. **(2) Incoming friend requests weren't showing (live):** the seeded requester is a **private** account, and `profiles` RLS hides private non-friends — so `getProfile` threw and `useFriendRequests`' un-caught `Promise.all` blanked the whole list. Migration `00021` adds a `has_pending_request()` helper + an additive SELECT policy so pending-request parties can read each other's profile (both directions); the hook also resolves each requester independently with a minimal placeholder fallback. **(3) Friend-requests hint count was stale/wrong:** the Profile-tab "Friend requests" row and the Settings "Follow requests" row now derive their in/out counts from the same live hooks the `/requests` screen uses (`useFriendRequests`/`useOutgoingRequests`) instead of store-set snapshots, so the hint matches the screen and reflects the true numbers. +1 test (378/378); `tsc` clean. See §36. |
 
 ### Current layout
 
@@ -2308,7 +2309,68 @@ See `docs/TEST_PLAN.md` §2.30.
 
 ---
 
-## 36. How to re-snapshot this file
+## 36. Interest-gated recommendations + incoming friend-request fixes
+
+_Last updated: 2026-05-22_
+
+Three reported issues, fixed together.
+
+### 36.1 "Recommended" is interest-driven (per user)
+
+Previously a scraped/app-discovered event (`source='scraped'` → `kind:'recommended'`)
+was *always* highlighted as "Recommended", regardless of the viewer. The rule is
+now: **an event is "Recommended" for you only when it shares at least one of your
+subscribed interests** — a scraped event you have no interest in is "Other/Nearby".
+Centralized in `lib/events.ts` `isRecommendedFor(event, meInterests)` and used in:
+- `components/Map/types.ts` `pinColor` — dropped the `kind === 'recommended'`
+  shortcut; blue ("Recommended") is now `isRecommendedFor` only.
+- `app/events.tsx` — the "FOR YOU" filter / count / row label.
+- `components/SCEventCard.tsx` — new `meInterests` prop; a scraped card reads
+  "RECOMMENDED" (blue) when it matches, else "NEARBY" (muted). `app/(tabs)/index.tsx`
+  passes `me.interests`.
+- `app/event/[id].tsx` — the hero label/accent ("RECOMMENDED · APP-CREATED" only on
+  a match, else "APP-CREATED").
+
+(`transformEventRow` still sets `kind:'recommended'` for scraped events — that's the
+intrinsic source marker; the *display* decision is now per-user.) Tests updated:
+`map-types` (recommended needs a shared interest) and `SCEventCard` (match → RECOMMENDED,
+no match → NEARBY).
+
+### 36.2 Incoming friend requests weren't showing (live)
+
+Root cause: the seeded incoming request comes from a **private** account (Jordan), and
+the `profiles` SELECT policy (00014) hides a private non-friend's row. So
+`api.getProfile(requester)` threw, and `useFriendRequests` resolved all requesters in a
+single `Promise.all` with no per-item catch — one throw blanked the entire incoming list
+(outgoing was fine because it already caught per item). Two-part fix:
+- **Migration `00021`** — a `has_pending_request(a,b)` `SECURITY DEFINER` helper plus an
+  additive permissive SELECT policy: a profile is readable when there's a *pending*
+  friendship between the viewer and that profile (either direction). RLS policies are
+  OR'd, so this only reveals a genuine pending counterparty (the block guard is kept).
+  Fixes the same gap for outgoing requests to a private account too.
+- `hooks/useFriendRequests.ts` — resolves each requester independently; a still-
+  unresolvable profile falls back to a minimal placeholder so the request stays visible
+  and actionable rather than dropping the whole list.
+
+### 36.3 Friend-requests hint count was stale / inconsistent
+
+The Profile-tab "Friend requests" row and the Settings "Follow requests" row read the
+`incomingRequests`/`outgoingRequests` store-set sizes (a sign-in snapshot, and for
+incoming a different source than the screen). They now derive their counts from the
+same live hooks the `/requests` screen uses (`useFriendRequests` / `useOutgoingRequests`),
+so the hint reflects the true current numbers and always matches that screen.
+
+### 36.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **378/378, 52 suites** (+1: the SCEventCard
+no-match "NEARBY" case). Live paths (the 00021 RLS, recommended-by-interest in live
+mode) verified on the hosted project after applying the migration.
+
+See `docs/TEST_PLAN.md` §2.31.
+
+---
+
+## 37. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
