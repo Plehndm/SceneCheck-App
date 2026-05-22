@@ -372,7 +372,7 @@ source for items 1–3 in §7 above.
 
 ## 9. Web-bundle compatibility (Expo SDK 54 web)
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit a01665e)_
 
 `npm run web` now boots cleanly and the page hydrates / is interactive.
 Getting there from the first try required three targeted fixes against
@@ -454,7 +454,7 @@ updated to note the re-verification.
 
 ## 10. Web design parity + Create-flow port
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit 810b744; tag auto-fill follow-up in afaa4e9)_
 
 A second pass after §9 brought three pieces of the legacy design and
 flow back from the prototype into the Expo port. None of these need a
@@ -577,7 +577,7 @@ landed alongside this work.
 
 ## 11. Supabase live wire-up (Home + Map, Auth bootstrap)
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit c9de4bc)_
 
 The frontend now actually talks to Supabase on two visible surfaces
 (Home tab event rail + Map tab pins) and keeps the authenticated user's
@@ -683,7 +683,7 @@ alongside this work.
 
 ## 12. Full migration — Phase 1: Hard auth gate + session hydration
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit dd13452)_
 
 Phase 1 of the 7-phase plan in
 `C:\Users\david\.claude\plans\parsed-gliding-micali.md`. Builds the
@@ -751,7 +751,7 @@ See `docs/TEST_PLAN.md` §2.10 for the test additions.
 
 ## 13. Full migration — Phase 2: Event detail
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit f7e2c50)_
 
 Phase 2 of the 7-phase plan. Migrates the highest-traffic detail
 screen — `app/event/[id].tsx` — and wires the host-side edit /
@@ -852,7 +852,7 @@ the supabase client.
 
 ## 14. Full migration — Phase 3: Events list, Search, My Hosting
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit d3ba1c6)_
 
 Phase 3 of the 7-phase plan. Smallest phase by code change: every
 screen here was already filtering or mapping `SC_EVENTS` client-side,
@@ -908,7 +908,7 @@ Eleven screens still import `SC_*` directly. Phase queue:
 
 ## 15. Full migration — Phase 4: Interests system
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit d133773)_
 
 Phase 4 of the 7-phase plan. Migrates the `interests/` screens and
 the create-event tag catalog onto the live `public.interests` table.
@@ -953,7 +953,7 @@ Bonus: fixes a latent column-mapping bug in `api.searchInterests`.
 
 ## 16. Full migration — Phase 5: Profiles + Social
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit 8190d67)_
 
 Phase 5 of the 7-phase plan. Biggest API delta so far — 4 new
 methods on `lib/api.ts` + 3 new hooks — but the screen wiring is
@@ -1015,7 +1015,7 @@ becomes a priority.
 
 ## 17. Full migration — Phase 6: Chat
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit 73a4ae9)_
 
 Phase 6 of the 7-phase plan. The only Realtime surface in the app:
 new messages from other users flow in via a Supabase channel
@@ -1099,7 +1099,7 @@ UUID, so when the Realtime echo for that UUID arrives the
 
 ## 18. Full migration — Phase 7: Attendees + Ratings (migration complete)
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit c867b5f)_
 
 Phase 7 — final phase. Wires the last two screens still reading from
 mock fixtures (`attendees/[id]` and `ratings/[hostId]`) through real
@@ -1172,7 +1172,7 @@ Migration is done. Natural follow-on threads (not blocking):
 
 ## 19. Hosted Supabase swap + seeded data
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit 51b44c3)_
 
 After the 7-phase local migration was complete (§12–§18), `.env`
 was swapped from the local stack back to the hosted Supabase
@@ -1261,7 +1261,7 @@ the swap is one-line in either direction.)
 
 ## 20. Hosted SMTP: Resend setup runbook
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-05-19 (commit 94d46ac)_
 
 The hosted Supabase free tier ships a shared SMTP relay rate-
 limited to ~2 emails per hour per project. That cap is fine for a
@@ -1368,7 +1368,7 @@ domain. Two paths:
 
 ## 21. Email confirmation: the Resend pivot to no-confirmation
 
-_Last updated: 2026-05-20_
+_Last updated: 2026-05-20 (commit 18916d1)_
 
 This section records *why* SceneCheck ended up with email
 confirmation turned off, after a detour through custom SMTP. It's
@@ -1448,7 +1448,7 @@ them would be a regression the moment confirmation matters again.
 
 ## 22. Map discovery range as a persisted preference (+ type/seed cleanup)
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 154d62c; §22.5 seed-date follow-up in dc79aa6)_
 
 Three pieces in one pass: the Map tab's discovery-range control became a
 real persisted preference, the long-standing PostgREST `tsc` errors were
@@ -1571,7 +1571,7 @@ follow-up.
 
 ## 23. Multi-account correctness pass
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit dc79aa6)_
 
 Five issues found while signing in as a seeded mock user (Maya) on the
 hosted project to verify the social graph. Four were real bugs; one was
@@ -1679,7 +1679,7 @@ See `docs/TEST_PLAN.md` §2.18 for the per-file test additions.
 
 ## 24. Create-event, map pins, attendees, interests display
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit ced4ab8)_
 
 Five issues from exercising the full create → discover → join → profile
 loop on the hosted project.
@@ -1775,7 +1775,7 @@ See `docs/TEST_PLAN.md` §2.19 for the per-file test additions.
 
 ## 25. Create-event polish: location picker, stepper, default date, time-picker loop
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 86a0af4)_
 
 Four create-event refinements from continued use.
 
@@ -1841,7 +1841,7 @@ See `docs/TEST_PLAN.md` §2.20 for the per-file test additions.
 
 ## 26. Map pin colors aligned to the legend
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit cc0f2e0)_
 
 The map legend (Home + Map tab) lists four buckets — **Your events**
 (`primary`), **Friends** (`accentFriend`), **Recommended** (`accentBlue`),
@@ -1876,7 +1876,7 @@ surface this fix targets.
 
 ## 27. Friend-request flow, map key, location search, message cleanup
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit fd10912)_
 
 ### 27.1 Branch commit messages — `Co-Authored-By` removed
 
@@ -1949,7 +1949,7 @@ See `docs/TEST_PLAN.md` §2.22 for the per-file test additions.
 
 ## 28. Private-profile privacy gate + location search autocomplete
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 6fc7644)_
 
 ### 28.1 Private accounts no longer leak interests to non-friends
 
@@ -2003,7 +2003,7 @@ See `docs/TEST_PLAN.md` §2.23 for the per-file test additions.
 
 ## 29. Refine §28: private interests visible + location-biased search
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 9305632)_
 
 Two adjustments to §28 after a follow-up.
 
@@ -2048,7 +2048,7 @@ See `docs/TEST_PLAN.md` §2.24.
 
 ## 30. Private bio visible, edit-bio, interest persistence
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 0730c6c)_
 
 ### 30.1 Private accounts also show their bio
 
@@ -2108,7 +2108,7 @@ See `docs/TEST_PLAN.md` §2.25.
 
 ## 31. Profiles row → Account mapping (fix undefined keys)
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit cab3953; docs in 22c6c6a)_
 
 A console warning — *"Each child in a list should have a unique key"* —
 surfaced on the hosted backend. Root cause: the Supabase `profiles` table
@@ -2138,7 +2138,7 @@ is a pure function but not yet unit-covered — it's module-local.)
 
 ## 32. Keyboard avoidance for text inputs
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit a43edc4; docs in 22c6c6a)_
 
 Typing in a text field could leave the input hidden behind the on-screen
 keyboard. Now the form's bottom tracks the keyboard's top so the focused
@@ -2173,7 +2173,7 @@ See `docs/TEST_PLAN.md` §2.26–§2.27.
 
 ## 33. Keyboard avoidance — upper bound
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit b37566d; docs in 552386b)_
 
 Refines §32. The scrollable forms (via `Screen`'s `KeyboardAvoidingView`)
 were already bounded by the ScrollView, but the **bottom-sheet modals**
@@ -2200,7 +2200,7 @@ small screen.)
 
 ## 34. Chat tab compose button
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 2899c01; docs in 552386b)_
 
 The Chat tab (`app/(tabs)/chat.tsx`) had **no** create-chat affordance —
 `app/new-chat.tsx` existed but nothing linked to it. Added an **edit-icon
@@ -2223,7 +2223,7 @@ See `docs/TEST_PLAN.md` §2.28–§2.29.
 
 ## 35. Cleanup + de-mocking pass (deletion, identity, refresh, live data)
 
-_Last updated: 2026-05-21_
+_Last updated: 2026-05-21 (commit 1327890)_
 
 A six-part cleanup that finished the live-data migration and rounded out the
 account lifecycle. Two decisions framed the work: account deletion = **reassign
