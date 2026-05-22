@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **378/378** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.31 — interest-gated recommendations + incoming friend-request fixes)._
+_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **378/378** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.32 — fix a friend showing twice / duplicate React key)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1035,6 +1035,29 @@ in mock mode, so those are verified manually on the hosted project after applyin
 the migration (the private seeded requester, e.g. Jordan, becomes visible to the
 recipient and the incoming list + counts populate). The friend-request count
 hooks are the same ones already covered by the requests-screen tests.
+
+---
+
+### 2.32 Fix a friend showing twice / duplicate React key (post-§2.31 delta)
+
+_Captured 2026-05-22 alongside `docs/PROGRESS_SNAPSHOT.md` §37._
+
+A cross friend-request that both sides accept leaves two accepted rows (the
+`UNIQUE(from_id,to_id)` mirror pair), so `api.fetchFriends`' two-direction union
+returned the same friend twice → duplicate React key. Fix: `fetchFriends`
+dedupes the union by id, and `sendFriendRequest` no-ops when a pending/accepted
+friendship already exists in either direction (no mirror row).
+
+| Area | Tests | Notes |
+|---|---|---|
+| `lib/api.ts` `fetchFriends` / `sendFriendRequest` | none added | Both fixes live on the Supabase-only path; Jest runs in mock mode (`fetchFriends` returns the fixture, `sendFriendRequest` short-circuits to `pending`), so the existing `useFriends` / `api-mock` / `requests` suites still cover the mock contract and stay green. The dedupe + mirror-guard are verified manually on the hosted project (the duplicated friend collapses to one row; re-requesting an existing friend is a no-op). |
+
+**Delivered count**: 378 / 378 (no change). 52 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live-path unit test —
+the suite has no Supabase mock harness, so live-only branches (like this one)
+are validated against the hosted project rather than in Jest, consistent with
+§2.30/§2.31.
 
 ---
 

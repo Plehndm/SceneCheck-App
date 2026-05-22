@@ -73,6 +73,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Chat tab gained a compose button.** The Chat tab had no way to reach the new-chat composer (the screen existed but was unreachable). Added an **edit-icon compose button** in the header → `/new-chat` (matching the legacy `SCChatList` button) plus an empty state. The composer itself is already complete (pick a friend → DM, or several → group → `api.createChat` → thread). +1 test (363/363). See §34. |
 | 2026-05-21 | **Cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase.** Six fixes. **(1) Account deletion now "reassign, then delete row":** new RPC `reassign_then_delete_account` (migration `00020`) re-points the user's events + reviews to a fixed `[deleted user]` placeholder profile, then DELETEs the real `profiles` row (cascading interests/friendships/chats/etc.); the `delete-account` Edge Function calls it then `auth.admin.deleteUser` (frees the email). Local drafts are wiped client-side via a new `clearDrafts` store action. **(2) Sign-up identity:** migration `00019` adds `profiles.email` + rewrites `handle_new_user` to stamp `name` (from the display_name metadata), a **unique** `username` (email-slug + numeric fallback), and the email — plus a backfill for existing rows; the racey client-side name write in `api.signUp` is gone. `EditProfileSheet` gains a username field with friendly UNIQUE-violation copy. Profile SELECTs narrowed to omit `email` (stored, never shipped to other clients). **(3) Pull-to-refresh:** `Screen` gained an `onRefresh` prop → `RefreshControl` on native, a `rotate-ccw` button on web; `reload()` added to the param hooks (`useProfile`/`useHostedEvents`/`useRatings`/`useAttendees`/`useUserInterests`/`useSearch*`); wired into home/search/chat/profile/event/friends/requests/my-following. **(4–6) De-mock (live = 100% Supabase):** new `api.searchPeople`/`searchOrgs`/`getProfilesByIds`, enriched `getChats` (DM title = other member's name, last message) + `fetchRatings` (reviewer + event title via joins); every live screen now reads Supabase — search/home rail (`useSearch*`), my-following (`useFollowedOrgs`), chat list + thread, ratings, new-chat chips, profile — with `SC_*` retained **only** behind `isMock()` for the test/offline fixture. `seed-hosted-social.sql` extended with the missing fixtures (p5/p6/orgC/orgD) so all four orgs exist in `profiles`. +12 tests (377/377); `tsc` clean. See §35. |
 | 2026-05-22 | **Interest-gated recommendations + incoming friend-request fixes.** Three issues. **(1) "Recommended" is now interest-driven, per user:** a scraped/app-discovered event used to always count as "Recommended"; now an event is recommended only when it shares one of your subscribed interests (new `lib/events.isRecommendedFor`), so a scraped event you have no interest in shows as "Other/Nearby". Applied consistently across `pinColor` (map), the events-list "FOR YOU" filter, `SCEventCard` (new `meInterests` prop), and the event-detail hero label. **(2) Incoming friend requests weren't showing (live):** the seeded requester is a **private** account, and `profiles` RLS hides private non-friends — so `getProfile` threw and `useFriendRequests`' un-caught `Promise.all` blanked the whole list. Migration `00021` adds a `has_pending_request()` helper + an additive SELECT policy so pending-request parties can read each other's profile (both directions); the hook also resolves each requester independently with a minimal placeholder fallback. **(3) Friend-requests hint count was stale/wrong:** the Profile-tab "Friend requests" row and the Settings "Follow requests" row now derive their in/out counts from the same live hooks the `/requests` screen uses (`useFriendRequests`/`useOutgoingRequests`) instead of store-set snapshots, so the hint matches the screen and reflects the true numbers. +1 test (378/378); `tsc` clean. See §36. |
+| 2026-05-22 | **Fix: a friend showing twice (duplicate React key).** Signed in as one user, a friend rendered twice in the friends list with the same key. Root cause: a cross friend-request (A→B *and* B→A) that both get accepted leaves two accepted rows — `UNIQUE(from_id,to_id)` permits the mirror pair — so `fetchFriends` (which unions the `from_id=me` and `to_id=me` queries) returned the same profile from both sides. Fix: `fetchFriends` now dedupes the union by id (repairs display for rows already in the DB), and `sendFriendRequest` no-ops when a pending/accepted friendship already exists in **either** direction so a mirror row can't form. No test-count change (378/378); `tsc` clean. See §37. |
 
 ### Current layout
 
@@ -2370,7 +2371,41 @@ See `docs/TEST_PLAN.md` §2.31.
 
 ---
 
-## 37. How to re-snapshot this file
+## 37. Fix: a friend showing twice (duplicate React key)
+
+_Last updated: 2026-05-22 (commit 647a141)_
+
+Signed in as one account, a friend rendered **twice** in the friends list and
+React warned about two children with the same key (a profile UUID).
+
+**Root cause.** `api.fetchFriends` builds the list by unioning two queries —
+friendships where `from_id = me` (the friend is `to`) and where `to_id = me`
+(the friend is `from`) — because PostgREST can't `UNION`. The friendships
+`UNIQUE` constraint is on `(from_id, to_id)`, so the **mirror pair**
+`(A→B)` and `(B→A)` are two distinct, allowed rows. A cross friend-request
+(both sides requested each other) that then both get accepted leaves two
+accepted rows, so the same friend comes back from **both** halves of the union
+→ duplicate id. (`acceptFriendRequest` was innocent — it updates a single row;
+the mirror gets created by `sendFriendRequest`, which only deduped on the exact
+direction via `onConflict: 'from_id,to_id'`.)
+
+**Fix (both in `lib/api.ts`).**
+- `fetchFriends` dedupes the union by id (a `Map<id, Account>`), so an existing
+  mirror pair no longer renders the friend twice.
+- `sendFriendRequest` first checks for a pending/accepted friendship in
+  **either** direction and returns a no-op if one exists — so a mirror row can't
+  be created going forward.
+
+Mock mode is unaffected (it returns `SC_VISIBLE_PEOPLE` and short-circuits
+before the live insert), so the suite is unchanged at **378/378**, `tsc` clean.
+The two mirror rows already in a hosted DB are now harmless (deduped on read);
+an optional one-time `DELETE` can remove them if desired.
+
+See `docs/TEST_PLAN.md` §2.32.
+
+---
+
+## 38. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
