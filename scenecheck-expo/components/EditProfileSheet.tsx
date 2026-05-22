@@ -6,7 +6,8 @@
 // instantly.
 
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SCText } from './SCText';
 import { SCIcon } from './SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
@@ -27,6 +28,12 @@ export function EditProfileSheet({ visible, onClose }: Props) {
   const setMe = useStore(s => s.setMe);
   const showToast = useStore(s => s.showToast);
   const kbHeight = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
+  // Upper bound: the sheet can rise with the keyboard but never above the
+  // top safe area. Clamp its height to the space between the top inset and
+  // the keyboard; taller content scrolls instead of overflowing off-screen.
+  const maxSheetH = winH - insets.top - kbHeight - 8;
 
   const [name, setName] = useState(me.name);
   const [bio, setBio] = useState(me.bio ?? '');
@@ -91,11 +98,16 @@ export function EditProfileSheet({ visible, onClose }: Props) {
           style={{
             backgroundColor: t.card,
             borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            paddingHorizontal: 20, paddingTop: 22, paddingBottom: 30,
+            maxHeight: maxSheetH,
             shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 40,
             shadowOffset: { width: 0, height: -10 }, elevation: 12,
           }}
         >
+         <ScrollView
+           keyboardShouldPersistTaps="handled"
+           showsVerticalScrollIndicator={false}
+           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 30 }}
+         >
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <View style={{
@@ -179,6 +191,7 @@ export function EditProfileSheet({ visible, onClose }: Props) {
               </SCText>
             </Pressable>
           </View>
+         </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>

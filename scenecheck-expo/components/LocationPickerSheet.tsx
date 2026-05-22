@@ -10,7 +10,8 @@
 // while the center-pin overlay marks the chosen point.
 
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, TextInput, View } from 'react-native';
+import { Modal, Pressable, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SCText } from './SCText';
 import { SCIcon } from './SCIcon';
 import { SCButton } from './SCAddButton';
@@ -66,6 +67,13 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
   const t = useTokens();
   const { coords } = useLocation();
   const kbHeight = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
+  // Upper bound: never let the sheet rise above the top safe area. Clamp
+  // its height to the space above the keyboard, and shrink the map while
+  // the keyboard is open so the search field + button still fit.
+  const maxSheetH = winH - insets.top - kbHeight - 8;
+  const mapHeight = kbHeight > 0 ? 130 : 260;
   // Start at the already-picked point, else the host's location, else UCI.
   const start: LatLng = initial
     ? { latitude: initial.lat, longitude: initial.lng }
@@ -144,6 +152,7 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
           backgroundColor: t.card,
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
           paddingTop: 16, paddingBottom: 28, paddingHorizontal: 18, gap: 12,
+          maxHeight: maxSheetH,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View>
@@ -216,7 +225,7 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
           </SCText>
 
           <View style={{
-            height: 260, borderRadius: RADIUS.lg, overflow: 'hidden',
+            height: mapHeight, borderRadius: RADIUS.lg, overflow: 'hidden',
             borderWidth: 1, borderColor: t.line,
           }}>
             {visible && (
