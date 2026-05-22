@@ -12,6 +12,7 @@ import { SCIcon } from './SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/api';
+import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { RADIUS } from '@/theme/tokens';
 import type { Account } from '@/types/domain';
 
@@ -25,6 +26,7 @@ export function EditProfileSheet({ visible, onClose }: Props) {
   const me = useStore(s => s.me);
   const setMe = useStore(s => s.setMe);
   const showToast = useStore(s => s.showToast);
+  const kbHeight = useKeyboardHeight();
 
   const [name, setName] = useState(me.name);
   const [bio, setBio] = useState(me.bio ?? '');
@@ -79,6 +81,9 @@ export function EditProfileSheet({ visible, onClose }: Props) {
         onPress={onClose}
         style={{
           flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
+          // Raise the sheet so its bottom sits at the keyboard's top,
+          // keeping the focused field (bio) visible while typing.
+          paddingBottom: kbHeight,
         }}
       >
         <Pressable

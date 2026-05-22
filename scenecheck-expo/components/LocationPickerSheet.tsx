@@ -17,6 +17,7 @@ import { SCButton } from './SCAddButton';
 import { Map } from './Map';
 import { DEFAULT_REGION, type LatLng } from './Map/types';
 import { useLocation } from '@/hooks/useLocation';
+import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { useTokens } from '@/theme/ThemeProvider';
 import { RADIUS } from '@/theme/tokens';
 
@@ -64,6 +65,7 @@ async function suggestPlaces(q: string, near: LatLng): Promise<Suggestion[]> {
 export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Props) {
   const t = useTokens();
   const { coords } = useLocation();
+  const kbHeight = useKeyboardHeight();
   // Start at the already-picked point, else the host's location, else UCI.
   const start: LatLng = initial
     ? { latitude: initial.lat, longitude: initial.lng }
@@ -132,7 +134,12 @@ export function LocationPickerSheet({ visible, initial, onClose, onConfirm }: Pr
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+      <View style={{
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
+        // Raise the sheet so its bottom sits at the keyboard's top, keeping
+        // the search field visible while typing.
+        paddingBottom: kbHeight,
+      }}>
         <View style={{
           backgroundColor: t.card,
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
