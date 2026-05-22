@@ -1,0 +1,37 @@
+name: Scrape events (FR6)
+
+# Runs the events scraper on a schedule and POSTs each result to the
+# `ingest-scraped` Edge Function, which inserts them with source='scraped'
+# (the app renders scraped events as "Recommended"). This is the CI-only
+# runner the test plan refers to — it never touches the app build.
+
+on:
+  schedule:
+    - cron: '0 8 * * *'      # daily at 08:00 UTC
+  workflow_dispatch: {}        # adds a manual "Run workflow" button
+
+# Don't pile up overlapping nightly runs.
+concurrency:
+  group: scrape-events
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'   # Node 20 ships global fetch — no deps for the POST
+
+      # If you parse HTML, install your scraping lib here, e.g.:
+      #   - run: npm install cheerio          # static HTML
+      #   - run: npx playwright install --with-deps chromium   # JS-rendered pages
+
+      - name: Scrape + ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}                       # https://<ref>.supabase.co
+          INGEST_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}          # service_role key
+        run: node scripts/scrape-events.mjs
