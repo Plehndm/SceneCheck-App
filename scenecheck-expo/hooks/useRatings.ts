@@ -3,7 +3,7 @@
 // events` and filters on `events.creator_id`, mapping each row
 // into the legacy `Review` shape so the screen doesn't change.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_REVIEWS } from '@/data/mocks';
 import type { Review } from '@/types/domain';
@@ -12,6 +12,7 @@ interface UseRatingsResult {
   ratings: Review[];
   loading: boolean;
   error: Error | null;
+  reload: () => void;
 }
 
 export function useRatings(hostId: string | undefined): UseRatingsResult {
@@ -21,6 +22,7 @@ export function useRatings(hostId: string | undefined): UseRatingsResult {
   );
   const [loading, setLoading] = useState(() => !mock && !!hostId);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     if (!hostId) {
@@ -45,7 +47,8 @@ export function useRatings(hostId: string | undefined): UseRatingsResult {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [hostId, mock]);
+  }, [hostId, mock, reloadCounter]);
 
-  return { ratings, loading, error };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { ratings, loading, error, reload };
 }

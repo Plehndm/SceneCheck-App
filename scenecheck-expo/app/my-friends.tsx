@@ -53,7 +53,7 @@ export default function MyFriendsScreen() {
   };
 
   return (
-    <Screen>
+    <Screen onRefresh={reload}>
       <SCTopBar onBack={() => router.back()} subtitle="FRIENDS" />
       <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
         <SCText variant="displayTight" size={32}>Friends</SCText>

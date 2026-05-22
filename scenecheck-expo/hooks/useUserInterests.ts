@@ -5,13 +5,14 @@
 // is not. `getProfile` selects only the `profiles` row (no interests), so
 // the other-profile screen relies on this hook for the interests display.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
 
 interface UseUserInterestsResult {
   interests: string[];
   loading: boolean;
+  reload: () => void;
 }
 
 export function useUserInterests(id: string | undefined): UseUserInterestsResult {
@@ -20,6 +21,7 @@ export function useUserInterests(id: string | undefined): UseUserInterestsResult
     mock && id ? (SC_ACCOUNT_BY_ID[id]?.interests ?? []) : [],
   );
   const [loading, setLoading] = useState(() => !mock && !!id);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     if (!id) { setInterests([]); setLoading(false); return; }
@@ -30,7 +32,8 @@ export function useUserInterests(id: string | undefined): UseUserInterestsResult
       .then(list => { if (!cancelled) { setInterests(list); setLoading(false); } })
       .catch(() => { if (!cancelled) { setInterests([]); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [id, mock]);
+  }, [id, mock, reloadCounter]);
 
-  return { interests, loading };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { interests, loading, reload };
 }

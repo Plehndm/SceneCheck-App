@@ -70,4 +70,24 @@ describe('SettingsScreen', () => {
     expect(useStore.getState().confirm).not.toBeNull();
     expect(useStore.getState().confirm?.title).toBe('Sign out?');
   });
+
+  test('delete account opens a confirm dialog', () => {
+    const { getByText } = renderScreen(<SettingsScreen />);
+    fireEvent.press(getByText('DELETE ACCOUNT'));
+    expect(useStore.getState().confirm).not.toBeNull();
+    expect(useStore.getState().confirm?.title).toBe('Delete account?');
+  });
+
+  test('confirming account deletion clears local drafts', async () => {
+    // Drafts are local-only; deleting the account must wipe them client-side
+    // (the server can't). Seed one, run the confirm action, expect it gone.
+    useStore.setState({ drafts: [{ id: 'd1', savedAt: 'now', lastStep: 0, form: {} as never }] });
+    expect(useStore.getState().drafts.length).toBe(1);
+    const { getByText } = renderScreen(<SettingsScreen />);
+    fireEvent.press(getByText('DELETE ACCOUNT'));
+    const onConfirm = useStore.getState().confirm?.onConfirm;
+    expect(onConfirm).toBeTruthy();
+    await onConfirm!(); // mock deleteAccount + signOut resolve immediately
+    expect(useStore.getState().drafts).toEqual([]);
+  });
 });

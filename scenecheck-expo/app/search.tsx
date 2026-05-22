@@ -1,6 +1,7 @@
 // Search — unified search across events, people, and orgs. Filters by
-// tab and renders typed result rows. Live mode would call
-// `api.searchInterests` etc.; for now the mock data is filtered locally.
+// tab and renders typed result rows. People + orgs come from Supabase via
+// useSearchPeople / useSearchOrgs (which fall back to the SC_* fixtures in
+// mock mode); events come from useEvents and are filtered client-side.
 
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
@@ -14,8 +15,8 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
+import { useSearchPeople, useSearchOrgs } from '@/hooks/useSearch';
 import { excludeSelf } from '@/lib/people';
-import { SC_VISIBLE_PEOPLE, SC_ORGS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
@@ -25,15 +26,15 @@ export default function SearchScreen() {
   const t = useTokens();
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<Tab>('events');
-  // Events come from `useEvents()` — live in live mode, fixture
-  // array in mock mode. People + orgs are still on mocks; Phase 5
-  // migrates them.
-  const { events: allEvents } = useEvents();
   const meId = useStore(s => s.me.id);
-  // Never surface yourself in people results.
-  const visiblePeople = useMemo(() => excludeSelf(SC_VISIBLE_PEOPLE, meId), [meId]);
-
   const lowered = query.trim().toLowerCase();
+
+  // Events come from useEvents (live or fixtures) and are filtered locally.
+  // People + orgs come from Supabase (fixtures in mock mode); the hooks
+  // already apply the query, so when it's empty we just cap the default view.
+  const { events: allEvents, reload: reloadEvents } = useEvents();
+  const { results: peopleAll, reload: reloadPeople } = useSearchPeople(query);
+  const { results: orgsAll, reload: reloadOrgs } = useSearchOrgs(query);
 
   const events = useMemo(() => {
     if (!lowered) return allEvents.slice(0, 6);
@@ -44,25 +45,14 @@ export default function SearchScreen() {
     );
   }, [lowered, allEvents]);
 
-  const people = useMemo(() => {
-    if (!lowered) return visiblePeople.slice(0, 6);
-    return visiblePeople.filter(p =>
-      p.name.toLowerCase().includes(lowered) ||
-      (p.username ?? '').toLowerCase().includes(lowered) ||
-      (p.interests ?? []).some(i => i.toLowerCase().includes(lowered))
-    );
-  }, [lowered, visiblePeople]);
-
-  const orgs = useMemo(() => {
-    if (!lowered) return SC_ORGS.slice(0, 6);
-    return SC_ORGS.filter(o =>
-      o.name.toLowerCase().includes(lowered) ||
-      (o.handle ?? '').toLowerCase().includes(lowered)
-    );
-  }, [lowered]);
+  // Never surface yourself in people results (live excludes self in the
+  // query; this also covers mock mode where the fixture list is unfiltered).
+  const peopleVisible = excludeSelf(peopleAll, meId);
+  const people = lowered ? peopleVisible : peopleVisible.slice(0, 6);
+  const orgs = lowered ? orgsAll : orgsAll.slice(0, 6);
 
   return (
-    <Screen>
+    <Screen onRefresh={() => { reloadEvents(); reloadPeople(); reloadOrgs(); }}>
       <SCTopBar onBack={() => router.back()} />
 
       <View style={{ paddingHorizontal: 18, paddingBottom: 14 }}>
@@ -159,7 +149,7 @@ export default function SearchScreen() {
               <View style={{ flex: 1, minWidth: 0 }}>
                 <SCText variant="display" size={14}>{p.name}</SCText>
                 <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                  @{p.username} · {p.mutual ?? 0} mutual
+                  @{p.username}{p.mutual != null ? ` · ${p.mutual} mutual` : ''}
                 </SCText>
               </View>
               <SCIcon name="chevron-right" size={14} color={t.ink3} />
@@ -167,24 +157,27 @@ export default function SearchScreen() {
           </Pressable>
         ))}
 
-        {tab === 'orgs' && orgs.map(o => (
-          <Pressable
-            key={o.id}
-            onPress={() => router.push(`/profile/${o.id}` as never)}
-            style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-          >
-            <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              <SCAvatar person={o} size={42} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <SCText variant="display" size={14}>{o.name}</SCText>
-                <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                  {o.handle} · {o.followers} followers
-                </SCText>
-              </View>
-              <SCIcon name="chevron-right" size={14} color={t.ink3} />
-            </SCCard>
-          </Pressable>
-        ))}
+        {tab === 'orgs' && orgs.map(o => {
+          const handle = o.handle ?? (o.username ? `@${o.username}` : '');
+          return (
+            <Pressable
+              key={o.id}
+              onPress={() => router.push(`/profile/${o.id}` as never)}
+              style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+            >
+              <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                <SCAvatar person={o} size={42} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <SCText variant="display" size={14}>{o.name}</SCText>
+                  <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+                    {handle}{o.followers != null ? ` · ${o.followers} followers` : ''}
+                  </SCText>
+                </View>
+                <SCIcon name="chevron-right" size={14} color={t.ink3} />
+              </SCCard>
+            </Pressable>
+          );
+        })}
 
         {((tab === 'events' && events.length === 0) ||
           (tab === 'people' && people.length === 0) ||

@@ -5,6 +5,7 @@
 import { api } from '@/lib/api';
 import {
   SC_EVENTS, SC_EVENT_BY_ID, SC_CHATS, SC_THREADS, SC_INTERESTS_SUGGESTED,
+  SC_VISIBLE_PEOPLE, SC_ORGS,
 } from '@/data/mocks';
 
 describe('api.isMock()', () => {
@@ -43,6 +44,45 @@ describe('api.getProfile (mock)', () => {
     const profile = await api.getProfile('me');
     expect(profile).toBeDefined();
     expect(profile.name).toBe('Alex Rivera');
+  });
+});
+
+describe('api.searchPeople (mock)', () => {
+  test('returns SC_VISIBLE_PEOPLE for an empty query', async () => {
+    expect(await api.searchPeople('')).toBe(SC_VISIBLE_PEOPLE);
+  });
+
+  test('filters by name / username / interest, case-insensitively', async () => {
+    const byName = await api.searchPeople('maya');
+    expect(byName.some(p => p.name === 'Maya Chen')).toBe(true);
+    const byInterest = await api.searchPeople('CLIMBING');
+    expect(byInterest.length).toBeGreaterThan(0);
+  });
+
+  test('returns [] for no match', async () => {
+    expect(await api.searchPeople('zzznoone')).toEqual([]);
+  });
+});
+
+describe('api.searchOrgs (mock)', () => {
+  test('returns SC_ORGS for an empty query', async () => {
+    expect(await api.searchOrgs('')).toBe(SC_ORGS);
+  });
+
+  test('filters by name / handle', async () => {
+    const results = await api.searchOrgs('topout');
+    expect(results.some(o => o.name === 'TopOut Climbing')).toBe(true);
+  });
+});
+
+describe('api.getProfilesByIds (mock)', () => {
+  test('resolves known mock ids to accounts (order preserved, misses dropped)', async () => {
+    const rows = await api.getProfilesByIds(['p1', 'nope', 'orgA']);
+    expect(rows.map(r => r.name)).toEqual(['Maya Chen', 'TopOut Climbing']);
+  });
+
+  test('returns [] for an empty id list', async () => {
+    expect(await api.getProfilesByIds([])).toEqual([]);
   });
 });
 

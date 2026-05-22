@@ -160,6 +160,7 @@ interface State {
   drafts: import('@/types/domain').Draft[];
   saveDraft: (form: import('@/types/domain').DraftForm, opts?: { id?: string | null; lastStep?: number }) => string;
   removeDraft: (id: string) => void;
+  clearDrafts: () => void;
 
   // ── preferences ──
   radius: number;                  // discovery radius in miles
@@ -305,6 +306,9 @@ export const useStore = create<State>()(
         return id;
       },
       removeDraft: (id) => set(s => ({ drafts: s.drafts.filter(d => d.id !== id) })),
+      // Wipe all local drafts — used on account deletion (drafts are local-only,
+      // so the server can't clear them; we do it here before signing out).
+      clearDrafts: () => set({ drafts: [] }),
 
       // ── preferences ──
       radius: 5,

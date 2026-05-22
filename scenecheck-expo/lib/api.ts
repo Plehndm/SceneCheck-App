@@ -18,7 +18,7 @@ import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_CHATS, SC_THREADS,
-  SC_VISIBLE_PEOPLE, SC_FRIEND_REQUESTS, SC_REVIEWS,
+  SC_VISIBLE_PEOPLE, SC_ORGS, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
 import type { SCEvent, Account, Chat, Message, Interest, Visibility, AccountType } from '@/types/domain';
 
@@ -137,6 +137,12 @@ function transformProfileRow(row: ProfileRow): Account {
   };
 }
 
+// Columns to fetch for a profile. Deliberately omits `email` (added in
+// migration 00019) — it's stored for the account owner, not for other users
+// viewing a public profile, and `select('*')` would otherwise ship it to
+// every client. transformProfileRow only reads the columns listed here.
+const PROFILE_COLS = 'user_id, name, username, bio, avatar_url, visibility, account_type, avg_rating';
+
 export const isMock = (): boolean => !isLiveBackendAvailable();
 
 function requireClient() {
@@ -180,19 +186,12 @@ export const api = {
       },
     });
     if (error) throw error;
-    // Belt-and-suspenders: also persist to profiles.name so anything
-    // that reads the profiles table directly (other users viewing this
-    // profile, the ratings join, etc.) sees the name. The metadata
-    // above is what makes the *current user's* own display correct
-    // instantly; this write makes it correct for everyone else too.
-    const userId = data.user?.id;
-    if (name && userId) {
-      try {
-        await sb.from('profiles')
-          .update({ name })
-          .eq('user_id', userId);
-      } catch { /* swallow — name can be edited later from the profile tab */ }
-    }
+    // The `handle_new_user` trigger (migration 00019) reads the display_name
+    // metadata stamped above and writes profiles.name + a unique username +
+    // the email, server-side and race-free. We used to also write
+    // profiles.name from the client here, but that could land after the
+    // hydrate's read; the trigger makes it authoritative, so the client
+    // write is gone.
     return data;
   },
 
@@ -407,11 +406,77 @@ export const api = {
     const sb = requireClient();
     const { data, error } = await sb
       .from('profiles')
-      .select('*')
+      .select(PROFILE_COLS)
       .eq('user_id', toUUID(userId))
       .single();
     if (error) throw error;
     return transformProfileRow(data as ProfileRow);
+  },
+
+  // Search public people by name / username. Live mode reads `profiles`
+  // (account_type='person', visibility='public') and excludes the signed-in
+  // user; mock mode filters SC_VISIBLE_PEOPLE. An empty query returns the
+  // first page (used by the home "people nearby" rail).
+  async searchPeople(query: string = ''): Promise<Account[]> {
+    const q = query.trim().toLowerCase();
+    if (isMock()) {
+      if (!q) return SC_VISIBLE_PEOPLE;
+      return SC_VISIBLE_PEOPLE.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.username ?? '').toLowerCase().includes(q) ||
+        (p.interests ?? []).some(i => i.toLowerCase().includes(q))
+      );
+    }
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    let builder = sb.from('profiles')
+      .select(PROFILE_COLS)
+      .eq('account_type', 'person')
+      .eq('visibility', 'public')
+      .limit(20);
+    if (user && 'id' in user) builder = builder.neq('user_id', user.id);
+    if (q) builder = builder.or(`name.ilike.%${q}%,username.ilike.%${q}%`);
+    const { data, error } = await builder;
+    if (error) throw error;
+    return (data ?? []).map(r => transformProfileRow(r as ProfileRow));
+  },
+
+  // Search orgs by name / username. Orgs are public; mock mode filters SC_ORGS.
+  async searchOrgs(query: string = ''): Promise<Account[]> {
+    const q = query.trim().toLowerCase();
+    if (isMock()) {
+      if (!q) return SC_ORGS;
+      return SC_ORGS.filter(o =>
+        o.name.toLowerCase().includes(q) ||
+        (o.username ?? o.handle ?? '').toLowerCase().includes(q)
+      );
+    }
+    const sb = requireClient();
+    let builder = sb.from('profiles')
+      .select(PROFILE_COLS)
+      .eq('account_type', 'org')
+      .limit(20);
+    if (q) builder = builder.or(`name.ilike.%${q}%,username.ilike.%${q}%`);
+    const { data, error } = await builder;
+    if (error) throw error;
+    return (data ?? []).map(r => transformProfileRow(r as ProfileRow));
+  },
+
+  // Resolve a set of profile ids to Account rows (order not guaranteed).
+  // Used where the UI holds ids and needs display data — followed orgs,
+  // new-chat recipient chips. Mock mode maps SC_ACCOUNT_BY_ID.
+  async getProfilesByIds(ids: string[]): Promise<Account[]> {
+    if (ids.length === 0) return [];
+    if (isMock()) {
+      return ids.map(id => SC_ACCOUNT_BY_ID[id]).filter(Boolean) as Account[];
+    }
+    const sb = requireClient();
+    const { data, error } = await sb
+      .from('profiles')
+      .select(PROFILE_COLS)
+      .in('user_id', ids.map(toUUID));
+    if (error) throw error;
+    return (data ?? []).map(r => transformProfileRow(r as ProfileRow));
   },
 
   async updateProfile(fields: Partial<Account>) {
@@ -429,6 +494,23 @@ export const api = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // Delete the caller's account. Runs through the `delete-account` Edge
+  // Function (service role) because invalidating the login credentials
+  // needs admin privileges the client doesn't have. The function
+  // anonymizes the profile + clears personal relations but KEEPS the
+  // events + reviews they made (those belong to other users' history),
+  // and re-points the auth email/password so the old credentials can no
+  // longer sign in — without deleting the auth user (which would
+  // cascade-erase their ratings). See supabase/functions/delete-account.
+  async deleteAccount() {
+    if (isMock()) return { ok: true as const };
+    const { error } = await requireClient().functions.invoke('delete-account', {
+      body: {},
+    });
+    if (error) throw error;
+    return { ok: true as const };
   },
 
   // ── Social ──
@@ -493,9 +575,9 @@ export const api = {
     return { status: 'declined' as const };
   },
 
-  // Drop a friendship row entirely. Either side can remove (RLS
-  // policy 00011_create_rls_policies allows it where from_id =
-  // auth.uid() OR to_id = auth.uid()).
+  // Drop a friendship row entirely. Either side can remove it — the
+  // DELETE policy (migration 00018) allows from_id = auth.uid() OR
+  // to_id = auth.uid().
   async removeFriend(otherUserId: string) {
     if (isMock()) return { ok: true };
     const sb = requireClient();
@@ -526,14 +608,14 @@ export const api = {
     const me = user.id;
     const [{ data: outRows }, { data: inRows }] = await Promise.all([
       sb.from('friendships')
-        .select('to:profiles!friendships_to_id_fkey(*)')
+        .select(`to:profiles!friendships_to_id_fkey(${PROFILE_COLS})`)
         .eq('from_id', me)
         .eq('status', 'accepted')
         // to-one embed of the `profiles` row; override the array shape
         // supabase-js infers without generated DB types.
         .overrideTypes<{ to: ProfileRow | null }[], { merge: false }>(),
       sb.from('friendships')
-        .select('from:profiles!friendships_from_id_fkey(*)')
+        .select(`from:profiles!friendships_from_id_fkey(${PROFILE_COLS})`)
         .eq('to_id', me)
         .eq('status', 'accepted')
         .overrideTypes<{ from: ProfileRow | null }[], { merge: false }>(),
@@ -679,12 +761,38 @@ export const api = {
   async getChats(): Promise<Chat[]> {
     if (isMock()) return SC_CHATS;
     const sb = requireClient();
+    const user = await this.getCurrentUser();
+    const meId = (user && 'id' in user) ? user.id : null;
+    // Embed members (+ their name) and messages so we can resolve a DM's
+    // title to the OTHER member's name and surface the last message — all
+    // server-side, so the chat list needs no client-side SC_* lookups.
     const { data, error } = await sb
       .from('chats')
-      .select('*, chat_members(user_id), messages(body, created_at, sender_id)')
+      .select('id, type, event_id, title, created_at, chat_members(user_id, profiles(name)), messages(body, created_at, sender_id)')
       .order('created_at', { foreignTable: 'messages', ascending: false });
     if (error) throw error;
-    return data as Chat[];
+    interface MemberRow { user_id: string; profiles: { name: string | null } | null }
+    interface MsgRow { body: string | null; created_at: string; sender_id: string }
+    interface ChatRow {
+      id: string; type: string | null; event_id: string | null; title: string | null;
+      created_at: string; chat_members: MemberRow[] | null; messages: MsgRow[] | null;
+    }
+    return ((data ?? []) as unknown as ChatRow[]).map((row): Chat => {
+      const isEvent = !!row.event_id;
+      const lastMsg = row.messages?.[0];
+      // The other participant in a DM (everyone but me); its name titles the row.
+      const other = (row.chat_members ?? []).find(m => m.user_id !== meId);
+      return {
+        id: row.id,
+        kind: isEvent ? 'event' : 'dm',
+        eventId: row.event_id ? toMockId(row.event_id) : undefined,
+        personId: other ? toMockId(other.user_id) : undefined,
+        title: isEvent ? (row.title || undefined) : (other?.profiles?.name ?? undefined),
+        last: lastMsg?.body ?? '',
+        time: lastMsg ? new Date(lastMsg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '',
+        unread: 0, // read receipts aren't modeled yet
+      };
+    });
   },
 
   async getChatMessages(chatId: string): Promise<Message[]> {
@@ -741,21 +849,20 @@ export const api = {
       return { id: `${prefix}-${memberIds.join('-')}` };
     }
     const sb = requireClient();
-    const user = await this.getCurrentUser();
-    if (!user || !('id' in user)) throw new Error('Not authenticated');
-    const { data: chatRow, error: chatErr } = await sb
-      .from('chats')
-      .insert({ type, title })
-      .select('id')
-      .single();
-    if (chatErr) throw chatErr;
-    const chatId = chatRow.id as string;
-    const memberRows = [user.id, ...memberIds.map(toUUID)].map(uid => ({
-      chat_id: chatId, user_id: uid,
-    }));
-    const { error: memErr } = await sb.from('chat_members').insert(memberRows);
-    if (memErr) throw memErr;
-    return { id: chatId };
+    // create_chat (SECURITY DEFINER, migration 00017) inserts the chats +
+    // chat_members rows under elevated privileges — the chat tables have no
+    // client-facing INSERT policy, so a direct insert was silently blocked
+    // by RLS (why the button "did nothing"). It also DEDUPES: an existing
+    // DM/group with exactly the same member set is returned instead of
+    // creating a duplicate — so starting a chat with someone you already DM
+    // reopens that thread, and a group can't be duplicated.
+    const { data, error } = await sb.rpc('create_chat', {
+      p_member_ids: memberIds.map(toUUID),
+      p_type: type,
+      p_title: title,
+    });
+    if (error) throw error;
+    return { id: data as string };
   },
 
   // Fetch the confirmed attendees of an event as full Account rows.
@@ -767,7 +874,7 @@ export const api = {
     const sb = requireClient();
     const { data, error } = await sb
       .from('event_subscriptions')
-      .select('profile:profiles!event_subscriptions_user_id_fkey(*)')
+      .select(`profile:profiles!event_subscriptions_user_id_fkey(${PROFILE_COLS})`)
       .eq('event_id', toUUID(eventId))
       .eq('status', 'confirmed')
       // to-one embed of the `profiles` row; override the array shape
@@ -788,18 +895,20 @@ export const api = {
     const hostUuid = toUUID(hostId);
     const { data, error } = await sb
       .from('ratings')
-      .select('event_id, user_id, stars, text, created_at, events!inner(creator_id)')
+      // Embed the reviewer (profiles) + event (events) so the screen renders
+      // names live without a client-side SC_* lookup. !inner on events both
+      // joins and filters by host.
+      .select('event_id, user_id, stars, text, created_at, events!inner(creator_id, title), reviewer:profiles!ratings_user_id_fkey(name, avatar_url)')
       .eq('events.creator_id', hostUuid)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .overrideTypes<{
+        event_id: string; user_id: string; stars: number;
+        text: string | null; created_at: string;
+        events: { creator_id: string; title: string | null } | null;
+        reviewer: { name: string | null; avatar_url: string | null } | null;
+      }[], { merge: false }>();
     if (error) throw error;
-    interface Row {
-      event_id: string;
-      user_id: string;
-      stars: number;
-      text: string | null;
-      created_at: string;
-    }
-    return (data ?? []).map((r: Row) => ({
+    return (data ?? []).map((r) => ({
       // The DB primary key is (event_id, user_id); compose a stable
       // id string so React keys + the screen's `r.id` filter still work.
       id: `${toMockId(r.event_id)}:${toMockId(r.user_id)}`,
@@ -809,6 +918,9 @@ export const api = {
       rating: r.stars,
       when: new Date(r.created_at).toLocaleDateString(),
       text: r.text ?? '',
+      reviewerName: r.reviewer?.name ?? undefined,
+      reviewerPicture: r.reviewer?.avatar_url ?? null,
+      eventTitle: r.events?.title ?? undefined,
     }));
   },
 

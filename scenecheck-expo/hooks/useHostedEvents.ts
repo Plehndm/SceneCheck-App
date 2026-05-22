@@ -6,7 +6,7 @@
 // `hostId === undefined` short-circuits to an empty list for the
 // Expo Router param-not-resolved-yet edge case.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_EVENTS } from '@/data/mocks';
 import type { SCEvent } from '@/types/domain';
@@ -15,6 +15,7 @@ interface UseHostedEventsResult {
   events: SCEvent[];
   loading: boolean;
   error: Error | null;
+  reload: () => void;
 }
 
 export function useHostedEvents(hostId: string | undefined): UseHostedEventsResult {
@@ -24,6 +25,7 @@ export function useHostedEvents(hostId: string | undefined): UseHostedEventsResu
   );
   const [loading, setLoading] = useState(() => !mock && !!hostId);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     if (!hostId) {
@@ -48,7 +50,8 @@ export function useHostedEvents(hostId: string | undefined): UseHostedEventsResu
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [hostId, mock]);
+  }, [hostId, mock, reloadCounter]);
 
-  return { events, loading, error };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { events, loading, error, reload };
 }

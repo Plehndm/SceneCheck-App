@@ -9,6 +9,7 @@ import { SCCard } from '@/components/SCCard';
 import { SCIcon } from '@/components/SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useChats } from '@/hooks/useChats';
+import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID, SC_EVENT_BY_ID } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
 
@@ -16,9 +17,10 @@ export default function ChatTab() {
   const t = useTokens();
   // useChats() reads from Supabase in live mode (the chats ⨝
   // chat_members ⨝ messages join) and SC_CHATS in mock mode.
-  const { chats } = useChats();
+  const { chats, reload } = useChats();
+  const mock = api.isMock();
   return (
-    <Screen>
+    <Screen onRefresh={reload}>
       <View style={{
         paddingHorizontal: 18, paddingTop: 8,
         flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
@@ -54,9 +56,11 @@ export default function ChatTab() {
       ) : (
       <View style={{ paddingHorizontal: 14, paddingTop: 14, gap: 10 }}>
         {chats.map(c => {
+          // Live mode: titles are resolved on the Chat (event title / other
+          // member's name) in api.getChats. Mock mode: resolve from SC_*.
           const title = c.kind === 'event'
-            ? c.title ?? SC_EVENT_BY_ID[c.eventId ?? '']?.title ?? 'Event chat'
-            : SC_ACCOUNT_BY_ID[c.personId ?? '']?.name ?? 'DM';
+            ? (c.title ?? (mock ? SC_EVENT_BY_ID[c.eventId ?? '']?.title : undefined) ?? 'Event chat')
+            : (c.title ?? (mock ? SC_ACCOUNT_BY_ID[c.personId ?? '']?.name : undefined) ?? 'DM');
           return (
             <Pressable key={c.id} onPress={() => router.push(`/chat/${c.id}` as never)}>
               <SCCard style={{ padding: 14 }}>

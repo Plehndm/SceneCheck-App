@@ -7,7 +7,7 @@
 // resolves. `id === undefined` is handled (Expo Router param-not-
 // resolved edge case on first render).
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
 import type { Account } from '@/types/domain';
@@ -16,6 +16,7 @@ interface UseProfileResult {
   profile: Account | null;
   loading: boolean;
   error: Error | null;
+  reload: () => void;
 }
 
 export function useProfile(id: string | undefined): UseProfileResult {
@@ -25,6 +26,7 @@ export function useProfile(id: string | undefined): UseProfileResult {
   );
   const [loading, setLoading] = useState(() => !mock && !!id);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     if (!id) {
@@ -49,7 +51,8 @@ export function useProfile(id: string | undefined): UseProfileResult {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [id, mock]);
+  }, [id, mock, reloadCounter]);
 
-  return { profile, loading, error };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { profile, loading, error, reload };
 }

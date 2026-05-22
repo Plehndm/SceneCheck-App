@@ -63,6 +63,7 @@ export default function SettingsScreen() {
   const setMode = useStore(s => s.setMode);
   const showConfirm = useStore(s => s.showConfirm);
   const showToast = useStore(s => s.showToast);
+  const clearDrafts = useStore(s => s.clearDrafts);
 
   const requestCount = incomingRequests.size;
   const calLabel = linkedCalendar
@@ -90,6 +91,35 @@ export default function SettingsScreen() {
         } catch (e) {
           showToast({
             message: e instanceof Error ? e.message : 'Sign-out failed.',
+            kind: 'error',
+          });
+        }
+      },
+    });
+  };
+
+  const handleDeleteAccount = () => {
+    showConfirm({
+      title: 'Delete account?',
+      body: "Your profile, interests, connections, and saved drafts are removed. Events you created and reviews you left stay — reassigned to “[deleted user]” so they remain part of other people's history. This can't be undone.",
+      confirmLabel: 'DELETE ACCOUNT',
+      cancelLabel: 'KEEP ACCOUNT',
+      tone: 'danger',
+      icon: 'x',
+      onConfirm: async () => {
+        try {
+          // Reassigns events + reviews to the "[deleted user]" placeholder,
+          // deletes the profile row + auth user, then signs out. Drafts are
+          // local-only, so we clear them here. AuthBootstrap resets `me` on
+          // SIGNED_OUT. Mock mode is a no-op delete + no-op sign-out.
+          await api.deleteAccount();
+          clearDrafts();
+          await api.signOut();
+          showToast({ message: 'Account deleted.', kind: 'info' });
+          router.replace('/auth/sign-in' as never);
+        } catch (e) {
+          showToast({
+            message: e instanceof Error ? `Couldn't delete account: ${e.message}` : "Couldn't delete account.",
             kind: 'error',
           });
         }
@@ -338,6 +368,15 @@ export default function SettingsScreen() {
 
       <View style={{ paddingHorizontal: 18, paddingTop: 14 }}>
         <SCButton label="Sign out" onPress={handleSignOut} variant="ghost" />
+      </View>
+      <View style={{ paddingHorizontal: 18, paddingTop: 8 }}>
+        <Pressable
+          onPress={handleDeleteAccount}
+          accessibilityLabel="Delete account"
+          style={({ pressed }) => [{ height: 44, alignItems: 'center', justifyContent: 'center' }, pressed && { opacity: 0.7 }]}
+        >
+          <SCText variant="mono" size={12} weight="700" color={t.danger}>DELETE ACCOUNT</SCText>
+        </Pressable>
       </View>
       <View style={{ paddingHorizontal: 18, paddingVertical: 14, alignItems: 'center' }}>
         <SCText variant="mono" size={11} color={t.ink3}>SceneCheck · v0.4.2</SCText>

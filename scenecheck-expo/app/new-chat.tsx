@@ -14,7 +14,6 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useFriends } from '@/hooks/useFriends';
 import { api } from '@/lib/api';
-import { SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
 import type { Account } from '@/types/domain';
 
@@ -33,6 +32,9 @@ export default function NewChatScreen() {
   const { friends } = useFriends();
 
   const ordered = useMemo<Account[]>(() => friends, [friends]);
+  // Picked chips resolve against the friend list — the only source you can
+  // pick from — so no SC_* lookup is needed in either mode.
+  const byId = useMemo(() => Object.fromEntries(ordered.map(p => [p.id, p])), [ordered]);
 
   const visible = ordered.filter(p => {
     if (!query.trim()) return true;
@@ -75,7 +77,7 @@ export default function NewChatScreen() {
       {picked.length > 0 && (
         <View style={{ paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {picked.map(id => {
-            const p = SC_VISIBLE_PERSON_BY_ID[id];
+            const p = byId[id];
             if (!p) return null;
             return (
               <Pressable

@@ -33,7 +33,7 @@ export default function RequestsScreen() {
   const total = requests.length + outgoing.length;
 
   return (
-    <Screen>
+    <Screen onRefresh={() => { reload(); reloadOut(); }}>
       <SCTopBar onBack={() => router.back()} subtitle="REQUESTS" />
       <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
         <SCText variant="displayTight" size={36}>Friend requests</SCText>

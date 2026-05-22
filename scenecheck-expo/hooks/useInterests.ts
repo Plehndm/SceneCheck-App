@@ -13,7 +13,7 @@
 // get the full catalog. The api wrapper already orders results by
 // subscriber_count desc on the server in live mode.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_INTERESTS_SUGGESTED } from '@/data/mocks';
 import type { Interest } from '@/types/domain';
@@ -22,6 +22,7 @@ interface UseInterestsResult {
   interests: Interest[];
   loading: boolean;
   error: Error | null;
+  reload: () => void;
 }
 
 export function useInterests(query: string = ''): UseInterestsResult {
@@ -31,6 +32,7 @@ export function useInterests(query: string = ''): UseInterestsResult {
   );
   const [loading, setLoading] = useState(() => !mock);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,9 +57,10 @@ export function useInterests(query: string = ''): UseInterestsResult {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [query, mock]);
+  }, [query, mock, reloadCounter]);
 
-  return { interests, loading, error };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { interests, loading, error, reload };
 }
 
 function mockFilter(query: string): Interest[] {

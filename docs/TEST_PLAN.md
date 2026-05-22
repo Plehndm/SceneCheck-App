@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **363/363** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.29 — chat tab compose button)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **377/377** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.30 — cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -979,6 +979,36 @@ itself was already complete).
 **What this section deliberately does NOT do:** re-test the new-chat
 composer — it was covered when it shipped (`tests/screens/new-chat.test.tsx`);
 this change only adds the button that reaches it.
+
+---
+
+### 2.30 Cleanup + de-mocking pass (post-§2.29 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §35._
+
+Six-part cleanup: account deletion = reassign-then-delete-row + clear drafts;
+sign-up identity (name + unique username + stored email); pull-to-refresh on
+`Screen`; and the live de-mock (every live screen reads Supabase, `SC_*` kept
+only behind `isMock()`). New migrations `00019` (email + identity trigger) and
+`00020` (`[deleted user]` placeholder + `reassign_then_delete_account` RPC); the
+`delete-account` Edge Function rewritten; `seed-hosted-social.sql` extended with
+p5/p6/orgC/orgD. New `lib/api.ts` methods `searchPeople`/`searchOrgs`/
+`getProfilesByIds` and enriched `getChats`/`fetchRatings`.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/unit/api-mock.test.ts` (+7) | `searchPeople` (3) / `searchOrgs` (2) / `getProfilesByIds` (2) | Empty query returns the full fixture; name/username/interest filtering is case-insensitive; no-match → `[]`; id resolution preserves order + drops misses; empty id list → `[]`. |
+| `tests/screens/settings.test.tsx` (+1) | delete clears drafts | Running the delete-account confirm action empties the local `drafts` slice (mock `deleteAccount`/`signOut` resolve immediately). |
+| `tests/components/Screen.test.tsx` (new, +4) | `onRefresh` wiring | Renders children; no Refresh button without `onRefresh`; on web shows a "Refresh" button that invokes `onRefresh`; on native renders no web button (uses `RefreshControl`). |
+
+**Delivered count**: 377 / 377 (up from 363). 52 suites (new `Screen.test.tsx`).
+
+**What this section deliberately does NOT do:** exercise the live (Supabase)
+paths of the new API methods, the deletion RPC, or the identity trigger — Jest
+runs in mock mode, so those are verified manually on the hosted project after
+applying `00019`/`00020` and re-running the social seed (see PROGRESS_SNAPSHOT
+§35.5). The local `following` set + managed-account switching remain user-state
+(no follows table), so they aren't re-tested as live data.
 
 ---
 

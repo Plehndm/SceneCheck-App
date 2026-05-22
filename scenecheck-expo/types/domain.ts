@@ -77,6 +77,12 @@ export interface Review {
   rating: number;
   when: string;
   text: string;
+  // Live mode resolves these via the ratings ⨝ profiles / events joins so the
+  // screen doesn't need a client-side mock lookup. Absent in mock fixtures
+  // (the screen falls back to SC_* under isMock()).
+  reviewerName?: string;
+  reviewerPicture?: string | null;
+  eventTitle?: string;
 }
 
 export type ChatKind = 'event' | 'dm';

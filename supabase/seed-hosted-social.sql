@@ -181,6 +181,58 @@ insert into public.messages (id, chat_id, sender_id, body, created_at) values
   ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', 'reminder: coffee at Common Room after the ride ☕', now() - interval '1 day')
 on conflict (id) do nothing;
 
+-- ── 8. Additional people + orgs (live de-mock parity with data/mocks.ts) ─────
+-- The app no longer reads hardcoded SC_* fixtures for display in live mode, so
+-- every person/org the UI can surface must exist as a real profile. The block
+-- above seeded p1–p4 + orgA/orgB; this adds the remaining fixtures (p5 Priya,
+-- p6 Marco, orgC Common Room Coffee, orgD Anteater Run Club). Fixed UUIDs match
+-- ID_MAP (lib/api.ts) so profile routes round-trip. Password: scenecheck123.
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data,
+  is_super_admin, confirmation_token, recovery_token,
+  email_change_token_new, email_change
+) values
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000006',
+   'authenticated', 'authenticated', 'priya@scenecheck.dev',
+   crypt('scenecheck123', gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"Priya Iyer"}',
+   false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000007',
+   'authenticated', 'authenticated', 'marco@scenecheck.dev',
+   crypt('scenecheck123', gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"Marco Rossi"}',
+   false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000023',
+   'authenticated', 'authenticated', 'commonroom@scenecheck.dev',
+   crypt('scenecheck123', gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"Common Room Coffee"}',
+   false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000024',
+   'authenticated', 'authenticated', 'anteaterrun@scenecheck.dev',
+   crypt('scenecheck123', gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"Anteater Run Club"}',
+   false, '', '', '', '')
+on conflict (id) do nothing;
+
+update public.profiles set
+  name = 'Priya Iyer', username = 'priya.i', account_type = 'person', visibility = 'public',
+  bio = 'Carnatic violinist + study group regular. Trade me for snacks.'
+  where user_id = '00000000-0000-0000-0000-000000000006';
+update public.profiles set
+  name = 'Marco Rossi', username = 'rossi_m', account_type = 'person', visibility = 'public',
+  bio = 'New to Irvine. Looking for a Saturday riding group with chill vibes.'
+  where user_id = '00000000-0000-0000-0000-000000000007';
+update public.profiles set
+  name = 'Common Room Coffee', username = 'commonroom', account_type = 'org', visibility = 'public',
+  bio = 'Cafe + open-mic venue. Acoustic Thursdays, latte art Saturdays.'
+  where user_id = '00000000-0000-0000-0000-000000000023';
+update public.profiles set
+  name = 'Anteater Run Club', username = 'anteaterrun', account_type = 'org', visibility = 'public',
+  bio = 'Group runs from the Aldrich flagpole, Tuesday 6pm. Couch-to-5K cohort each quarter.'
+  where user_id = '00000000-0000-0000-0000-000000000024';
+
 -- ── OPTIONAL: wire this graph to YOUR own account ────────────────────────────
 -- The seeded chats/friends are only visible to the mock users (RLS). To see
 -- them from the account YOU signed up with, replace YOUR_EMAIL below and run

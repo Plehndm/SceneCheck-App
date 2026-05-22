@@ -45,14 +45,19 @@ export default function SignInScreen() {
       await api.signIn(email, password);
       router.replace('/(tabs)' as never);
     } catch (e) {
-      // Surface a clearer message for the unconfirmed-email case.
-      // Supabase's default error message is just "Email not confirmed",
-      // which doesn't tell the user what to do next.
+      // Rewrite Supabase's terse auth errors into actionable copy.
       const raw = e instanceof Error ? e.message : 'Sign-in failed.';
       const isConfirmIssue = /email.+not.+confirm/i.test(raw);
+      // "Invalid login credentials" covers no account for that email, a
+      // wrong password, and a deleted account (whose email was retired).
+      // Supabase intentionally doesn't distinguish them — neither do we.
+      const isBadCreds = /invalid.*(login|credential)/i.test(raw)
+        || /incorrect/i.test(raw);
       const friendly = isConfirmIssue
         ? 'Email not confirmed yet — check your inbox for the link, or resend below.'
-        : raw;
+        : isBadCreds
+          ? 'Your email and/or password might be incorrect.'
+          : raw;
       showToast({ message: friendly, kind: 'error', duration: 8000 });
       setNeedsConfirm(isConfirmIssue);
       setSubmitting(false);

@@ -74,6 +74,7 @@ export default function EventDetailScreen() {
   // in live mode it hits `api.getEventById` and re-renders when the
   // promise resolves. `reload()` is called after a successful host
   // edit so the screen reflects the freshly-written row.
+  const mock = api.isMock();
   const { event: baseEvent, reload: reloadEvent } = useEvent(id);
   const override = useStore(s => id ? s.eventOverrides[id] : null);
   const isJoined = useStore(s => id ? s.isJoined(id) : false);
@@ -87,7 +88,7 @@ export default function EventDetailScreen() {
   const meId = me.id;
   // Real attendees — live mode: confirmed event_subscriptions ⨝ profiles;
   // mock mode: SC_VISIBLE_PEOPLE. Drives the count + preview avatars.
-  const { attendees } = useAttendees(id);
+  const { attendees, reload: reloadAttendees } = useAttendees(id);
 
   if (!baseEvent) {
     return (
@@ -199,17 +200,28 @@ export default function EventDetailScreen() {
     });
   };
 
-  const handleOpenChat = () => {
-    const chat = SC_CHATS.find(c => c.kind === 'event' && c.eventId === e.id);
-    if (chat) {
-      router.push(`/chat/${chat.id}` as never);
-    } else {
-      showToast({ message: 'No group chat yet — it opens once attendees join.', kind: 'info' });
+  const handleOpenChat = async () => {
+    // Mock: match the event chat in SC_CHATS. Live: find it in the user's
+    // chats (normalize ids to UUIDs so a mock-id vs UUID mismatch can't hide
+    // a match). No SC_* read in live mode.
+    if (mock) {
+      const chat = SC_CHATS.find(c => c.kind === 'event' && c.eventId === e.id);
+      if (chat) router.push(`/chat/${chat.id}` as never);
+      else showToast({ message: 'No group chat yet — it opens once attendees join.', kind: 'info' });
+      return;
+    }
+    try {
+      const chats = await api.getChats();
+      const chat = chats.find(c => c.kind === 'event' && api.toUUID(c.eventId ?? '') === api.toUUID(e.id));
+      if (chat) router.push(`/chat/${chat.id}` as never);
+      else showToast({ message: 'No group chat yet — it opens once attendees join.', kind: 'info' });
+    } catch {
+      showToast({ message: "Couldn't open the chat. Try again.", kind: 'error' });
     }
   };
 
   return (
-    <Screen contentContainerStyle={{ paddingBottom: 140 }}>
+    <Screen contentContainerStyle={{ paddingBottom: 140 }} onRefresh={() => { reloadEvent(); reloadAttendees(); }}>
       {/* Hero panel */}
       <View style={{ position: 'relative', height: 240, backgroundColor: accent, overflow: 'hidden' }}>
         <SCTopBar

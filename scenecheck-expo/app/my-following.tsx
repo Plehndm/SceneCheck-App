@@ -11,20 +11,19 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
-import { SC_ORGS, SC_MY_ACCOUNTS } from '@/data/mocks';
+import { useFollowedOrgs } from '@/hooks/useFollowedOrgs';
 import { RADIUS } from '@/theme/tokens';
 
 export default function MyFollowingScreen() {
   const t = useTokens();
-  const following = useStore(s => s.following);
   const toggleFollow = useStore(s => s.toggleFollow);
   const showToast = useStore(s => s.showToast);
-
-  const all = [...SC_ORGS, ...SC_MY_ACCOUNTS.filter(a => a.type === 'org')];
-  const list = all.filter(o => following.has(o.id));
+  // Org rows come from Supabase via getProfilesByIds in live mode (fixtures in
+  // mock mode); the `following` set itself stays local. See useFollowedOrgs.
+  const { orgs: list, reload } = useFollowedOrgs();
 
   return (
-    <Screen>
+    <Screen onRefresh={reload}>
       <SCTopBar onBack={() => router.back()} subtitle="FOLLOWING" />
       <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
         <SCText variant="displayTight" size={32}>Orgs you follow</SCText>
@@ -56,7 +55,8 @@ export default function MyFollowingScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <SCText size={15} weight="600">{o.name}</SCText>
                   <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                    {o.handle} · {o.followers} followers
+                    {o.handle ?? (o.username ? `@${o.username}` : '')}
+                    {o.followers != null ? ` · ${o.followers} followers` : ''}
                   </SCText>
                 </View>
               </Pressable>

@@ -13,9 +13,10 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useChatMessages } from '@/hooks/useChatMessages';
-import {
-  SC_CHATS, SC_EVENT_BY_ID, SC_VISIBLE_PERSON_BY_ID,
-} from '@/data/mocks';
+import { useChats } from '@/hooks/useChats';
+import { useEvent } from '@/hooks/useEvent';
+import { api } from '@/lib/api';
+import { SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
@@ -23,17 +24,34 @@ export default function ChatThreadScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
   const showToast = useStore(s => s.showToast);
+  const mock = api.isMock();
   // useChatMessages owns the message list, the realtime subscription,
   // and the optimistic send / retry path. The legacy UIMessage shape
   // is preserved so the screen below doesn't have to change.
   const { messages: msgs, send, retry } = useChatMessages(id);
+  // Header data: the chat row comes from the (dual-mode) chat list and the
+  // event banner from useEvent — both Supabase-backed in live mode, so the
+  // header reads no SC_* there.
+  const { chats } = useChats();
+  const chat = id ? (chats.find(c => c.id === id) ?? null) : null;
+  const { event } = useEvent(chat?.kind === 'event' ? chat.eventId : undefined);
+  // DM display name: live carries it on chat.title; mock resolves the fixture.
+  const personName = chat?.kind === 'dm'
+    ? (chat.title ?? (mock ? SC_VISIBLE_PERSON_BY_ID[chat.personId ?? '']?.name : undefined))
+    : undefined;
 
-  const chat = id ? SC_CHATS.find(c => c.id === id) : null;
-  const event = chat?.kind === 'event' && chat.eventId ? SC_EVENT_BY_ID[chat.eventId] : null;
-  const person = chat?.kind === 'dm' && chat.personId ? SC_VISIBLE_PERSON_BY_ID[chat.personId] : null;
+  const [draft, setDraft] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
 
-  // DM with a user who blocked you → unavailable stub
-  if (chat?.kind === 'dm' && !person) {
+  useEffect(() => {
+    // Auto-scroll to bottom when messages change.
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+  }, [msgs.length]);
+
+  // Mock-only: a DM with someone who blocked you renders an unavailable stub
+  // (the blockedYou fixture). Live blocking is enforced by RLS — such a chat
+  // simply wouldn't appear in the list.
+  if (mock && chat?.kind === 'dm' && !SC_VISIBLE_PERSON_BY_ID[chat.personId ?? '']) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: t.pageBg }}>
         <SCTopBar onBack={() => router.back()} subtitle="DIRECT MESSAGE" />
@@ -53,14 +71,6 @@ export default function ChatThreadScreen() {
     );
   }
 
-  const [draft, setDraft] = useState('');
-  const scrollRef = useRef<ScrollView>(null);
-
-  useEffect(() => {
-    // Auto-scroll to bottom when messages change.
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [msgs.length]);
-
   const handleSend = async () => {
     const text = draft.trim();
     if (!text) return;
@@ -75,10 +85,12 @@ export default function ChatThreadScreen() {
     }
   };
 
-  const title = event ? chat?.title ?? event.title :
-                person ? person.name :
-                'Chat';
-  const subtitle = event ? 'EVENT GROUP CHAT' : 'DIRECT MESSAGE';
+  // Prefer the chat's own title (the event chat's name / the DM partner's
+  // name) and fall back to the resolved event title.
+  const title = chat?.kind === 'event'
+    ? (chat?.title ?? event?.title ?? 'Chat')
+    : (personName ?? 'Chat');
+  const subtitle = chat?.kind === 'event' ? 'EVENT GROUP CHAT' : 'DIRECT MESSAGE';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.pageBg }} edges={['top']}>

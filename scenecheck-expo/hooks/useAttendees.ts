@@ -6,7 +6,7 @@
 // `eventId === undefined` short-circuits to an empty list to handle
 // the Expo Router param-not-resolved-yet edge case.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import type { Account } from '@/types/domain';
@@ -15,6 +15,7 @@ interface UseAttendeesResult {
   attendees: Account[];
   loading: boolean;
   error: Error | null;
+  reload: () => void;
 }
 
 export function useAttendees(eventId: string | undefined): UseAttendeesResult {
@@ -24,6 +25,7 @@ export function useAttendees(eventId: string | undefined): UseAttendeesResult {
   );
   const [loading, setLoading] = useState(() => !mock && !!eventId);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   useEffect(() => {
     if (!eventId) {
@@ -48,7 +50,8 @@ export function useAttendees(eventId: string | undefined): UseAttendeesResult {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [eventId, mock]);
+  }, [eventId, mock, reloadCounter]);
 
-  return { attendees, loading, error };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { attendees, loading, error, reload };
 }

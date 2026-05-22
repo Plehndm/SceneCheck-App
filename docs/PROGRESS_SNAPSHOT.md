@@ -71,6 +71,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Forms keep the focused input above the on-screen keyboard.** `Screen` (scroll mode) is wrapped in `KeyboardAvoidingView` (iOS `padding`; Android uses Expo's default adjustResize) + `keyboardShouldPersistTaps`, so scrollable forms (create-event description, auth, search) keep the focused field visible. New `useKeyboardHeight` hook lifts the bottom-sheet modals — which render outside `Screen` — by adding `paddingBottom: keyboardHeight` to **EditProfileSheet** (bio) and **LocationPickerSheet** (search), seating each sheet's bottom edge at the keyboard's top. The chat composer already used `KeyboardAvoidingView`. 362/362. See §32. |
 | 2026-05-21 | **Keyboard avoidance now has an upper bound (top of screen).** The bottom-sheet modals lifted by the full keyboard height with no cap, so a tall sheet could push its top above the screen. Each sheet's `maxHeight` is now clamped to `windowHeight − topInset − keyboardHeight` (top can't pass the safe area): **EditProfileSheet** content became a `ScrollView` so it scrolls instead of overflowing, and **LocationPickerSheet** shrinks its map (260 → 130) while the keyboard is open so the search field + button stay visible. 362/362. See §33. |
 | 2026-05-21 | **Chat tab gained a compose button.** The Chat tab had no way to reach the new-chat composer (the screen existed but was unreachable). Added an **edit-icon compose button** in the header → `/new-chat` (matching the legacy `SCChatList` button) plus an empty state. The composer itself is already complete (pick a friend → DM, or several → group → `api.createChat` → thread). +1 test (363/363). See §34. |
+| 2026-05-21 | **Cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase.** Six fixes. **(1) Account deletion now "reassign, then delete row":** new RPC `reassign_then_delete_account` (migration `00020`) re-points the user's events + reviews to a fixed `[deleted user]` placeholder profile, then DELETEs the real `profiles` row (cascading interests/friendships/chats/etc.); the `delete-account` Edge Function calls it then `auth.admin.deleteUser` (frees the email). Local drafts are wiped client-side via a new `clearDrafts` store action. **(2) Sign-up identity:** migration `00019` adds `profiles.email` + rewrites `handle_new_user` to stamp `name` (from the display_name metadata), a **unique** `username` (email-slug + numeric fallback), and the email — plus a backfill for existing rows; the racey client-side name write in `api.signUp` is gone. `EditProfileSheet` gains a username field with friendly UNIQUE-violation copy. Profile SELECTs narrowed to omit `email` (stored, never shipped to other clients). **(3) Pull-to-refresh:** `Screen` gained an `onRefresh` prop → `RefreshControl` on native, a `rotate-ccw` button on web; `reload()` added to the param hooks (`useProfile`/`useHostedEvents`/`useRatings`/`useAttendees`/`useUserInterests`/`useSearch*`); wired into home/search/chat/profile/event/friends/requests/my-following. **(4–6) De-mock (live = 100% Supabase):** new `api.searchPeople`/`searchOrgs`/`getProfilesByIds`, enriched `getChats` (DM title = other member's name, last message) + `fetchRatings` (reviewer + event title via joins); every live screen now reads Supabase — search/home rail (`useSearch*`), my-following (`useFollowedOrgs`), chat list + thread, ratings, new-chat chips, profile — with `SC_*` retained **only** behind `isMock()` for the test/offline fixture. `seed-hosted-social.sql` extended with the missing fixtures (p5/p6/orgC/orgD) so all four orgs exist in `profiles`. +12 tests (377/377); `tsc` clean. See §35. |
 
 ### Current layout
 
@@ -2220,7 +2221,94 @@ See `docs/TEST_PLAN.md` §2.28–§2.29.
 
 ---
 
-## 35. How to re-snapshot this file
+## 35. Cleanup + de-mocking pass (deletion, identity, refresh, live data)
+
+_Last updated: 2026-05-21_
+
+A six-part cleanup that finished the live-data migration and rounded out the
+account lifecycle. Two decisions framed the work: account deletion = **reassign
+content, then delete the row**; and live mode = **100% Supabase**, with `SC_*`
+kept only as the mock/offline + test fixture (behind `isMock()`).
+
+### 35.1 Account deletion — reassign, then delete the row
+
+`supabase/migrations/00020_account_deletion_reassign.sql` seeds a fixed
+`[deleted user]` placeholder profile (UUID `…00ff`; needs its own `auth.users`
+row because `profiles.user_id` FKs `auth.users`) and adds a `SECURITY DEFINER`
+RPC `reassign_then_delete_account(p_user)` that, in one transaction:
+re-points `events.creator_id` → placeholder, re-points `ratings.user_id` →
+placeholder (deleting any row that would collide on the `(event_id, user_id)`
+PK first), then `DELETE`s the user's `profiles` row — whose cascades clear
+`user_interests` / `friendships` / `chat_members` / `messages` /
+`event_subscriptions` / `waitlist` / `blocks`. Execution is locked to
+`service_role` (REVOKE from public/anon/authenticated) since it's a privileged,
+parameterized delete.
+
+The `delete-account` Edge Function (service role) now calls that RPC and then
+`auth.admin.deleteUser(userId)` — safe once content is reassigned, and it frees
+the email for re-registration (replaces the old email-tombstone approach).
+Drafts are **local-only** (Zustand `drafts`, no DB table), so a new
+`clearDrafts()` store action wipes them in `settings.tsx` right after
+`api.deleteAccount()` succeeds.
+
+### 35.2 Sign-up identity + stored email
+
+`supabase/migrations/00019_profiles_identity_and_email.sql` adds a nullable
+(non-unique) `profiles.email` and rewrites `handle_new_user` to populate, on
+sign-up: `name` (from the `display_name` metadata `api.signUp` already stamps,
+else the email prefix), a **unique** `username` (email local-part slug with a
+numeric suffix on collision), and `email`. A backfill fills these for
+pre-existing rows. The belt-and-suspenders client `profiles.update({name})` in
+`api.signUp` is removed (the trigger is now authoritative — no more hydrate
+race). `EditProfileSheet` gained a `username` field that sanitizes to the same
+slug charset and maps a Postgres 23505 to "@name is already taken." Profile
+SELECTs (`getProfile`, `fetchFriends`, `fetchAttendees`, the new search methods)
+now list explicit columns via a shared `PROFILE_COLS` that **omits `email`**, so
+it's stored for the owner but never shipped to other clients.
+
+### 35.3 Pull-to-refresh + web refresh button
+
+`components/Screen.tsx` gained an optional `onRefresh` prop: native gets a
+`RefreshControl` on the ScrollView; web gets a small `rotate-ccw` button
+top-right (RefreshControl pull-down is unreliable there). `reload()` was added
+to the param-driven hooks (`useProfile`, `useHostedEvents`, `useRatings`,
+`useAttendees`, `useUserInterests`) via the `reloadCounter` pattern, plus the
+new `useSearch*` / `useFollowedOrgs`. Wired into Home, Search, Chat tab, the
+other-profile, event detail, My-friends, Requests, and My-following.
+
+### 35.4 De-mock — live mode reads only Supabase
+
+New `lib/api.ts` methods: `searchPeople(query)` / `searchOrgs(query)` (query
+`profiles` by `account_type` + name/username ilike; people exclude self and
+private) and `getProfilesByIds(ids)`. `getChats` now embeds members (+ name) and
+messages so a DM's title resolves to the **other member's name** and the last
+message/time surface (it previously returned untransformed rows in live);
+`fetchRatings` embeds the reviewer (name/avatar) and event title. New hooks
+`useSearchPeople` / `useSearchOrgs` (mock-synchronous like `useInterests`) and
+`useFollowedOrgs` (resolves the local `following` set via `getProfilesByIds`,
+SC_* in mock with SC_ORGS-then-managed ordering preserved). Screens updated so
+**every** `SC_*` read sits behind an `isMock()`/`mock` guard: `search.tsx`,
+the Home people rail, `my-following.tsx`, the chat list + thread, `ratings/`,
+`new-chat` (chips now resolve from the friend list), `profile/[id]`,
+`event/[id]`. `seed-hosted-social.sql` adds the previously-missing fixtures
+(p5 Priya, p6 Marco, orgC Common Room Coffee, orgD Anteater Run Club) so all
+four orgs the UI shows actually exist in `profiles` — fixing the "4 orgs appear
+but only 2 in the table" report. The `following` set + managed-account switching
+stay local user-state (no follows table introduced).
+
+### 35.5 Verification
+
+`npx tsc --noEmit` clean. `npm test` → **377/377, 52 suites** (+12: searchPeople/
+searchOrgs/getProfilesByIds mock shape in `api-mock.test.ts`, the delete-clears-
+drafts case in `settings.test.tsx`, and a new `Screen.test.tsx` covering the
+web refresh button + the no-button native/omitted paths). The live (hosted) path
+needs migrations `00019`/`00020` applied + `seed-hosted-social.sql` re-run.
+
+See `docs/TEST_PLAN.md` §2.30.
+
+---
+
+## 36. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

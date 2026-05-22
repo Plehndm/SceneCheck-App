@@ -26,9 +26,9 @@ import { LegendDot } from '@/components/LegendDot';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
+import { useSearchPeople } from '@/hooks/useSearch';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
 import { excludeSelf } from '@/lib/people';
-import { SC_VISIBLE_PEOPLE } from '@/data/mocks';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
 
@@ -38,15 +38,18 @@ export default function HomeScreen() {
   const pendingLeave = useStore(s => s.pendingLeave);
   const meId = useStore(s => s.me.id);
   const isJoinedNow = (id: string) => joined.has(id) && !pendingLeave.has(id);
-  // Never list yourself under "people nearby".
-  const peopleNearby = excludeSelf(SC_VISIBLE_PEOPLE, meId).slice(0, 4);
+  // "People nearby" — public people from Supabase (fixtures in mock mode).
+  // Live mode excludes self in the query; excludeSelf also drops self in mock
+  // mode (where the fixture list is unfiltered). See hooks/useSearch.
+  const { results: peopleResults, reload: reloadPeople } = useSearchPeople('');
+  const peopleNearby = excludeSelf(peopleResults, meId).slice(0, 4);
   // Live in live mode, fixture array in mock mode — see hooks/useEvents.
-  const { events, loading } = useEvents();
+  const { events, loading, reload: reloadEvents } = useEvents();
   // Live date + (if location granted) reverse-geocoded city.
   const dateCityLabel = useDateCityLabel();
 
   return (
-    <Screen>
+    <Screen onRefresh={() => { reloadEvents(); reloadPeople(); }}>
       {/* Header */}
       <View style={{
         paddingHorizontal: 18, paddingTop: 8, paddingBottom: 2,

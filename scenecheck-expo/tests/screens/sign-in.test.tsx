@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import SignInScreen from '@/app/auth/sign-in';
 import { renderScreen, resetStore, setRouteParams } from '../test-utils';
 import { useStore } from '@/store/useStore';
+import { api } from '@/lib/api';
 
 beforeEach(() => {
   resetStore();
@@ -37,6 +38,19 @@ describe('SignInScreen', () => {
     // api.signIn in mock mode resolves immediately; let microtasks flush.
     await Promise.resolve();
     expect(router.replace).toHaveBeenCalledWith('/(tabs)');
+  });
+
+  test('invalid credentials surface "email and/or password might be incorrect"', async () => {
+    // Supabase returns this for a wrong password, a non-existent account,
+    // or a deleted account (whose email was retired). We map them all.
+    const spy = jest.spyOn(api, 'signIn').mockRejectedValueOnce(new Error('Invalid login credentials'));
+    const { getByPlaceholderText, getByText } = renderScreen(<SignInScreen />);
+    fireEvent.changeText(getByPlaceholderText('Your email'), 'nobody@nowhere.com');
+    fireEvent.changeText(getByPlaceholderText('Your password'), 'wrongpass');
+    fireEvent.press(getByText('SIGN IN'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(useStore.getState().toasts.some(t => /email and\/or password might be incorrect/i.test(t.message))).toBe(true);
+    spy.mockRestore();
   });
 
   test('"Create an account" link pushes /auth/sign-up', () => {

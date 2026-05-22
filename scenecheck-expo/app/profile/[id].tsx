@@ -37,12 +37,14 @@ export default function OtherProfileScreen() {
   // `VISIBLE_PERSON_BY_ID` table — in live mode the RLS layer
   // already enforces visibility, so anything `useProfile` returns
   // is implicitly visible.
-  const { profile: person, loading } = useProfile(id);
+  const mock = api.isMock();
+  const { profile: person, loading, reload: reloadProfile } = useProfile(id);
   // Minimal fallback identity for a private account whose full row RLS
-  // won't return to a non-friend (in live mode `useProfile` yields null).
-  // The id from a search/people row is a mock id, so SC_ACCOUNT_BY_ID
-  // resolves enough — name, avatar, privacy — to render a request card.
-  const fallback = id ? (SC_ACCOUNT_BY_ID[id] ?? null) : null;
+  // won't return to a non-friend. Mock-only: the id is a mock id, so
+  // SC_ACCOUNT_BY_ID resolves enough — name, avatar, privacy — to render a
+  // request card. In live mode the profiles SELECT policy returns the
+  // public-safe row, so no fixture fallback is needed.
+  const fallback = id && mock ? (SC_ACCOUNT_BY_ID[id] ?? null) : null;
 
   const friends = useStore(s => s.friends);
   const outgoing = useStore(s => s.outgoingRequests);
@@ -56,12 +58,13 @@ export default function OtherProfileScreen() {
 
   // Live in live mode, fixture-filtered in mock mode. Both hooks key
   // off `id` (the host's user id).
-  const { events: hostedEvents } = useHostedEvents(id);
-  const { ratings: reviews } = useRatings(id);
+  const { events: hostedEvents, reload: reloadHosted } = useHostedEvents(id);
+  const { ratings: reviews, reload: reloadReviews } = useRatings(id);
   // Interests come from `user_interests` (publicly readable), not the
   // profiles row — so they resolve even for a private account, which we
   // surface to non-friends (interests only; everything else stays hidden).
-  const { interests: userInterests } = useUserInterests(id);
+  const { interests: userInterests, reload: reloadInterests } = useUserInterests(id);
+  const refreshProfile = () => { reloadProfile(); reloadHosted(); reloadReviews(); reloadInterests(); };
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
@@ -200,12 +203,15 @@ export default function OtherProfileScreen() {
   }
 
   // Mock-mode visibility gate (the blocked-you fixtures). In live mode RLS
-  // already decided — anything `useProfile` returned is visible.
-  const isVisible = person.type === 'org' || (id ? !!SC_VISIBLE_PERSON_BY_ID[id] : false) || !api.isMock();
+  // already decided — anything `useProfile` returned is visible (so we
+  // short-circuit before touching any SC_* fixture).
+  const isVisible = !mock || person.type === 'org' || (id ? !!SC_VISIBLE_PERSON_BY_ID[id] : false);
   if (!isVisible) return <Unavailable />;
 
   const isOrg = person.type === 'org';
-  const isManaged = SC_MY_ACCOUNTS.some(a => a.id === id);
+  // Managed-account switching is a mock-only fixture for now; live managed
+  // accounts would come from the managed_accounts table.
+  const isManaged = mock && SC_MY_ACCOUNTS.some(a => a.id === id);
   const isFollowing = id ? following.has(id) : false;
 
   const handleFriendToggle = () => {
@@ -263,7 +269,7 @@ export default function OtherProfileScreen() {
   };
 
   return (
-    <Screen>
+    <Screen onRefresh={refreshProfile}>
       <SCTopBar onBack={() => router.back()} />
 
       <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>

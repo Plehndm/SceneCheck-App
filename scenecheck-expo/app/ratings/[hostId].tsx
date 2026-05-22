@@ -13,6 +13,7 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useProfile } from '@/hooks/useProfile';
 import { useRatings } from '@/hooks/useRatings';
+import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID, SC_ANY_EVENT_BY_ID } from '@/data/mocks';
 import { RADIUS } from '@/theme/tokens';
 
@@ -22,8 +23,9 @@ export default function RatingsScreen() {
   // Host name comes from useProfile in either mode. Ratings list
   // joins ratings ⨝ events on creator_id in live mode; mock-mode
   // filters SC_REVIEWS by hostId.
-  const { profile: host } = useProfile(hostId);
-  const { ratings: all } = useRatings(hostId);
+  const { profile: host, reload: reloadHost } = useProfile(hostId);
+  const { ratings: all, reload: reloadRatings } = useRatings(hostId);
+  const mock = api.isMock();
   const ordered = useMemo(
     () => [...all].sort((a, b) => b.id.localeCompare(a.id)),
     [all],
@@ -37,7 +39,7 @@ export default function RatingsScreen() {
     : 0;
 
   return (
-    <Screen>
+    <Screen onRefresh={() => { reloadRatings(); reloadHost(); }}>
       <SCTopBar onBack={() => router.back()} subtitle="RATINGS" />
 
       <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
@@ -84,8 +86,13 @@ export default function RatingsScreen() {
       ) : (
         <View style={{ paddingHorizontal: 14, gap: 8 }}>
           {filtered.map(r => {
-            const reviewer = SC_ACCOUNT_BY_ID[r.reviewerId];
-            const event = SC_ANY_EVENT_BY_ID[r.eventId];
+            // Live mode: reviewer + event come enriched on the Review (joins in
+            // api.fetchRatings). Mock mode: resolve from SC_* fixtures.
+            const reviewer = mock
+              ? SC_ACCOUNT_BY_ID[r.reviewerId]
+              : { name: r.reviewerName ?? 'Anonymous', picture: r.reviewerPicture ?? null, type: 'person' as const };
+            const eventTitle = mock ? SC_ANY_EVENT_BY_ID[r.eventId]?.title : r.eventTitle;
+            const eventId = r.eventId;
             return (
               <SCCard key={r.id} style={{ padding: 14, gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -106,9 +113,9 @@ export default function RatingsScreen() {
                   </View>
                 </View>
                 <SCText size={14} color={t.ink} style={{ lineHeight: 21 }}>{r.text}</SCText>
-                {event && (
+                {eventTitle && (
                   <Pressable
-                    onPress={() => router.push(`/event/${event.id}` as never)}
+                    onPress={() => router.push(`/event/${eventId}` as never)}
                     style={({ pressed }) => [{
                       flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
                       gap: 6, paddingHorizontal: 10, paddingVertical: 5,
@@ -117,7 +124,7 @@ export default function RatingsScreen() {
                   >
                     <SCIcon name="calendar" size={11} color={t.ink2} />
                     <SCText variant="mono" size={10} color={t.ink2} numberOfLines={1}>
-                      {event.title}
+                      {eventTitle}
                     </SCText>
                   </Pressable>
                 )}
