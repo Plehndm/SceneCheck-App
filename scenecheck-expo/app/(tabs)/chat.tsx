@@ -1,15 +1,16 @@
 // Chat tab — minimal list of conversations. Threaded view ships in Phase 4
 // as app/chat/[id].tsx.
 
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
+import { SCIcon } from '@/components/SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useChats } from '@/hooks/useChats';
 import { SC_ACCOUNT_BY_ID, SC_EVENT_BY_ID } from '@/data/mocks';
-import { Pressable } from 'react-native';
+import { RADIUS } from '@/theme/tokens';
 
 export default function ChatTab() {
   const t = useTokens();
@@ -18,10 +19,39 @@ export default function ChatTab() {
   const { chats } = useChats();
   return (
     <Screen>
-      <View style={{ paddingHorizontal: 18, paddingTop: 8 }}>
-        <SCText variant="labelCap">Conversations</SCText>
-        <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Chat</SCText>
+      <View style={{
+        paddingHorizontal: 18, paddingTop: 8,
+        flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+      }}>
+        <View>
+          <SCText variant="labelCap">Conversations</SCText>
+          <SCText variant="displayTight" size={32} style={{ marginTop: 4 }}>Chat</SCText>
+        </View>
+        {/* Start a new chat — opens the friends picker (matches the legacy
+            chat-list compose button). */}
+        <Pressable
+          onPress={() => router.push('/new-chat' as never)}
+          accessibilityLabel="Start a new chat"
+          style={({ pressed }) => [{
+            width: 42, height: 42, borderRadius: RADIUS.lg,
+            backgroundColor: t.ink,
+            alignItems: 'center', justifyContent: 'center',
+          }, pressed && { opacity: 0.85 }]}
+        >
+          <SCIcon name="edit" size={18} color={t.card} />
+        </Pressable>
       </View>
+
+      {chats.length === 0 ? (
+        <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+          <SCCard style={{ padding: 20, alignItems: 'center', gap: 6 }}>
+            <SCText size={14} weight="600">No conversations yet</SCText>
+            <SCText size={12} color={t.ink3} style={{ textAlign: 'center', lineHeight: 17 }}>
+              Tap the compose button above to start a chat with a friend.
+            </SCText>
+          </SCCard>
+        </View>
+      ) : (
       <View style={{ paddingHorizontal: 14, paddingTop: 14, gap: 10 }}>
         {chats.map(c => {
           const title = c.kind === 'event'
@@ -55,6 +85,7 @@ export default function ChatTab() {
           );
         })}
       </View>
+      )}
     </Screen>
   );
 }

@@ -37,6 +37,12 @@ describe('ChatTab', () => {
     expect(oneBadges.length).toBeGreaterThan(0);
   });
 
+  test('the compose button starts a new chat (routes to /new-chat)', () => {
+    const { getByLabelText } = renderScreen(<ChatTab />);
+    fireEvent.press(getByLabelText('Start a new chat'));
+    expect(router.push).toHaveBeenCalledWith('/new-chat');
+  });
+
   test('tapping a chat navigates to /chat/<id>', () => {
     const { getByText } = renderScreen(<ChatTab />);
     const firstChatTitle = SC_CHATS[0].title ??
