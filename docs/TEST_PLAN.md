@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **362/362** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.27 — keyboard avoidance for text inputs)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **363/363** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.29 — chat tab compose button)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -949,6 +949,36 @@ height via a new `useKeyboardHeight` hook.
 **What this section deliberately does NOT do:** mock `Keyboard` events to
 assert padding values — the values come from the OS at runtime; a render
 assertion would only restate the implementation.
+
+### 2.28 Keyboard avoidance upper bound (post-§2.27 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §33._
+
+The bottom-sheet modals now clamp their height to the space between the
+top safe area and the keyboard, so a tall sheet can't push its top above
+the screen. EditProfileSheet content scrolls within the clamp;
+LocationPickerSheet shrinks its map while the keyboard is open.
+
+| Coverage | Notes |
+|---|---|
+| No new tests | The clamp is `windowHeight − topInset − keyboardHeight`, computed from runtime metrics jsdom doesn't provide (keyboard height is always 0 in Jest). Verified by `tsc`, the suite (the sheets still render — `EditProfileSheet`/`LocationPickerSheet` tests pass), and on-device reasoning. |
+
+### 2.29 Chat tab compose button (post-§2.28 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §34._
+
+Added the missing create-chat entry point on the Chat tab (the composer
+itself was already complete).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/chat-tab.test.tsx` (+1) | compose button | Pressing the "Start a new chat" button routes to `/new-chat`. (Existing header / chat-card / unread-badge / tap-to-thread cases unchanged.) |
+
+**Delivered count**: 363 / 363 (up from 362). 51 suites.
+
+**What this section deliberately does NOT do:** re-test the new-chat
+composer — it was covered when it shipped (`tests/screens/new-chat.test.tsx`);
+this change only adds the button that reaches it.
 
 ---
 

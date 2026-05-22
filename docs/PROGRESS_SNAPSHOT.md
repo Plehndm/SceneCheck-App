@@ -69,6 +69,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Private bio visible too + edit-bio + interests persist across sessions.** **(1)** A private account now also shows its **bio** to non-friends (the private request card renders `subject.bio` alongside interests; everything else stays gated). **(2)** The Edit-profile sheet gained a **bio** field (multiline, 160 cap) — saved via `api.updateProfile({ name, bio })` (an upsert) into the `me` slice. **(3)** Interest toggles now **persist across reloads** in live mode: new `api.setInterestSubscribed(tag, on)` resolves the tag → `interests.id` (creating the row for a custom tag) and inserts/deletes `user_interests`; both interest screens call it after the optimistic store toggle. Previously the toggle was store-only, so AuthBootstrap's DB re-hydrate reset interests on the next launch. +1 test (362/362). See §30. |
 | 2026-05-21 | **Fix: live profile rows weren't mapped to the `Account` shape.** The `profiles` table's PK is `user_id` (no `id` column) and it stores `avatar_url` / `visibility` / `account_type`; the UI `Account` uses `id` / `picture` / `privacy` / `type`. `getProfile` / `fetchFriends` / `fetchAttendees` returned the raw row via a bare `as Account` cast, so in **live** mode `Account.id` was `undefined` — which produced the "Each child in a list should have a unique key" warning (every `key={p.id}` was undefined on My-friends, Sent requests, Attendees, the event-detail going list), made profile links navigate to `/profile/undefined`, and silently broke the private-profile gate (it reads `person.privacy`). Added `transformProfileRow()` and used it in all three. Mock mode unaffected (fixtures already carry `id`). 362/362. See §31. |
 | 2026-05-21 | **Forms keep the focused input above the on-screen keyboard.** `Screen` (scroll mode) is wrapped in `KeyboardAvoidingView` (iOS `padding`; Android uses Expo's default adjustResize) + `keyboardShouldPersistTaps`, so scrollable forms (create-event description, auth, search) keep the focused field visible. New `useKeyboardHeight` hook lifts the bottom-sheet modals — which render outside `Screen` — by adding `paddingBottom: keyboardHeight` to **EditProfileSheet** (bio) and **LocationPickerSheet** (search), seating each sheet's bottom edge at the keyboard's top. The chat composer already used `KeyboardAvoidingView`. 362/362. See §32. |
+| 2026-05-21 | **Keyboard avoidance now has an upper bound (top of screen).** The bottom-sheet modals lifted by the full keyboard height with no cap, so a tall sheet could push its top above the screen. Each sheet's `maxHeight` is now clamped to `windowHeight − topInset − keyboardHeight` (top can't pass the safe area): **EditProfileSheet** content became a `ScrollView` so it scrolls instead of overflowing, and **LocationPickerSheet** shrinks its map (260 → 130) while the keyboard is open so the search field + button stay visible. 362/362. See §33. |
+| 2026-05-21 | **Chat tab gained a compose button.** The Chat tab had no way to reach the new-chat composer (the screen existed but was unreachable). Added an **edit-icon compose button** in the header → `/new-chat` (matching the legacy `SCChatList` button) plus an empty state. The composer itself is already complete (pick a friend → DM, or several → group → `api.createChat` → thread). +1 test (363/363). See §34. |
 
 ### Current layout
 
@@ -2168,7 +2170,57 @@ See `docs/TEST_PLAN.md` §2.26–§2.27.
 
 ---
 
-## 33. How to re-snapshot this file
+## 33. Keyboard avoidance — upper bound
+
+_Last updated: 2026-05-21_
+
+Refines §32. The scrollable forms (via `Screen`'s `KeyboardAvoidingView`)
+were already bounded by the ScrollView, but the **bottom-sheet modals**
+lifted by the full keyboard height with no cap — so a tall sheet could
+push its top *above* the top of the screen, hiding the header / fields.
+
+Both sheets now clamp their card to
+`maxHeight = windowHeight − insets.top − keyboardHeight − 8`
+(via `useWindowDimensions` + `useSafeAreaInsets`), so the sheet's top can
+never rise past the top safe area:
+
+- **EditProfileSheet** — content wrapped in a `ScrollView`
+  (`keyboardShouldPersistTaps="handled"`) so it scrolls within the clamp
+  instead of overflowing off-screen.
+- **LocationPickerSheet** — clamped, **and** the map shrinks from 260 → 130
+  while the keyboard is open, so the search field, suggestions dropdown,
+  and "Use this location" button all stay on-screen above the keyboard.
+
+`tsc` clean; 362/362. (Keyboard layout is runtime device behavior Jest
+can't drive — verified by reasoning + types + the suite; worth a look on a
+small screen.)
+
+---
+
+## 34. Chat tab compose button
+
+_Last updated: 2026-05-21_
+
+The Chat tab (`app/(tabs)/chat.tsx`) had **no** create-chat affordance —
+`app/new-chat.tsx` existed but nothing linked to it. Added an **edit-icon
+compose button** in the header (top-right, ink fill) that routes to
+`/new-chat`, mirroring the legacy `SCChatList` button
+(`legacy/src/screens.jsx:2763`), plus an empty state ("Tap the compose
+button above to start a chat with a friend").
+
+The composer flow itself was already fully implemented: pick one friend
+(DM) or several (group) → `api.createChat(ids, type)` inserts the
+`chats` + `chat_members` rows → `router.replace('/chat/<id>')` to the
+thread, with the same DM/group subtitle + CTA labels as legacy.
+
+`tests/screens/chat-tab.test.tsx` gains a case asserting the button routes
+to `/new-chat`. +1 → 363/363; `tsc` clean.
+
+See `docs/TEST_PLAN.md` §2.28–§2.29.
+
+---
+
+## 35. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
