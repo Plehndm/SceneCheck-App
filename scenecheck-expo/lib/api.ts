@@ -20,7 +20,7 @@ import {
   SC_CHATS, SC_THREADS,
   SC_VISIBLE_PEOPLE, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
-import type { SCEvent, Account, Chat, Message, Interest } from '@/types/domain';
+import type { SCEvent, Account, Chat, Message, Interest, Visibility, AccountType } from '@/types/domain';
 
 // ── ID mapping (mock string IDs ↔ real UUIDs) ─────────────────
 const ID_MAP: Record<string, string> = {
@@ -104,6 +104,36 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
     lng: row.lng ?? undefined,
     x: 0.5,
     y: 0.5,
+  };
+}
+
+// DB `profiles` row → in-memory Account. The table's PK is `user_id` and
+// it stores `avatar_url` / `visibility` / `account_type`; the UI's Account
+// uses `id` / `picture` / `privacy` / `type`. A bare `as Account` cast
+// (the previous behaviour) left `id` undefined in live mode, which broke
+// React list keys (`key={p.id}`) and profile-link navigation
+// (`/profile/undefined`). This maps the columns explicitly.
+interface ProfileRow {
+  user_id: string;
+  name?: string | null;
+  username?: string | null;
+  bio?: string | null;
+  avatar_url?: string | null;
+  visibility?: Visibility | null;
+  account_type?: AccountType | null;
+  avg_rating?: number | null;
+}
+
+function transformProfileRow(row: ProfileRow): Account {
+  return {
+    id: row.user_id,
+    type: row.account_type ?? 'person',
+    name: row.name ?? '',
+    username: row.username ?? undefined,
+    bio: row.bio ?? '',
+    privacy: row.visibility ?? 'public',
+    picture: row.avatar_url ?? null,
+    rating: row.avg_rating ?? undefined,
   };
 }
 
@@ -381,7 +411,7 @@ export const api = {
       .eq('user_id', toUUID(userId))
       .single();
     if (error) throw error;
-    return data as Account;
+    return transformProfileRow(data as ProfileRow);
   },
 
   async updateProfile(fields: Partial<Account>) {
@@ -499,17 +529,19 @@ export const api = {
         .select('to:profiles!friendships_to_id_fkey(*)')
         .eq('from_id', me)
         .eq('status', 'accepted')
-        // to-one embed; override the array shape supabase-js infers
-        // without generated DB types.
-        .overrideTypes<{ to: Account | null }[], { merge: false }>(),
+        // to-one embed of the `profiles` row; override the array shape
+        // supabase-js infers without generated DB types.
+        .overrideTypes<{ to: ProfileRow | null }[], { merge: false }>(),
       sb.from('friendships')
         .select('from:profiles!friendships_from_id_fkey(*)')
         .eq('to_id', me)
         .eq('status', 'accepted')
-        .overrideTypes<{ from: Account | null }[], { merge: false }>(),
+        .overrideTypes<{ from: ProfileRow | null }[], { merge: false }>(),
     ]);
-    const out = (outRows ?? []).map(r => r.to).filter(Boolean) as Account[];
-    const inn = (inRows ?? []).map(r => r.from).filter(Boolean) as Account[];
+    // Map profiles rows → Account (user_id → id etc.) — not a bare cast,
+    // so list keys + profile links work.
+    const out = (outRows ?? []).flatMap(r => (r.to ? [transformProfileRow(r.to)] : []));
+    const inn = (inRows ?? []).flatMap(r => (r.from ? [transformProfileRow(r.from)] : []));
     return [...out, ...inn];
   },
 
@@ -738,13 +770,12 @@ export const api = {
       .select('profile:profiles!event_subscriptions_user_id_fkey(*)')
       .eq('event_id', toUUID(eventId))
       .eq('status', 'confirmed')
-      // to-one embed; override the array shape supabase-js infers
-      // without generated DB types.
-      .overrideTypes<{ profile: Account | null }[], { merge: false }>();
+      // to-one embed of the `profiles` row; override the array shape
+      // supabase-js infers without generated DB types.
+      .overrideTypes<{ profile: ProfileRow | null }[], { merge: false }>();
     if (error) throw error;
-    return (data ?? [])
-      .map(r => r.profile)
-      .filter(Boolean) as Account[];
+    // Map profiles rows → Account (user_id → id etc.) so keys + links work.
+    return (data ?? []).flatMap(r => (r.profile ? [transformProfileRow(r.profile)] : []));
   },
 
   // Ratings table doesn't carry `host_id` directly — the host is
