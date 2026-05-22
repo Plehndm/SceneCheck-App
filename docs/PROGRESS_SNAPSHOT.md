@@ -74,6 +74,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Cleanup + de-mocking pass: account deletion, identity/email, pull-to-refresh, live=100%-Supabase.** Six fixes. **(1) Account deletion now "reassign, then delete row":** new RPC `reassign_then_delete_account` (migration `00020`) re-points the user's events + reviews to a fixed `[deleted user]` placeholder profile, then DELETEs the real `profiles` row (cascading interests/friendships/chats/etc.); the `delete-account` Edge Function calls it then `auth.admin.deleteUser` (frees the email). Local drafts are wiped client-side via a new `clearDrafts` store action. **(2) Sign-up identity:** migration `00019` adds `profiles.email` + rewrites `handle_new_user` to stamp `name` (from the display_name metadata), a **unique** `username` (email-slug + numeric fallback), and the email — plus a backfill for existing rows; the racey client-side name write in `api.signUp` is gone. `EditProfileSheet` gains a username field with friendly UNIQUE-violation copy. Profile SELECTs narrowed to omit `email` (stored, never shipped to other clients). **(3) Pull-to-refresh:** `Screen` gained an `onRefresh` prop → `RefreshControl` on native, a `rotate-ccw` button on web; `reload()` added to the param hooks (`useProfile`/`useHostedEvents`/`useRatings`/`useAttendees`/`useUserInterests`/`useSearch*`); wired into home/search/chat/profile/event/friends/requests/my-following. **(4–6) De-mock (live = 100% Supabase):** new `api.searchPeople`/`searchOrgs`/`getProfilesByIds`, enriched `getChats` (DM title = other member's name, last message) + `fetchRatings` (reviewer + event title via joins); every live screen now reads Supabase — search/home rail (`useSearch*`), my-following (`useFollowedOrgs`), chat list + thread, ratings, new-chat chips, profile — with `SC_*` retained **only** behind `isMock()` for the test/offline fixture. `seed-hosted-social.sql` extended with the missing fixtures (p5/p6/orgC/orgD) so all four orgs exist in `profiles`. +12 tests (377/377); `tsc` clean. See §35. |
 | 2026-05-22 | **Interest-gated recommendations + incoming friend-request fixes.** Three issues. **(1) "Recommended" is now interest-driven, per user:** a scraped/app-discovered event used to always count as "Recommended"; now an event is recommended only when it shares one of your subscribed interests (new `lib/events.isRecommendedFor`), so a scraped event you have no interest in shows as "Other/Nearby". Applied consistently across `pinColor` (map), the events-list "FOR YOU" filter, `SCEventCard` (new `meInterests` prop), and the event-detail hero label. **(2) Incoming friend requests weren't showing (live):** the seeded requester is a **private** account, and `profiles` RLS hides private non-friends — so `getProfile` threw and `useFriendRequests`' un-caught `Promise.all` blanked the whole list. Migration `00021` adds a `has_pending_request()` helper + an additive SELECT policy so pending-request parties can read each other's profile (both directions); the hook also resolves each requester independently with a minimal placeholder fallback. **(3) Friend-requests hint count was stale/wrong:** the Profile-tab "Friend requests" row and the Settings "Follow requests" row now derive their in/out counts from the same live hooks the `/requests` screen uses (`useFriendRequests`/`useOutgoingRequests`) instead of store-set snapshots, so the hint matches the screen and reflects the true numbers. +1 test (378/378); `tsc` clean. See §36. |
 | 2026-05-22 | **Fix: a friend showing twice (duplicate React key).** Signed in as one user, a friend rendered twice in the friends list with the same key. Root cause: a cross friend-request (A→B *and* B→A) that both get accepted leaves two accepted rows — `UNIQUE(from_id,to_id)` permits the mirror pair — so `fetchFriends` (which unions the `from_id=me` and `to_id=me` queries) returned the same profile from both sides. Fix: `fetchFriends` now dedupes the union by id (repairs display for rows already in the DB), and `sendFriendRequest` no-ops when a pending/accepted friendship already exists in **either** direction so a mirror row can't form. No test-count change (378/378); `tsc` clean. See §37. |
+| 2026-05-22 | **Search ALL filter + auto-selected filters, "Orgs" rename, and avatars stored in Supabase.** Four UX/data items. **(1)** The Profile-tab "Following" row is renamed **"Orgs"** (it opens your followed-orgs list). **(2)** "Browse orgs" now opens Search with the **orgs** filter pre-selected, and "Find people" / "Find more people" pre-select the **people** filter — via a new `?tab=` param `search.tsx` reads on open. **(3)** Search gained an **ALL** tab (now the default) that shows events + people + orgs in one combined feed, so you don't have to click between filters; the per-type tabs still narrow. **(4)** Profile photos are now **stored in Supabase**: new migration `00022` adds a public `avatars` storage bucket + per-user RLS, `api.uploadAvatar` uploads the picked image and persists the public URL on `profiles.avatar_url` (which AuthBootstrap already loads into `me.picture`), `api.removeAvatar` clears it; the Profile tab uploads on change (optimistic preview + revert on failure) so the photo is retained and loads on every device. +7 tests (385/385); `tsc` clean. See §38. |
 
 ### Current layout
 
@@ -2405,7 +2406,61 @@ See `docs/TEST_PLAN.md` §2.32.
 
 ---
 
-## 38. How to re-snapshot this file
+## 38. Search ALL filter + auto-selected filters, "Orgs" rename, avatars in Supabase
+
+_Last updated: 2026-05-22 (commit 1c551d5)_
+
+Four items from one round of feedback.
+
+### 38.1 "Following" row → "Orgs"
+
+The Profile-tab "MY STUFF" row labeled "Following" is renamed **"Orgs"** (it opens
+`my-following`, your followed-orgs list). Label-only change in `app/(tabs)/profile.tsx`.
+
+### 38.2 Auto-selected search filters
+
+Opening Search can now pre-select a tab via a `?tab=` query param. `search.tsx`
+reads it on mount (validated against the tab list). Wired:
+- `my-following` "Browse orgs" → `/search?tab=orgs`.
+- `my-friends` "Find people" + "Find more people" → `/search?tab=people`.
+
+### 38.3 ALL search filter (combined feed)
+
+`search.tsx` gained an **ALL** tab — now the default — that renders events,
+people, and orgs in one scrolling feed (each block labeled), so you don't have
+to switch filters to see everything. The EVENTS / PEOPLE / ORGS tabs still
+narrow to one type. The row markup was factored into `renderEvent` /
+`renderPerson` / `renderOrg` so both the ALL feed and the single-type tabs share it.
+
+### 38.4 Profile photos stored in Supabase
+
+Profile photos were kept only in the local Zustand store (a data URL), so they
+never reached Supabase, didn't survive a reinstall / new device, and weren't
+visible to others. Now:
+- **Migration `00022`** creates a public `avatars` storage bucket with per-user
+  RLS (objects keyed `<uid>/…`; public read; write/update/delete only within
+  your own folder).
+- `api.uploadAvatar(uri)` fetches the picked image's bytes (works for web
+  data/blob URLs and native `file://` URIs), uploads to the bucket, and persists
+  the public URL on `profiles.avatar_url`. `api.removeAvatar()` clears the column
+  and best-effort deletes the objects. Mock mode echoes the local uri / no-ops.
+- `app/(tabs)/profile.tsx` uploads on photo change (optimistic preview, reverts
+  on failure) and writes `me.picture`; `AuthBootstrap` already hydrates
+  `me.picture` from `avatar_url`, so the photo loads on every sign-in / device.
+
+### 38.5 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **385/385, 52 suites** (+7: avatar mock
+methods ×2, search ALL/`?tab=` ×3, the two nav-button cases). The live storage
+upload + RLS are verified manually on the hosted project after applying `00022`
+(pick a photo → it persists in the `avatars` bucket + `profiles.avatar_url` and
+reloads after sign-out/in).
+
+See `docs/TEST_PLAN.md` §2.33.
+
+---
+
+## 39. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
