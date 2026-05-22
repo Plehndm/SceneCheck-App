@@ -67,6 +67,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-21 | **Private-profile privacy gate + location search autocomplete.** **(1)** A private account leaked its interests (and bio / hosted events / message + safety actions) to non-friends: the request-only card only triggered when `useProfile` returned null, but in mock mode (no RLS) — and live mode as a friend — the full profile rendered. `profile/[id]` now computes `privateLocked = isPrivate && !isFriend && !isSelf` and shows the minimal request card whenever it's set, in **every** mode, so a private account exposes only name/avatar + Send-request to non-friends (the live RLS still backstops the server). **(2)** The location picker's search is now a live **autocomplete dropdown** — typing (≥3 chars, 350 ms debounce) lists up to 5 OpenStreetMap Nominatim matches; tapping one recenters the map, so users don't need the exact place name. +1 test (361/361). See §28. |
 | 2026-05-21 | **Refine §28: private accounts show interests (only); search biased to the user.** Per follow-up: a private account should expose its **interests** to non-friends — just not bio/events/etc. New `api.getInterestsForUser` (reads the publicly-readable `user_interests`, so it works for any account) + `useUserInterests` hook; the private request card now renders an Interests section, and the full profile uses the hook too (which also fixes interests never loading in live mode, since `getProfile` doesn't return them). The location-search dropdown is now **biased to the user's location** — Nominatim `viewbox` + `bounded=1` centred on `coords` (default region when no permission) — so suggestions are nearby/accurate instead of global. 361/361. See §29. |
 | 2026-05-21 | **Private bio visible too + edit-bio + interests persist across sessions.** **(1)** A private account now also shows its **bio** to non-friends (the private request card renders `subject.bio` alongside interests; everything else stays gated). **(2)** The Edit-profile sheet gained a **bio** field (multiline, 160 cap) — saved via `api.updateProfile({ name, bio })` (an upsert) into the `me` slice. **(3)** Interest toggles now **persist across reloads** in live mode: new `api.setInterestSubscribed(tag, on)` resolves the tag → `interests.id` (creating the row for a custom tag) and inserts/deletes `user_interests`; both interest screens call it after the optimistic store toggle. Previously the toggle was store-only, so AuthBootstrap's DB re-hydrate reset interests on the next launch. +1 test (362/362). See §30. |
+| 2026-05-21 | **Fix: live profile rows weren't mapped to the `Account` shape.** The `profiles` table's PK is `user_id` (no `id` column) and it stores `avatar_url` / `visibility` / `account_type`; the UI `Account` uses `id` / `picture` / `privacy` / `type`. `getProfile` / `fetchFriends` / `fetchAttendees` returned the raw row via a bare `as Account` cast, so in **live** mode `Account.id` was `undefined` — which produced the "Each child in a list should have a unique key" warning (every `key={p.id}` was undefined on My-friends, Sent requests, Attendees, the event-detail going list), made profile links navigate to `/profile/undefined`, and silently broke the private-profile gate (it reads `person.privacy`). Added `transformProfileRow()` and used it in all three. Mock mode unaffected (fixtures already carry `id`). 362/362. See §31. |
+| 2026-05-21 | **Forms keep the focused input above the on-screen keyboard.** `Screen` (scroll mode) is wrapped in `KeyboardAvoidingView` (iOS `padding`; Android uses Expo's default adjustResize) + `keyboardShouldPersistTaps`, so scrollable forms (create-event description, auth, search) keep the focused field visible. New `useKeyboardHeight` hook lifts the bottom-sheet modals — which render outside `Screen` — by adding `paddingBottom: keyboardHeight` to **EditProfileSheet** (bio) and **LocationPickerSheet** (search), seating each sheet's bottom edge at the keyboard's top. The chat composer already used `KeyboardAvoidingView`. 362/362. See §32. |
 
 ### Current layout
 
@@ -2101,7 +2103,72 @@ See `docs/TEST_PLAN.md` §2.25.
 
 ---
 
-## 31. How to re-snapshot this file
+## 31. Profiles row → Account mapping (fix undefined keys)
+
+_Last updated: 2026-05-21_
+
+A console warning — *"Each child in a list should have a unique key"* —
+surfaced on the hosted backend. Root cause: the Supabase `profiles` table
+keys on **`user_id`** (no `id` column) and stores `avatar_url` /
+`visibility` / `account_type`, while the UI's `Account` uses `id` /
+`picture` / `privacy` / `type`. `api.getProfile`, `fetchFriends`, and
+`fetchAttendees` returned the raw row with a bare `as Account` cast — no
+column mapping — so in **live** mode `Account.id` was `undefined`.
+
+Symptoms (live only — mock fixtures already carry `id`, which is why
+tests stayed green):
+- every list keyed by `key={p.id}` (My friends, "Sent by you" requests,
+  attendees, the event-detail going list) rendered `key={undefined}` →
+  the unique-key warning;
+- profile links navigated to `/profile/undefined`;
+- the private-profile gate (`privateLocked`, which reads `person.privacy`)
+  silently failed, so private profiles could render fully in live mode.
+
+Fix: a single `transformProfileRow(row)` helper in `lib/api.ts` maps
+`user_id → id`, `avatar_url → picture`, `visibility → privacy`,
+`account_type → type` (plus name/username/bio/avg_rating), used by
+`getProfile`, `fetchFriends`, and `fetchAttendees`. `npx tsc --noEmit`
+clean; 362/362. (Verified end-to-end on the hosted project; the mapping
+is a pure function but not yet unit-covered — it's module-local.)
+
+---
+
+## 32. Keyboard avoidance for text inputs
+
+_Last updated: 2026-05-21_
+
+Typing in a text field could leave the input hidden behind the on-screen
+keyboard. Now the form's bottom tracks the keyboard's top so the focused
+field stays visible.
+
+- **`components/Screen.tsx` (scroll mode)** is wrapped in
+  `KeyboardAvoidingView` — `behavior="padding"` on iOS (shrinks the scroll
+  area to the keyboard top); Android relies on Expo's default
+  `softwareKeyboardLayoutMode: "resize"` (adjustResize), so no explicit
+  behavior is needed there. Added `keyboardShouldPersistTaps="handled"` so
+  buttons (e.g. PUBLISH / SAVE DRAFT) stay tappable with the keyboard up.
+  This covers every scrollable form: create-event (the description text
+  area), the auth screens, search, settings.
+- **`hooks/useKeyboardHeight.ts`** (new) tracks the live keyboard height
+  (0 when hidden; `Will*` events on iOS, `Did*` on Android; no-op on web).
+- The **bottom-sheet modals** render in a `Modal` *outside* `Screen`, so
+  `KeyboardAvoidingView`/adjustResize don't reach them. `EditProfileSheet`
+  (bio) and `LocationPickerSheet` (place search) add
+  `paddingBottom: keyboardHeight` to the sheet backdrop, seating the
+  sheet's bottom edge at the keyboard's top.
+- The **chat composer** (`app/chat/[id].tsx`) already used
+  `KeyboardAvoidingView` — left unchanged; this work follows that pattern.
+
+`npx tsc --noEmit` clean; 362/362. Keyboard/layout is runtime device
+behavior Jest can't drive, so this is verified by the established pattern,
+types, and the suite, and should be eyeballed on a device/emulator
+(especially Android's adjustResize path).
+
+See `docs/TEST_PLAN.md` §2.26–§2.27.
+
+---
+
+## 33. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

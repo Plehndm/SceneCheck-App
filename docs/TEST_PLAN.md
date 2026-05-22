@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **359/359** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.25 — private bio visible, edit-bio, interest persistence)._
+_Last updated: 2026-05-21 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **362/362** across 51 suites, and `npx tsc --noEmit` is clean (the 5 PostgREST nested-relation errors carried as "pre-existing" are resolved). The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.27 — keyboard avoidance for text inputs)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -912,6 +912,43 @@ state; the DB persistence is verified on the hosted project.
 - Add a live `profile_card` RPC for arbitrary private accounts. The
   private card's bio/name/avatar come from the mock fallback, which covers
   the reachable (seeded) accounts; the RPC remains a documented follow-up.
+
+---
+
+### 2.26 Profiles row → Account mapping fix (post-§2.25 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §31._
+
+Live `profiles` rows were cast to `Account` without mapping
+`user_id → id` (etc.), so `Account.id` was `undefined` in live mode —
+breaking list keys (`key={p.id}`), profile-link navigation, and the
+private-profile gate. Fixed with a `transformProfileRow()` helper in
+`getProfile` / `fetchFriends` / `fetchAttendees`.
+
+| Coverage | Notes |
+|---|---|
+| No new tests | The bug + fix are **live-only** (mock fixtures already carry `id`, so the suite was green throughout and can't reproduce it). `transformProfileRow` is a pure mapping but module-local; verified on the hosted project + by `tsc`. Test count unchanged at 362/362. |
+
+**What this section deliberately does NOT do:** export `transformProfileRow`
+purely to unit-test it. If the mapping grows, promoting it to a tested
+helper (like `transformEventRow`) is the natural step.
+
+### 2.27 Keyboard avoidance for text inputs (post-§2.26 delta)
+
+_Captured 2026-05-21 alongside `docs/PROGRESS_SNAPSHOT.md` §32._
+
+Forms now keep the focused input above the on-screen keyboard: `Screen`
+(scroll) wraps a `KeyboardAvoidingView`; the bottom-sheet modals
+(EditProfileSheet, LocationPickerSheet) lift by the measured keyboard
+height via a new `useKeyboardHeight` hook.
+
+| Coverage | Notes |
+|---|---|
+| No new tests | Keyboard show/hide + layout reflow is runtime device behavior that jsdom/Jest doesn't drive. Verified by the established pattern (the chat composer already used `KeyboardAvoidingView`), `tsc`, the full suite (362/362, the `Screen` wrapper change is transparent in tests), and on a device/emulator. |
+
+**What this section deliberately does NOT do:** mock `Keyboard` events to
+assert padding values — the values come from the OS at runtime; a render
+assertion would only restate the implementation.
 
 ---
 
