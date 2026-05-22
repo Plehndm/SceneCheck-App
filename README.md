@@ -9,20 +9,32 @@
 |---|---|
 | `scenecheck-expo/` | **Active project.** Expo SDK 54 + TypeScript + React Native Web port. Cross-platform (iOS / Android / Web) per the architecture document. Run with `npm start` from inside. |
 | `supabase/` | Database migrations, Edge Functions, pgTAP tests. Backend is shared between the legacy prototype and the new Expo project. |
-| `docs/` | Code review report, test plan, and other project documentation. |
+| `docs/` | All project documentation — see below. |
 | `legacy/` | **Archived.** Original browser-based prototype (Babel-Standalone + plain JSX) from HW2 / HW3. Kept for reference / comparison. See `legacy/README.md`. |
 | `assets/` | Static assets (UI draft images) referenced by the requirements doc. |
-| `IN4MATX 43 Architecture Document.md` | The architecture deliverable. |
-| `IN4MATX-43-Requirements-Document.md` | The requirements deliverable. |
-| `user_flow_traces.md` | User flow traces document. |
+
+### 📚 Documentation (in `docs/`)
+
+All project documents live in the [`docs/`](docs/) folder:
+
+| Document | File |
+|---|---|
+| Progress snapshot | [`docs/PROGRESS_SNAPSHOT.md`](docs/PROGRESS_SNAPSHOT.md) |
+| Test plan | [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) |
+| Architecture document | [`docs/IN4MATX 43 Architecture Document.md`](docs/IN4MATX%2043%20Architecture%20Document.md) |
+| Requirements document | [`docs/IN4MATX-43-Requirements-Document.md`](docs/IN4MATX-43-Requirements-Document.md) |
+| Code reviews | [`docs/CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md), [`docs/CODE_REVIEW_REPORT_2.md`](docs/CODE_REVIEW_REPORT_2.md) |
+| User flow traces | [`docs/user_flow_traces.md`](docs/user_flow_traces.md) |
 
 ### Quick start (active project)
+
+> 📱 **Running on a phone?** Install the free **[Expo Go](https://expo.dev/go)** app on your iOS or Android device (App Store / Google Play). Then run `npm start` and scan the QR code with Expo Go (iOS: the Camera app; Android: the Expo Go app) to open SceneCheck on your device. No build step needed. For web, just press `w`.
 
 ```bash
 cd scenecheck-expo
 npm install
-npm start          # interactive — press w for web, scan QR for iOS/Android
-npm test           # 259 tests, ~4s
+npm start          # interactive — press w for web, or scan the QR with Expo Go for iOS/Android
+npm test           # 385 tests
 ```
 
 ### Quick start (legacy prototype)
