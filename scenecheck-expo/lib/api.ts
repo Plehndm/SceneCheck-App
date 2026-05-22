@@ -526,10 +526,26 @@ export const api = {
     // idempotent (re-requesting the same person is a no-op, not a UNIQUE
     // violation). The notification fan-out the send-friend-request function
     // did is dropped here; persisting the request is what the UI needs.
+    const targetUuid = toUUID(targetId);
+    // Don't create a MIRROR row. The UNIQUE constraint is on (from_id, to_id),
+    // so (me→target) and (target→me) are two distinct allowed rows — and if a
+    // pending/accepted friendship already exists in the OTHER direction, adding
+    // ours produced two accepted rows once both sides accept, which then showed
+    // the friend twice (duplicate key). If any active friendship already exists
+    // in either direction, treat the send as a no-op.
+    const { data: existing } = await sb
+      .from('friendships')
+      .select('status')
+      .or(`and(from_id.eq.${user.id},to_id.eq.${targetUuid}),and(from_id.eq.${targetUuid},to_id.eq.${user.id})`)
+      .in('status', ['pending', 'accepted'])
+      .limit(1);
+    if (existing && existing.length > 0) {
+      return { status: (existing[0].status as 'pending' | 'accepted') };
+    }
     const { error } = await sb
       .from('friendships')
       .upsert(
-        { from_id: user.id, to_id: toUUID(targetId), status: 'pending' },
+        { from_id: user.id, to_id: targetUuid, status: 'pending' },
         { onConflict: 'from_id,to_id', ignoreDuplicates: true },
       );
     if (error) throw error;
@@ -624,7 +640,13 @@ export const api = {
     // so list keys + profile links work.
     const out = (outRows ?? []).flatMap(r => (r.to ? [transformProfileRow(r.to)] : []));
     const inn = (inRows ?? []).flatMap(r => (r.from ? [transformProfileRow(r.from)] : []));
-    return [...out, ...inn];
+    // Dedupe by id: if an accepted friendship exists in BOTH directions
+    // (two mirror rows — the UNIQUE(from_id,to_id) constraint permits the
+    // pair), the same friend lands in both `out` and `inn`. Returning them
+    // both produced a duplicate React key + the friend showing up twice.
+    const byId = new Map<string, Account>();
+    for (const a of [...out, ...inn]) byId.set(a.id, a);
+    return [...byId.values()];
   },
 
   // Pending incoming friend requests. Returns the legacy FriendRequest
