@@ -7,13 +7,44 @@
 // unreliable) it shows a small refresh button in the top-right corner.
 
 import {
-  KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, View,
-  type ScrollViewProps, type ViewStyle,
+  Animated, Easing, KeyboardAvoidingView, Platform, Pressable, RefreshControl,
+  ScrollView, View, type ScrollViewProps, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTokens } from '@/theme/ThemeProvider';
 import { SCIcon } from '@/components/SCIcon';
+import { SCText } from '@/components/SCText';
+
+// A small "REFRESHING" pill with a spinning icon, shown (on every platform)
+// while a refresh is in flight so the user always gets explicit feedback — the
+// native RefreshControl spinner alone is easy to miss, and web has none.
+function RefreshIndicator() {
+  const t = useTokens();
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: 8, left: 0, right: 0, alignItems: 'center', zIndex: 20 }}>
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: t.card, borderColor: t.line, borderWidth: 1, borderRadius: 999,
+        paddingHorizontal: 12, paddingVertical: 6,
+      }}>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <SCIcon name="rotate-ccw" size={14} color={t.ink2} />
+        </Animated.View>
+        <SCText variant="mono" size={10} weight="600" color={t.ink2}>REFRESHING</SCText>
+      </View>
+    </View>
+  );
+}
 
 interface Props {
   children: ReactNode;
@@ -62,6 +93,7 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: t.pageBg }} edges={['top']}>
         {webRefreshButton}
+        {refreshing && <RefreshIndicator />}
         {/* Lift the form above the keyboard so the focused input stays
             visible. iOS uses `padding` (shrinks the scroll area to the
             keyboard top); Android relies on the window's adjustResize, so
@@ -92,6 +124,7 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.pageBg }} edges={['top']}>
       {webRefreshButton}
+      {refreshing && <RefreshIndicator />}
       <View style={[{ flex: 1 }, contentContainerStyle]}>{children}</View>
     </SafeAreaView>
   );

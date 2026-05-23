@@ -15,7 +15,7 @@ export type IconName =
   | 'lock' | 'bell' | 'logout' | 'shield' | 'flag' | 'help'
   | 'x' | 'edit' | 'mic' | 'camera' | 'switch'
   | 'user-plus' | 'user-check' | 'clock' | 'lock-open' | 'mail'
-  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon';
+  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon' | 'more' | 'trash';
 
 interface Props {
   name: IconName;
@@ -100,6 +100,11 @@ export function SCIcon({ name, size = 20, color = 'currentColor' }: Props) {
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="12" r="4" {...strokeProps} /><Path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" {...strokeProps} /></Svg>;
     case 'moon':
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" {...strokeProps} /></Svg>;
+    case 'more':
+      // Three vertical dots — filled so they read clearly at small sizes.
+      return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="5" r="1.7" fill={color} stroke={color} /><Circle cx="12" cy="12" r="1.7" fill={color} stroke={color} /><Circle cx="12" cy="19" r="1.7" fill={color} stroke={color} /></Svg>;
+    case 'trash':
+      return <Svg width={size} height={size} viewBox="0 0 24 24"><Polyline points="3 6 5 6 21 6" {...strokeProps} /><Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" {...strokeProps} /><Path d="M10 11v6M14 11v6" {...strokeProps} /><Path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" {...strokeProps} /></Svg>;
     default:
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="12" r="10" {...strokeProps} /></Svg>;
   }

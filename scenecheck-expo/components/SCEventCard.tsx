@@ -9,7 +9,8 @@ import { SCText } from './SCText';
 import { SCTag } from './SCTag';
 import { ConflictChip } from './ConflictChip';
 import { whenRange } from '@/lib/date-time';
-import { isRecommendedFor } from '@/lib/events';
+import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
+import { pinColor } from '@/components/Map/types';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -28,20 +29,13 @@ interface Props {
 
 export function SCEventCard({ event, joined, showConflict, onPress, meInterests = [], conflictLookup }: Props) {
   const t = useTokens();
-  // A scraped event (kind 'recommended') is only "RECOMMENDED" when it matches
-  // one of your interests; otherwise it's just "NEARBY". yours/friend/org keep
-  // their intrinsic label + color.
-  const recommended = isRecommendedFor(event, meInterests);
-  const label =
-    event.kind === 'yours' ? 'YOUR EVENT' :
-    event.kind === 'friend' ? 'FRIEND HOSTING' :
-    event.kind === 'org' ? 'ORG · POSTED' :
-    recommended ? 'RECOMMENDED' : 'NEARBY';
-  const accent =
-    event.kind === 'yours' ? t.primary :
-    event.kind === 'friend' ? t.accentFriend :
-    event.kind === 'org' ? t.accentBlue :
-    recommended ? t.accentBlue : t.mapPinMute;
+  // Label + color both derive from the one category (lib/events) so they
+  // always agree: yours / friend / recommended (interest match) / other.
+  const label = EVENT_CATEGORY_LABEL[eventCategory(event, meInterests)];
+  const accent = pinColor(event, t, meInterests);
+  // A friend-hosted event that also matches your interests gets an extra
+  // "RECOMMENDED" badge (the pin/label stay the friend colour).
+  const alsoRec = isAlsoRecommended(event, meInterests);
   return (
     <Pressable
       onPress={onPress}
@@ -53,11 +47,19 @@ export function SCEventCard({ event, joined, showConflict, onPress, meInterests 
       }, pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] }]}
     >
       {/* Kind row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: accent }} />
         <SCText variant="mono" size={9.5} weight="600" color={accent}>
           {label}
         </SCText>
+        {alsoRec && (
+          <View style={{
+            backgroundColor: t.accentBlue,
+            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+          }}>
+            <SCText variant="mono" size={9} weight="600" color="white">RECOMMENDED</SCText>
+          </View>
+        )}
         {joined && (
           <View style={{
             marginLeft: 'auto',
