@@ -22,6 +22,7 @@
 
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { toMockId } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 import { SC_ME } from '@/data/mocks';
 import type { Account } from '@/types/domain';
@@ -135,9 +136,13 @@ export function AuthBootstrap() {
       };
       setMe(profilePatch);
 
-      // Joined events.
+      // Joined events. Map through toMockId so these match the ids the rest
+      // of the app uses: transformEventRow stamps every event id with
+      // toMockId(row.id) (seeded events → 'e1'… ; real events unchanged), so
+      // the raw event_id here would never equal the screen's `id` for seeded
+      // events — leaving the join/leave button stuck on the wrong state.
       const joined = new Set<string>(
-        (subRows ?? []).map((r: SubscriptionRow) => r.event_id),
+        (subRows ?? []).map((r: SubscriptionRow) => toMockId(r.event_id)),
       );
 
       // Friend graph splits:

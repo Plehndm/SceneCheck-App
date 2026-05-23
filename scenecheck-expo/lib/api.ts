@@ -355,20 +355,21 @@ export const api = {
     return { status, chat_id: null };
   },
 
-  // Remove the caller's row from event_subscriptions. The legacy used
-  // a soft-delete (status='cancelled') so analytics could see leaves;
-  // we follow the same shape so dispatch-notification can still find
-  // the row if/when we add a "$user left your event" notification.
+  // Remove the caller's row from event_subscriptions. We HARD-delete (not a
+  // soft status='cancelled'): the subscribe RPC's idempotency check treats ANY
+  // existing row as "already subscribed", so a lingering cancelled row blocked
+  // re-joining. The DELETE policy is migration 00024; the subscriber_count
+  // trigger recomputes on DELETE (it COALESCEs NEW/OLD).
   async cancelSubscription(eventId: string) {
     if (isMock()) return { ok: true };
     const sb = requireClient();
     const user = await this.getCurrentUser();
     if (!user || !('id' in user)) throw new Error('Not authenticated');
     const { error } = await sb.from('event_subscriptions')
-      .update({ status: 'cancelled' })
+      .delete()
       .eq('event_id', toUUID(eventId))
       .eq('user_id', user.id);
-    if (error) throw error;
+    if (error) throw new Error(error.message || 'Failed to leave event');
     return { ok: true };
   },
 

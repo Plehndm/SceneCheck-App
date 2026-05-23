@@ -23,6 +23,7 @@ import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvent } from '@/hooks/useEvent';
 import { useAttendees } from '@/hooks/useAttendees';
+import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
 import { SC_CHATS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
@@ -90,6 +91,9 @@ export default function EventDetailScreen() {
   // Real attendees — live mode: confirmed event_subscriptions ⨝ profiles;
   // mock mode: SC_VISIBLE_PEOPLE. Drives the count + preview avatars.
   const { attendees, reload: reloadAttendees } = useAttendees(id);
+  // The host's profile, so "Hosted by" can show their name + link to it.
+  // (transformEventRow doesn't carry the host's name in live mode.)
+  const { profile: host } = useProfile(baseEvent?.hostId ?? undefined);
 
   if (!baseEvent) {
     return (
@@ -280,9 +284,12 @@ export default function EventDetailScreen() {
           />
           <DetailRow
             icon="people"
-            k={`Hosted by ${e.host ?? '—'}`}
-            v={e.kind === 'recommended' ? 'Auto-discovered' : 'See attendees →'}
+            k={`Hosted by ${e.host ?? host?.name ?? (e.hostId ? 'Host' : 'App-created')}`}
+            v={e.hostId ? 'View profile →' : (e.kind === 'recommended' ? 'Auto-discovered' : '')}
             last
+            // Tap a real host to open their profile; app-created events
+            // (no creator) stay non-interactive.
+            onPress={e.hostId ? () => router.push(`/profile/${e.hostId}` as never) : undefined}
           />
         </SCCard>
       </View>
