@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **386/386** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.34 — cross-user chat delivery + dynamic events-attended count)._
+_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **390/390** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.36 — compact event hero, other-profile stats, joined-events list)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1114,6 +1114,55 @@ live `joined`-set size (confirmed subscriptions) instead of a static field.
 test harness — chat send + cross-user delivery are validated on the hosted
 project (requires migrations `00023` and, for instant delivery, `00012`'s
 realtime publication).
+
+---
+
+### 2.35 Event join via RPC + chat UI polish (post-§2.34 delta)
+
+_Captured 2026-05-22 alongside `docs/PROGRESS_SNAPSHOT.md` §40._
+
+Joining an event errored ("Failed to send a request to the Edge Function" /
+"non-2xx") because `subscribeToEvent` invoked the undeployed `subscribe-to-event`
+Edge Function. It now calls the `subscribe_to_event_atomic` RPC directly
+(`00015`, SECURITY DEFINER). Leaving was also silently broken (no UPDATE policy
+on `event_subscriptions`) — migration `00024` adds own-row write policies. UI:
+the `SCButton` `ghost` variant got a border (profile "Message" reads as a
+button) and the chat composer got `insets.bottom + 24` bottom padding.
+
+| Area | Tests | Notes |
+|---|---|---|
+| `subscribeToEvent` → RPC, `00024` cancel policies | covered | Live-only (RPC + RLS); the mock-mode return shape is unchanged, so the existing `api-mock` + `event-detail` tests still cover the contract. Verified on the hosted project after applying `00024` (+ confirming `00015`): join → confirmed/waitlisted, leave persists. |
+| `SCButton` ghost border, composer padding | covered | Pure styling on shared components; existing button/chat-thread render tests still pass (no text/structure change). |
+
+**Delivered count**: 386 / 386 (no change). 52 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live RPC/RLS test harness —
+event join/leave are validated on the hosted project (requires migrations
+`00015` and `00024` applied).
+
+---
+
+### 2.36 Compact event hero, other-profile stats, joined-events list (post-§2.35 delta)
+
+_Captured 2026-05-22 alongside `docs/PROGRESS_SNAPSHOT.md` §41._
+
+Event-detail hero halved (240 → 120); `SCButton` ghost border bumped to `t.ink3`
+(Message reads as a button); other profiles get a hosted/attended/rating stat
+row + "No bio yet." fallback (attended via the `attended_count` RPC, `00025`);
+and the profile ATTENDED stat now opens a new `my-events` list of joined events
+(`api.fetchJoinedEvents` + `useJoinedEvents`).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `tests/screens/profile-tab.test.tsx` (+1) | ATTENDED → list | Tapping the ATTENDED stat routes to `/my-events`. |
+| `tests/screens/my-events.test.tsx` (new, +3) | joined list | Lists the events in the `joined` set (mock seed `e1`); tapping one opens `/event/e1`; shows the empty state when nothing is joined. |
+
+**Delivered count**: 390 / 390 (+4). 53 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** test the live attended-count RPC
+or the live joined-events fetch — both are live-only (RPC / RLS), verified on the
+hosted project after applying migration `00025`. The hero resize + ghost border
+are styling, covered by existing render tests.
 
 ---
 

@@ -77,6 +77,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Search ALL filter + auto-selected filters, "Orgs" rename, and avatars stored in Supabase.** Four UX/data items. **(1)** The Profile-tab "Following" row is renamed **"Orgs"** (it opens your followed-orgs list). **(2)** "Browse orgs" now opens Search with the **orgs** filter pre-selected, and "Find people" / "Find more people" pre-select the **people** filter — via a new `?tab=` param `search.tsx` reads on open. **(3)** Search gained an **ALL** tab (now the default) that shows events + people + orgs in one combined feed, so you don't have to click between filters; the per-type tabs still narrow. **(4)** Profile photos are now **stored in Supabase**: new migration `00022` adds a public `avatars` storage bucket + per-user RLS, `api.uploadAvatar` uploads the picked image and persists the public URL on `profiles.avatar_url` (which AuthBootstrap already loads into `me.picture`), `api.removeAvatar` clears it; the Profile tab uploads on change (optimistic preview + revert on failure) so the photo is retained and loads on every device. +7 tests (385/385); `tsc` clean. See §38. |
 | 2026-05-22 | **Chat send fixed (RLS recursion) + delivery robustness + dynamic "events attended."** **(1) Messages now send.** The real blocker was an **infinite-recursion RLS policy**: `chat_members`' SELECT policy (`00011`) sub-queried `chat_members` itself, so Postgres aborted (`infinite recursion detected in policy for relation chat_members`) on every RLS-checked chat access — the failing `messages` INSERT surfaced as the "couldn't send / [object Object]" failed-retry indicator, and it also broke the chat list + message reads. Migration `00023` adds a `SECURITY DEFINER` `is_chat_member()` helper (bypasses RLS, so no recursion) and rewrites the four chat policies to use it. `api.sendMessage` now throws the real PostgREST message instead of `[object Object]`. **(2) Delivery robustness:** AuthBootstrap authorizes Realtime with the user JWT (`realtime.setAuth`) so RLS `postgres_changes` are delivered, and the chat thread + chat tab re-fetch on focus (new `useChatMessages.reload`) so the recipient sees messages even if a realtime event was missed. **(3) "Events attended" is dynamic:** the Profile ATTENDED stat now uses the live `joined` set size (confirmed subscriptions from Supabase) instead of a static field. No test-count change (385/385); `tsc` clean. See §39. |
 | 2026-05-22 | **Fix the profile "Message" button (second chat-send bug).** After the RLS fix, sending still failed from a profile with `invalid input syntax for type uuid: "dm-<uuid>"`. Cause: the other-profile **Message** button navigated to `/chat/dm-${id}` — a fabricated mock-style chat id — so live mode pushed that non-UUID straight into the `messages` insert. It now calls `api.createChat([id], 'dm')` (RPC → real chat id in live; the `dm-<id>` stable id in mock) and routes to `/chat/<id>`, matching the new-chat flow. +1 test (386/386); `tsc` clean. See §39.5. |
+| 2026-05-22 | **Event join fixed (no Edge Function) + chat UI polish.** **(1) Joining an event failed** with "Failed to send a request to the Edge Function" / "non-2xx" because `api.subscribeToEvent` invoked the `subscribe-to-event` Edge Function, which isn't deployed on the hosted project. It now calls the `subscribe_to_event_atomic` RPC directly (migration `00015`; SECURITY DEFINER, so it bypasses the INSERT-less `event_subscriptions` RLS and does the capacity/waitlist/idempotency check) — same pattern as the friend-request + create-chat fixes. **(2) Leaving an event** was also silently broken: `event_subscriptions` had only SELECT policies, so `cancelSubscription`'s direct `UPDATE` matched zero rows. Migration `00024` adds own-row INSERT/UPDATE/DELETE policies. **(3) UI polish:** the `SCButton` `ghost` variant now has a visible border so the profile **Message** action reads as a button; the chat composer gained bottom padding (`insets.bottom + 24`) so it isn't cramped against the screen edge. No test-count change (386/386); `tsc` clean. See §40. |
+| 2026-05-22 | **Compact event hero, other-profile stats, and a "joined events" list.** **(1)** The event-detail hero panel was 50% empty space — halved (240 → 120). **(2)** The `SCButton` `ghost` border was bumped `t.line` → `t.ink3` so the profile **Message** action unmistakably reads as a button. **(3)** Other people's profiles (friends + public) now show a **hosted / attended / rating** stat row like your own tab, and the bio area shows *"No bio yet."* when empty instead of nothing. Attended for other users goes through a new `attended_count()` RPC (migration `00025`, SECURITY DEFINER — `event_subscriptions` RLS hides others' rows). **(4)** The **ATTENDED** stat on your own profile is now tappable → a new `app/my-events.tsx` screen listing every event you've joined (new `api.fetchJoinedEvents` + `useJoinedEvents`), since there was no single place to see them. +4 tests (390/390, 53 suites); `tsc` clean. See §41. |
 
 ### Current layout
 
@@ -2544,7 +2546,107 @@ routes to `/chat/<id>`, the same path `new-chat` uses. +1 regression test in
 
 ---
 
-## 40. How to re-snapshot this file
+## 40. Event join fixed (RPC, not Edge Function) + chat UI polish
+
+_Last updated: 2026-05-22 (commit 36d88a9)_
+
+### 40.1 Joining an event failed ("Failed to send a request to the Edge Function")
+
+`api.subscribeToEvent` invoked the `subscribe-to-event` Edge Function, which
+isn't deployed on the hosted project — so joining errored with "Failed to send a
+request to the Edge Function" (unreachable) or "Edge Function returned a non-2xx
+status code". The Edge Function only wrapped the `subscribe_to_event_atomic` RPC
+(migration `00015`), so `subscribeToEvent` now calls that RPC **directly**:
+
+```ts
+const { data, error } = await sb.rpc('subscribe_to_event_atomic', {
+  p_event_id: toUUID(eventId), p_user_id: user.id,
+});
+```
+
+The RPC is `SECURITY DEFINER`, so it bypasses the INSERT-less
+`event_subscriptions` RLS and does the capacity-check / waitlist / idempotency
+in one advisory-locked statement, returning `confirmed | waitlisted | already`.
+This is the same "use the RPC, drop the undeployed Edge Function" pattern as the
+friend-request (direct insert) and create-chat (`create_chat` RPC) fixes.
+
+### 40.2 Leaving an event didn't persist
+
+`event_subscriptions` had only SELECT policies (`00011`), so
+`api.cancelSubscription`'s direct `UPDATE … SET status='cancelled'` matched zero
+rows under RLS — the event came back as joined on reload. Migration `00024` adds
+own-row INSERT / UPDATE / DELETE policies (`user_id = auth.uid()`), so cancel
+persists.
+
+### 40.3 Chat UI polish
+
+- `SCButton`'s `ghost` variant now draws a 1px border (`t.line`), so the profile
+  **Message** action looks like a button instead of bare text.
+- The chat composer's bottom padding is now `insets.bottom + 24` (was a flat
+  `16`), so it clears the home indicator / screen edge instead of sitting
+  cramped against it.
+
+### 40.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **386/386, 52 suites** (no new tests — the
+join change is a live-only RPC swap with the same mock-mode return shape, so the
+existing api-mock + event-detail tests still cover the contract). Apply migration
+`00024` on the hosted project (and confirm `00015` is applied) — then joining an
+event confirms/waitlists without the Edge Function error, and leaving persists.
+
+---
+
+## 41. Compact event hero + other-profile stats + "joined events" list
+
+_Last updated: 2026-05-22 (commits 36d88a9 hero/border, 9315610 profile/joined)_
+
+### 41.1 Event-detail hero halved
+
+The hero panel (`app/event/[id].tsx`) was `height: 240` with most of it empty —
+now `120`. The back bar + the kind/label pill still fit; the title + detail card
+move up.
+
+### 41.2 Message button reads as a button
+
+Following up on §40.3, the `SCButton` `ghost` border was bumped from `t.line`
+(too faint) to `t.ink3`, so the profile **Message** action (and the other ghost
+buttons — Sign out, Home) clearly read as tappable buttons.
+
+### 41.3 Stats + "No bio" on other profiles
+
+Other people's profiles (friends + public) now render the same **hosted /
+attended / rating** stat row as your own profile tab (people previously had no
+stat row — only orgs did). The bio block always renders now, showing
+*"No bio yet."* (muted italic) when the person hasn't written one.
+
+Attended is the one stat a viewer can't compute directly — `event_subscriptions`'
+SELECT RLS only exposes your own rows. Migration `00025` adds an
+`attended_count(p_user)` `SECURITY DEFINER` function that returns just the COUNT
+of a user's confirmed subscriptions (no row detail), surfaced via
+`api.getAttendedCount`.
+
+### 41.4 "Events you've joined" list
+
+There was no single place to see the events you've joined. The **ATTENDED** stat
+on your profile tab is now tappable (rendered in the primary color) → a new
+`app/my-events.tsx` screen (registered in `_layout` as a card route) that lists
+them. Data: `api.fetchJoinedEvents()` (live: `event_subscriptions ⨝ events`
+where status='confirmed') + `hooks/useJoinedEvents` (mock mode derives the list
+from the local `joined` set + `SC_EVENTS`, so it's reactive to join/leave).
+
+### 41.5 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **390/390, 53 suites** (+4: profile-tab
+ATTENDED → `/my-events` navigation, and a new `my-events.test.tsx` covering the
+list / tap-through / empty state). The other-profile attended count + the live
+joined-events fetch are validated on the hosted project after applying migration
+`00025` (and `00024` from §40).
+
+See `docs/TEST_PLAN.md` §2.36.
+
+---
+
+## 42. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
