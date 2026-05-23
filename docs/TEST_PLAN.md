@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **385/385** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.33 — search ALL filter + auto-selected filters, "Orgs" rename, avatars in Supabase)._
+_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **385/385** across 52 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.34 — cross-user chat delivery + dynamic events-attended count)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1085,6 +1085,34 @@ tab (combined feed, now the default); and store profile photos in a new Supabase
 migration `00022` (pick a photo → it lands in the `avatars` bucket +
 `profiles.avatar_url` and reloads after sign-out/in), consistent with the other
 live-path deltas.
+
+---
+
+### 2.34 Cross-user chat delivery + dynamic events-attended count (post-§2.33 delta)
+
+_Captured 2026-05-22 alongside `docs/PROGRESS_SNAPSHOT.md` §39._
+
+Three fixes: (1) **chat sends were failing** — `00011`'s self-referential
+`chat_members` SELECT policy caused Postgres "infinite recursion detected in
+policy", which broke every RLS-checked chat access including the `messages`
+INSERT (the failed-retry / `[object Object]` symptom). Migration `00023` adds a
+`SECURITY DEFINER` `is_chat_member()` helper and rewrites the four chat policies
+to use it; `api.sendMessage` now throws the real PostgREST message. (2) delivery
+robustness — Realtime authorized with the user JWT (`realtime.setAuth`) + thread/
+tab re-fetch on focus (`useChatMessages.reload`). (3) Profile ATTENDED is now the
+live `joined`-set size (confirmed subscriptions) instead of a static field.
+
+| Area | Tests | Notes |
+|---|---|---|
+| Chat RLS recursion fix (`00023`), realtime auth, `useChatMessages` reload, focus re-fetch | none added | All live-only (RLS / realtime / navigation focus); Jest runs in mock mode with no Supabase/RLS harness, so these are verified on the hosted project after applying `00023` (two users in a chat: send succeeds and the message appears for the other, live + on reopen). The `expo-router` test mock gained a no-op `useFocusEffect` so the chat screens still render in Jest. |
+| Profile ATTENDED = `joined.size` | covered | The existing `profile-tab.test.tsx` renders the ATTENDED stat; the value now derives from the hydrated `joined` set (resetStore seeds it). |
+
+**Delivered count**: 385 / 385 (no change). 52 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live RLS/realtime/socket
+test harness — chat send + cross-user delivery are validated on the hosted
+project (requires migrations `00023` and, for instant delivery, `00012`'s
+realtime publication).
 
 ---
 

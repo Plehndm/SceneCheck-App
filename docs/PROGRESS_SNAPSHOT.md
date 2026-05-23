@@ -75,6 +75,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Interest-gated recommendations + incoming friend-request fixes.** Three issues. **(1) "Recommended" is now interest-driven, per user:** a scraped/app-discovered event used to always count as "Recommended"; now an event is recommended only when it shares one of your subscribed interests (new `lib/events.isRecommendedFor`), so a scraped event you have no interest in shows as "Other/Nearby". Applied consistently across `pinColor` (map), the events-list "FOR YOU" filter, `SCEventCard` (new `meInterests` prop), and the event-detail hero label. **(2) Incoming friend requests weren't showing (live):** the seeded requester is a **private** account, and `profiles` RLS hides private non-friends — so `getProfile` threw and `useFriendRequests`' un-caught `Promise.all` blanked the whole list. Migration `00021` adds a `has_pending_request()` helper + an additive SELECT policy so pending-request parties can read each other's profile (both directions); the hook also resolves each requester independently with a minimal placeholder fallback. **(3) Friend-requests hint count was stale/wrong:** the Profile-tab "Friend requests" row and the Settings "Follow requests" row now derive their in/out counts from the same live hooks the `/requests` screen uses (`useFriendRequests`/`useOutgoingRequests`) instead of store-set snapshots, so the hint matches the screen and reflects the true numbers. +1 test (378/378); `tsc` clean. See §36. |
 | 2026-05-22 | **Fix: a friend showing twice (duplicate React key).** Signed in as one user, a friend rendered twice in the friends list with the same key. Root cause: a cross friend-request (A→B *and* B→A) that both get accepted leaves two accepted rows — `UNIQUE(from_id,to_id)` permits the mirror pair — so `fetchFriends` (which unions the `from_id=me` and `to_id=me` queries) returned the same profile from both sides. Fix: `fetchFriends` now dedupes the union by id (repairs display for rows already in the DB), and `sendFriendRequest` no-ops when a pending/accepted friendship already exists in **either** direction so a mirror row can't form. No test-count change (378/378); `tsc` clean. See §37. |
 | 2026-05-22 | **Search ALL filter + auto-selected filters, "Orgs" rename, and avatars stored in Supabase.** Four UX/data items. **(1)** The Profile-tab "Following" row is renamed **"Orgs"** (it opens your followed-orgs list). **(2)** "Browse orgs" now opens Search with the **orgs** filter pre-selected, and "Find people" / "Find more people" pre-select the **people** filter — via a new `?tab=` param `search.tsx` reads on open. **(3)** Search gained an **ALL** tab (now the default) that shows events + people + orgs in one combined feed, so you don't have to click between filters; the per-type tabs still narrow. **(4)** Profile photos are now **stored in Supabase**: new migration `00022` adds a public `avatars` storage bucket + per-user RLS, `api.uploadAvatar` uploads the picked image and persists the public URL on `profiles.avatar_url` (which AuthBootstrap already loads into `me.picture`), `api.removeAvatar` clears it; the Profile tab uploads on change (optimistic preview + revert on failure) so the photo is retained and loads on every device. +7 tests (385/385); `tsc` clean. See §38. |
+| 2026-05-22 | **Chat send fixed (RLS recursion) + delivery robustness + dynamic "events attended."** **(1) Messages now send.** The real blocker was an **infinite-recursion RLS policy**: `chat_members`' SELECT policy (`00011`) sub-queried `chat_members` itself, so Postgres aborted (`infinite recursion detected in policy for relation chat_members`) on every RLS-checked chat access — the failing `messages` INSERT surfaced as the "couldn't send / [object Object]" failed-retry indicator, and it also broke the chat list + message reads. Migration `00023` adds a `SECURITY DEFINER` `is_chat_member()` helper (bypasses RLS, so no recursion) and rewrites the four chat policies to use it. `api.sendMessage` now throws the real PostgREST message instead of `[object Object]`. **(2) Delivery robustness:** AuthBootstrap authorizes Realtime with the user JWT (`realtime.setAuth`) so RLS `postgres_changes` are delivered, and the chat thread + chat tab re-fetch on focus (new `useChatMessages.reload`) so the recipient sees messages even if a realtime event was missed. **(3) "Events attended" is dynamic:** the Profile ATTENDED stat now uses the live `joined` set size (confirmed subscriptions from Supabase) instead of a static field. No test-count change (385/385); `tsc` clean. See §39. |
 
 ### Current layout
 
@@ -2460,7 +2461,77 @@ See `docs/TEST_PLAN.md` §2.33.
 
 ---
 
-## 39. How to re-snapshot this file
+## 39. Cross-user chat delivery + dynamic "events attended"
+
+_Last updated: 2026-05-22 (commit 1ccd35d)_
+
+### 39.1 Messages now send (the root cause: RLS recursion)
+
+Symptom: sending a message showed the failed-retry indicator and a "couldn't
+send" toast reading `[object Object]`. The send was actually being **rejected**,
+not just undelivered.
+
+Root cause: `00011`'s `chat_members` SELECT policy sub-queries `chat_members`
+inside its own `USING` clause:
+
+```sql
+USING (EXISTS (SELECT 1 FROM chat_members cm
+               WHERE cm.chat_id = chat_members.chat_id AND cm.user_id = auth.uid()))
+```
+
+Evaluating it requires reading `chat_members`, which re-applies the same policy
+→ Postgres aborts with *"infinite recursion detected in policy for relation
+chat_members"*. The `chats` SELECT and `messages` SELECT/INSERT policies all
+sub-query `chat_members`, so that recursion broke the chat list, message reads,
+and message **sends** (the failing INSERT = the failed-retry indicator).
+
+Fix (**migration `00023`**): a `SECURITY DEFINER` helper
+`is_chat_member(chat_id, user_id)` that checks membership while bypassing RLS
+(so it can't recurse), and the four chat policies (`chat_members`/`chats` SELECT,
+`messages` SELECT/INSERT) rewritten to use it — same access semantics, no
+recursion. Also, `api.sendMessage` now throws the real PostgREST message instead
+of the raw object (no more `[object Object]`).
+
+### 39.2 Delivery robustness (once sends work)
+
+Two complementary improvements so the recipient reliably sees messages:
+
+1. **Realtime auth.** RLS-scoped `postgres_changes` are only delivered to a
+   Realtime socket carrying the subscriber's JWT. AuthBootstrap now calls
+   `supabase.realtime.setAuth(session.access_token)` on session establish /
+   `TOKEN_REFRESHED` (and `setAuth(null)` on sign-out).
+2. **Refresh on open/return.** `useChatMessages` gained `reload()` (merges
+   freshly-fetched rows with any still-pending optimistic ones), and the chat
+   thread + chat tab re-fetch on focus — so the recipient sees the latest even
+   if a realtime event was missed.
+
+(For instant live delivery, migration `00012` — `ALTER PUBLICATION
+supabase_realtime ADD TABLE messages` — must also be applied on the hosted
+project.)
+
+### 39.3 "Events attended" is dynamic
+
+The Profile-tab ATTENDED stat showed a static `me.events_attended` field. It now
+uses `joined.size` — the user's confirmed event subscriptions, which
+AuthBootstrap hydrates from `event_subscriptions` (status='confirmed') in
+Supabase and which updates as you join/leave. This matches how HOSTED and RATING
+are already computed live.
+
+### 39.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **385/385, 52 suites** (no new tests —
+the chat fixes are RLS/realtime/focus behavior on the live path, exercised
+manually on the hosted project; the attended count change is covered by the
+existing profile-tab render test). Apply migration `00023` on the hosted
+project, then: sign in as two users sharing a chat, send from one → it sends
+(no more failed-retry) and appears for the other (live, and on reopening the
+chat); the ATTENDED number reflects real confirmed subscriptions.
+
+See `docs/TEST_PLAN.md` §2.34.
+
+---
+
+## 40. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
