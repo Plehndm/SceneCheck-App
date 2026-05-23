@@ -7,7 +7,10 @@
 // an opaque "CORS error" with no body. Each function imports
 // `handlePreflight` and short-circuits OPTIONS at the top of its handler.
 
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Deno's native npm specifier — avoids esm.sh, which intermittently 522s during
+// `supabase functions deploy` ("Import failed: 522"). This is also the form
+// current Supabase Edge Function templates use.
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
