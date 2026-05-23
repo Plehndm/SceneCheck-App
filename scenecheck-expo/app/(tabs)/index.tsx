@@ -19,6 +19,7 @@ import { SCSection } from '@/components/SCSection';
 import { SCText } from '@/components/SCText';
 import { SCIcon } from '@/components/SCIcon';
 import { SCEventCard } from '@/components/SCEventCard';
+import { SCRailSkeleton } from '@/components/SCSkeleton';
 import { SCPersonRow } from '@/components/SCPersonRow';
 import { MapPreview } from '@/components/MapPreview';
 import { LegendDot } from '@/components/LegendDot';
@@ -44,8 +45,12 @@ export default function HomeScreen() {
   // mode (where the fixture list is unfiltered). See hooks/useSearch.
   const { results: peopleResults, reload: reloadPeople } = useSearchPeople('');
   const peopleNearby = excludeSelf(peopleResults, meId).slice(0, 4);
+  // Honor the persisted discovery radius (miles → meters) so changing it in
+  // the Map/Settings re-fetches the in-range events here too, and their
+  // recommendations re-derive against your current interests.
+  const radiusM = Math.round(useStore(s => s.radius) * 1609.34);
   // Live in live mode, fixture array in mock mode — see hooks/useEvents.
-  const { events, loading, reload: reloadEvents } = useEvents();
+  const { events, loading, reload: reloadEvents } = useEvents({ radiusM });
   // id → event lookup for the conflict chip (resolves joined events' times in
   // live mode, where SC_EVENT_BY_ID only has the seeded events).
   const eventsById = Object.fromEntries(events.map(e => [e.id, e]));
@@ -116,7 +121,9 @@ export default function HomeScreen() {
           </Pressable>
         }
       >
-        {events.length === 0 && !loading ? (
+        {loading && events.length === 0 ? (
+          <SCRailSkeleton />
+        ) : events.length === 0 ? (
           <SCCard style={{ padding: 16, alignItems: 'center', gap: 6 }}>
             <SCText size={13} color={t.ink2} weight="600">No events nearby yet</SCText>
             <SCText size={11} color={t.ink3} style={{ textAlign: 'center', lineHeight: 16 }}>

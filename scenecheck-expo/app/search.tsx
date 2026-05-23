@@ -20,7 +20,12 @@ import { useEvents } from '@/hooks/useEvents';
 import { useSearchPeople, useSearchOrgs } from '@/hooks/useSearch';
 import { excludeSelf } from '@/lib/people';
 import { whenRange } from '@/lib/date-time';
+import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
+import { pinColor } from '@/components/Map/types';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { RADIUS } from '@/theme/tokens';
+
+const MILES_TO_METERS = 1609.34;
 import type { SCEvent, Account } from '@/types/domain';
 
 type Tab = 'all' | 'events' | 'people' | 'orgs';
@@ -35,14 +40,23 @@ export default function SearchScreen() {
   );
   const [query, setQuery] = useState('');
   const meId = useStore(s => s.me.id);
+  // Same interest set the home feed + map use, so an event's icon colour /
+  // label reflects whether it's yours / a friend's / recommended / other —
+  // and recolours reactively when you add or remove interests.
+  const meInterests = useStore(s => s.me.interests ?? []);
+  // Discovery radius (miles → meters at the query boundary). Changing it in
+  // the Map/Settings refetches the in-range events, so their recommendations
+  // re-derive against your current interests.
+  const radiusM = Math.round(useStore(s => s.radius) * MILES_TO_METERS);
   const lowered = query.trim().toLowerCase();
 
   // Events come from useEvents (live or fixtures) and are filtered locally.
   // People + orgs come from Supabase (fixtures in mock mode); the hooks
   // already apply the query, so when it's empty we just cap the default view.
-  const { events: allEvents, reload: reloadEvents } = useEvents();
-  const { results: peopleAll, reload: reloadPeople } = useSearchPeople(query);
-  const { results: orgsAll, reload: reloadOrgs } = useSearchOrgs(query);
+  const { events: allEvents, loading: eventsLoading, reload: reloadEvents } = useEvents({ radiusM });
+  const { results: peopleAll, loading: peopleLoading, reload: reloadPeople } = useSearchPeople(query);
+  const { results: orgsAll, loading: orgsLoading, reload: reloadOrgs } = useSearchOrgs(query);
+  const loading = eventsLoading || peopleLoading || orgsLoading;
 
   const events = useMemo(() => {
     if (!lowered) return allEvents.slice(0, 6);
@@ -67,29 +81,45 @@ export default function SearchScreen() {
     (showPeople ? people.length : 0) +
     (showOrgs ? orgs.length : 0);
 
-  const renderEvent = (e: SCEvent) => (
-    <Pressable
-      key={`e-${e.id}`}
-      onPress={() => router.push(`/event/${e.id}` as never)}
-      style={({ pressed }) => [pressed && { opacity: 0.9 }]}
-    >
-      <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-        <View style={{
-          width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: t.accentBlue,
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <SCIcon name="pin" size={16} color="white" />
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <SCText variant="display" size={14}>{e.title}</SCText>
-          <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-            {whenRange(e)} · {e.where}
-          </SCText>
-        </View>
-        <SCIcon name="chevron-right" size={14} color={t.ink3} />
-      </SCCard>
-    </Pressable>
-  );
+  const renderEvent = (e: SCEvent) => {
+    // Colour + label from the shared category, so search agrees with the
+    // home feed, the map legend, and the event detail.
+    const accent = pinColor(e, t, meInterests);
+    const label = EVENT_CATEGORY_LABEL[eventCategory(e, meInterests)];
+    return (
+      <Pressable
+        key={`e-${e.id}`}
+        onPress={() => router.push(`/event/${e.id}` as never)}
+        style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+      >
+        <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+          <View style={{
+            width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: accent,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <SCIcon name="pin" size={16} color="white" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <SCText variant="mono" size={9} weight="600" color={accent}>{label}</SCText>
+              {isAlsoRecommended(e, meInterests) && (
+                <View style={{
+                  backgroundColor: t.accentBlue, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                }}>
+                  <SCText variant="mono" size={9} weight="600" color="white">RECOMMENDED</SCText>
+                </View>
+              )}
+            </View>
+            <SCText variant="display" size={14} style={{ marginTop: 2 }}>{e.title}</SCText>
+            <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+              {whenRange(e)} · {e.where}
+            </SCText>
+          </View>
+          <SCIcon name="chevron-right" size={14} color={t.ink3} />
+        </SCCard>
+      </Pressable>
+    );
+  };
 
   const renderPerson = (p: Account) => (
     <Pressable
@@ -202,35 +232,41 @@ export default function SearchScreen() {
       </ScrollView>
 
       {/* Results */}
-      <View style={{ paddingHorizontal: 14, gap: 8 }}>
-        {showEvents && (
-          <>
-            {tab === 'all' && events.length > 0 && sectionLabel('Events')}
-            {events.map(renderEvent)}
-          </>
-        )}
-        {showPeople && (
-          <>
-            {tab === 'all' && people.length > 0 && sectionLabel('People')}
-            {people.map(renderPerson)}
-          </>
-        )}
-        {showOrgs && (
-          <>
-            {tab === 'all' && orgs.length > 0 && sectionLabel('Orgs')}
-            {orgs.map(renderOrg)}
-          </>
-        )}
+      {loading && visibleCount === 0 ? (
+        <SCListSkeleton rows={5} />
+      ) : (
+        <View style={{ paddingHorizontal: 14, gap: 8 }}>
+          {showEvents && (
+            <>
+              {tab === 'all' && events.length > 0 && sectionLabel('Events')}
+              {events.map(renderEvent)}
+            </>
+          )}
+          {showPeople && (
+            <>
+              {tab === 'all' && people.length > 0 && sectionLabel('People')}
+              {people.map(renderPerson)}
+            </>
+          )}
+          {showOrgs && (
+            <>
+              {tab === 'all' && orgs.length > 0 && sectionLabel('Orgs')}
+              {orgs.map(renderOrg)}
+            </>
+          )}
 
-        {visibleCount === 0 && (
-          <SCCard style={{ padding: 24, alignItems: 'center' }}>
-            <SCText variant="displayTight" size={20}>No matches</SCText>
-            <SCText size={13} color={t.ink3} style={{ marginTop: 6 }}>
-              Try a different search term or tab.
-            </SCText>
-          </SCCard>
-        )}
-      </View>
+          {visibleCount === 0 && (
+            <SCCard style={{ padding: 24, alignItems: 'center' }}>
+              <SCText variant="displayTight" size={20}>No matches</SCText>
+              <SCText size={13} color={t.ink3} style={{ marginTop: 6, textAlign: 'center' }}>
+                {query.trim()
+                  ? 'Try a different search term or tab.'
+                  : 'Nothing to show yet. Pull to refresh.'}
+              </SCText>
+            </SCCard>
+          )}
+        </View>
+      )}
     </Screen>
   );
 }

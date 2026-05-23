@@ -6,9 +6,9 @@
 // FR4.4 pin color-coding: handled inside Map by `pinColor()`.
 // FR1.5 location permission: requested by useLocation().
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -16,14 +16,21 @@ import { SCButton } from '@/components/SCAddButton';
 import { SCIcon } from '@/components/SCIcon';
 import { LegendDot } from '@/components/LegendDot';
 import { Map } from '@/components/Map';
+import { SCTag } from '@/components/SCTag';
+import { eventLatLng, pinColor, type LatLng } from '@/components/Map/types';
 import { useLocation } from '@/hooks/useLocation';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvents } from '@/hooks/useEvents';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
 import { whenRange } from '@/lib/date-time';
+import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
+
+// Show at most this many interest tags on the focused-event card; the rest
+// collapse into a "+N" pill so the card height stays bounded.
+const MAX_FOCUSED_TAGS = 3;
 
 // Discovery-range presets, in miles. Anything off this list (e.g. 7.5,
 // set via the Settings slider's 0.5-mi steps) is treated as "custom" and
@@ -54,14 +61,31 @@ export default function MapTab() {
   const [focused, setFocused] = useState<SCEvent | null>(null);
   // Pull pins from the API. In live mode this hits the rank_events_query
   // RPC against PostGIS; in mock mode it returns SC_EVENTS synchronously.
-  const { events } = useEvents({
+  const { events, reload: reloadEvents } = useEvents({
     lat: coords?.latitude,
     lng: coords?.longitude,
     radiusM,
   });
 
+  // Arriving from an event's "View location" (/(tabs)/map?focus=<id>): select
+  // that event (focused card) and center the map on it. centerOn wins over the
+  // you-are-here center; mapKey forces the native map to re-init centered there.
+  const params = useLocalSearchParams<{ focus?: string }>();
+  const [centerOn, setCenterOn] = useState<LatLng | null>(null);
+  const [mapKey, setMapKey] = useState('map-default');
+  useEffect(() => {
+    const fid = params.focus;
+    if (!fid) return;
+    const ev = events.find(e => e.id === fid);
+    if (!ev) return; // events may still be loading — retry on the next run
+    setFocused(ev);
+    setCenterOn(eventLatLng(ev));
+    setMapKey(`map-focus-${ev.id}`);
+    router.setParams({ focus: '' }); // consume so a later tab visit doesn't re-center
+  }, [params.focus, events]);
+
   return (
-    <Screen scroll={false}>
+    <Screen scroll={false} onRefresh={reloadEvents}>
       <View style={{
         paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12,
         flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
@@ -107,10 +131,13 @@ export default function MapTab() {
           borderWidth: 1, borderColor: t.line,
         }}>
           <Map
+            key={mapKey}
             events={events}
             user={coords}
+            centerOn={centerOn ?? undefined}
             radiusM={radiusM}
             meInterests={meInterests}
+            selectedId={focused?.id}
             onPinPress={(e) => setFocused(e)}
             style={{ width: '100%', height: '100%' }}
           />
@@ -184,11 +211,45 @@ export default function MapTab() {
               onPress={() => router.push(`/event/${focused.id}` as never)}
               style={({ pressed }) => [pressed && { opacity: 0.85 }]}
             >
+              {/* Category chip — same yours/friend/recommended/other coding as
+                  the map pins + legend, plus the RECOMMENDED badge when a
+                  friend's event also matches your interests. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: pinColor(focused, t, meInterests) }} />
+                <SCText variant="mono" size={9.5} weight="600" color={pinColor(focused, t, meInterests)}>
+                  {EVENT_CATEGORY_LABEL[eventCategory(focused, meInterests)]}
+                </SCText>
+                {isAlsoRecommended(focused, meInterests) && (
+                  <View style={{
+                    backgroundColor: t.accentBlue, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                  }}>
+                    <SCText variant="mono" size={9} weight="600" color="white">RECOMMENDED</SCText>
+                  </View>
+                )}
+              </View>
               <SCText variant="display" size={15}>{focused.title}</SCText>
               <SCText variant="mono" size={11} color={t.ink2} style={{ marginTop: 2 }}>
                 {whenRange(focused)}
               </SCText>
               <SCText size={12} color={t.ink3} style={{ marginTop: 2 }}>{focused.where}</SCText>
+              {/* Interest tags — truncated past MAX_FOCUSED_TAGS into a +N pill. */}
+              {focused.interests.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {focused.interests.slice(0, MAX_FOCUSED_TAGS).map(tag => (
+                    <SCTag key={tag} tag={tag} size="sm" tone="soft" />
+                  ))}
+                  {focused.interests.length > MAX_FOCUSED_TAGS && (
+                    <View style={{
+                      paddingVertical: 4, paddingHorizontal: 9, borderRadius: RADIUS.pill, backgroundColor: t.subtle,
+                      justifyContent: 'center',
+                    }}>
+                      <SCText variant="mono" size={12} color={t.ink2}>
+                        +{focused.interests.length - MAX_FOCUSED_TAGS}
+                      </SCText>
+                    </View>
+                  )}
+                </View>
+              )}
               <View style={{ marginTop: 10 }}>
                 <SCButton label="OPEN EVENT" onPress={() => router.push(`/event/${focused.id}` as never)} />
               </View>

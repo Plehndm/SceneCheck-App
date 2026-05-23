@@ -19,6 +19,7 @@ import { SCTag } from '@/components/SCTag';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCAddButton } from '@/components/SCAddButton';
 import { EditEventSheet } from '@/components/EditEventSheet';
+import { RateEventSheet } from '@/components/RateEventSheet';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvent } from '@/hooks/useEvent';
@@ -27,7 +28,8 @@ import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
 import { SC_CHATS } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
-import { isRecommendedFor } from '@/lib/events';
+import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
+import { pinColor } from '@/components/Map/types';
 import { RADIUS } from '@/theme/tokens';
 
 interface DetailRowProps {
@@ -71,6 +73,7 @@ export default function EventDetailScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [editOpen, setEditOpen] = useState(false);
+  const [rateOpen, setRateOpen] = useState(false);
 
   // useEvent: in mock mode this is synchronous (SC_EVENT_BY_ID lookup);
   // in live mode it hits `api.getEventById` and re-renders when the
@@ -129,19 +132,13 @@ export default function EventDetailScreen() {
   // so host actions also appear in live mode where hostId is a UUID.
   // Round-2 code-review finding §2 Important.
   const isHost = e.kind === 'yours' || e.hostId === meId;
-  // A scraped/app-created event only reads as "RECOMMENDED" when it matches one
-  // of your interests; otherwise it's just app-created (and muted).
-  const recommended = isRecommendedFor(e, me.interests ?? []);
-  const accent =
-    e.kind === 'yours' ? t.primary :
-    e.kind === 'friend' ? t.accentFriend :
-    e.kind === 'org' ? t.accentBlue :
-    recommended ? t.accentBlue : t.mapPinMute;
-  const label =
-    e.kind === 'yours' ? 'YOUR EVENT' :
-    e.kind === 'friend' ? 'FRIEND HOSTING' :
-    e.kind === 'org' ? 'ORG · POSTED' :
-    recommended ? 'RECOMMENDED · APP-CREATED' : 'APP-CREATED';
+  // Label + hero accent both from the shared category (lib/events), so they
+  // match the map legend and recolor/relabel as you add/remove interests.
+  const label = EVENT_CATEGORY_LABEL[eventCategory(e, me.interests ?? [])];
+  const accent = pinColor(e, t, me.interests ?? []);
+  // A friend-hosted event that also matches your interests shows a second
+  // "RECOMMENDED" pill next to the category label.
+  const alsoRec = isAlsoRecommended(e, me.interests ?? []);
 
   const handleToggleJoin = async () => {
     if (!id) return;
@@ -249,14 +246,24 @@ export default function EventDetailScreen() {
             </Pressable>
           }
         />
-        <View style={{ position: 'absolute', bottom: 16, left: 18, right: 18 }}>
+        <View style={{
+          position: 'absolute', bottom: 16, left: 18, right: 18,
+          flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+        }}>
           <View style={{
-            alignSelf: 'flex-start',
             backgroundColor: 'white',
             paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
           }}>
             <SCText variant="mono" size={10} weight="600" color={t.ink}>{label}</SCText>
           </View>
+          {alsoRec && (
+            <View style={{
+              backgroundColor: 'white',
+              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+            }}>
+              <SCText variant="mono" size={10} weight="600" color={t.accentBlue}>RECOMMENDED</SCText>
+            </View>
+          )}
         </View>
       </View>
 
@@ -279,8 +286,9 @@ export default function EventDetailScreen() {
           <DetailRow
             icon="pin"
             k={e.where}
-            v="0.4 mi from you · Open on map →"
-            onPress={() => router.push('/(tabs)/map' as never)}
+            v="Open on map →"
+            // Open the Map tab focused on this event (selected + centered).
+            onPress={() => router.push(`/(tabs)/map?focus=${e.id}` as never)}
           />
           <DetailRow
             icon="people"
@@ -386,6 +394,22 @@ export default function EventDetailScreen() {
         >
           <SCIcon name="chat" size={20} color={t.ink} />
         </Pressable>
+        {/* Rate the event — not on your own event (you don't rate yourself). */}
+        {!isHost && (
+          <Pressable
+            onPress={() => setRateOpen(true)}
+            accessibilityLabel="Rate this event"
+            // Filled gold with a dark star so the rate-this-event affordance
+            // stands out instead of blending into the card row.
+            style={({ pressed }) => [{
+              width: 56, height: 56, borderRadius: RADIUS.lg,
+              borderWidth: 1, borderColor: t.warn, backgroundColor: t.warn,
+              alignItems: 'center', justifyContent: 'center',
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon name="star" size={22} color={t.ink} />
+          </Pressable>
+        )}
         <View style={{ flex: 1 }}>
           <SCAddButton
             joined={isJoined}
@@ -400,6 +424,13 @@ export default function EventDetailScreen() {
         event={e}
         onClose={() => setEditOpen(false)}
         onSaved={() => reloadEvent()}
+      />
+
+      <RateEventSheet
+        visible={rateOpen}
+        eventId={e.id}
+        eventTitle={e.title}
+        onClose={() => setRateOpen(false)}
       />
     </Screen>
   );

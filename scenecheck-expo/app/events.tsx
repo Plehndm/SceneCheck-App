@@ -12,10 +12,12 @@ import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCTag } from '@/components/SCTag';
 import { ConflictChip } from '@/components/ConflictChip';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvents } from '@/hooks/useEvents';
-import { isRecommendedFor } from '@/lib/events';
+import { isRecommendedFor, eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
+import { pinColor } from '@/components/Map/types';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
@@ -30,7 +32,7 @@ export default function EventsListScreen() {
   const meInterests = useStore(s => s.me.interests ?? []);
   // Live in live mode, fixture array in mock mode — same hook the
   // Home tab + Map tab use.
-  const { events: allEvents } = useEvents();
+  const { events: allEvents, loading, reload } = useEvents();
   // id → event lookup so the conflict chip can resolve joined events' times
   // (live mode — SC_EVENT_BY_ID only has the seeded ones).
   const eventsById = useMemo(
@@ -54,18 +56,11 @@ export default function EventsListScreen() {
     recommended: allEvents.filter(isRecommended).length,
   };
 
-  const accentFor = (e: SCEvent) =>
-    e.kind === 'yours' ? t.primary :
-    e.kind === 'friend' ? t.accentFriend :
-    isRecommended(e) ? t.accentBlue : t.mapPinMute;
-
-  const kindLabel = (e: SCEvent) =>
-    e.kind === 'yours' ? 'YOUR EVENT' :
-    e.kind === 'friend' ? 'FRIEND HOSTING' :
-    isRecommended(e) ? 'RECOMMENDED' : 'NEARBY';
+  const accentFor = (e: SCEvent) => pinColor(e, t, meInterests);
+  const kindLabel = (e: SCEvent) => EVENT_CATEGORY_LABEL[eventCategory(e, meInterests)];
 
   return (
-    <Screen>
+    <Screen onRefresh={reload}>
       <SCTopBar
         onBack={() => router.back()}
         subtitle="HAPPENING NEAR YOU"
@@ -119,12 +114,16 @@ export default function EventsListScreen() {
         ))}
       </ScrollView>
 
-      {list.length === 0 ? (
+      {loading && allEvents.length === 0 ? (
+        <SCListSkeleton rows={5} />
+      ) : list.length === 0 ? (
         <View style={{ paddingHorizontal: 18 }}>
           <SCCard style={{ padding: 24, alignItems: 'center' }}>
             <SCText variant="displayTight" size={20}>Nothing in this slice</SCText>
             <SCText size={13} color={t.ink3} style={{ marginTop: 6, textAlign: 'center' }}>
-              No events match this filter. Try a different one.
+              {allEvents.length === 0
+                ? 'No events nearby right now. Pull to refresh or widen your range.'
+                : 'No events match this filter. Try a different one.'}
             </SCText>
           </SCCard>
         </View>
@@ -155,6 +154,13 @@ export default function EventsListScreen() {
                     <SCText variant="mono" size={9} weight="600" color={accent}>
                       {kindLabel(e)}
                     </SCText>
+                    {isAlsoRecommended(e, meInterests) && (
+                      <View style={{
+                        backgroundColor: t.accentBlue, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                      }}>
+                        <SCText variant="mono" size={9} weight="600" color="white">RECOMMENDED</SCText>
+                      </View>
+                    )}
                     {joinedNow && (
                       <View style={{
                         backgroundColor: t.good, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,

@@ -8,6 +8,7 @@ import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
 import { SCIcon } from '@/components/SCIcon';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useChats } from '@/hooks/useChats';
 import { api } from '@/lib/api';
@@ -18,7 +19,7 @@ export default function ChatTab() {
   const t = useTokens();
   // useChats() reads from Supabase in live mode (the chats ⨝
   // chat_members ⨝ messages join) and SC_CHATS in mock mode.
-  const { chats, reload } = useChats();
+  const { chats, loading, reload } = useChats();
   const mock = api.isMock();
   // Re-fetch on every focus. The tab mounts (and does its initial fetch) at
   // app start while UNfocused — so the first time you actually open the tab,
@@ -53,7 +54,11 @@ export default function ChatTab() {
         </Pressable>
       </View>
 
-      {chats.length === 0 ? (
+      {loading && chats.length === 0 ? (
+        <View style={{ paddingTop: 14 }}>
+          <SCListSkeleton rows={4} />
+        </View>
+      ) : chats.length === 0 ? (
         <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
           <SCCard style={{ padding: 20, alignItems: 'center', gap: 6 }}>
             <SCText size={14} weight="600">No conversations yet</SCText>
