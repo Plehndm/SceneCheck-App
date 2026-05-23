@@ -7,6 +7,7 @@
 // Both surfaces share the events-by-this-account list and the ratings
 // chip if there are reviews.
 
+import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -64,6 +65,18 @@ export default function OtherProfileScreen() {
   // profiles row — so they resolve even for a private account, which we
   // surface to non-friends (interests only; everything else stays hidden).
   const { interests: userInterests, reload: reloadInterests } = useUserInterests(id);
+  // Count of events this person has attended (confirmed subscriptions). Their
+  // own event_subscriptions rows are RLS-hidden from us, so this goes through
+  // the attended_count RPC. 0 in mock mode.
+  const [attendedCount, setAttendedCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!id) { setAttendedCount(null); return; }
+    let cancelled = false;
+    api.getAttendedCount(id)
+      .then(n => { if (!cancelled) setAttendedCount(n); })
+      .catch(() => { if (!cancelled) setAttendedCount(0); });
+    return () => { cancelled = true; };
+  }, [id]);
   const refreshProfile = () => { reloadProfile(); reloadHosted(); reloadReviews(); reloadInterests(); };
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
@@ -300,19 +313,34 @@ export default function OtherProfileScreen() {
         </SCText>
       </View>
 
-      {!!person.bio && (
-        <View style={{ paddingHorizontal: 18, paddingBottom: 14 }}>
-          <SCText size={14} color={t.ink2} style={{ lineHeight: 20, textAlign: 'center' }}>
-            {person.bio}
-          </SCText>
-        </View>
-      )}
+      <View style={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+        <SCText
+          size={14}
+          color={person.bio ? t.ink2 : t.ink3}
+          style={{ lineHeight: 20, textAlign: 'center', fontStyle: person.bio ? 'normal' : 'italic' }}
+        >
+          {person.bio || 'No bio yet.'}
+        </SCText>
+      </View>
 
       {/* Stats row (orgs) */}
       {isOrg && (
         <View style={{ paddingHorizontal: 14, paddingBottom: 14, flexDirection: 'row', gap: 8 }}>
           <Stat label="FOLLOWERS" value={person.followers?.toLocaleString() ?? '0'} />
           <Stat label="EVENTS" value={String(hostedEvents.length)} />
+          <Stat
+            label="RATING"
+            value={avgRating ? `${avgRating}★` : '—'}
+            onPress={reviews.length > 0 ? () => router.push(`/ratings/${id}` as never) : undefined}
+          />
+        </View>
+      )}
+
+      {/* Stats row (people) — hosted / attended / rating, like your own tab. */}
+      {!isOrg && (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 14, flexDirection: 'row', gap: 8 }}>
+          <Stat label="HOSTED" value={String(hostedEvents.length)} />
+          <Stat label="ATTENDED" value={attendedCount != null ? String(attendedCount) : '—'} />
           <Stat
             label="RATING"
             value={avgRating ? `${avgRating}★` : '—'}

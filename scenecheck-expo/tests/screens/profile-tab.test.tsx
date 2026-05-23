@@ -29,6 +29,12 @@ describe('ProfileTab', () => {
     expect(getByText('RATING')).toBeTruthy();
   });
 
+  test('tapping the ATTENDED stat opens the joined-events list', () => {
+    const { getByText } = renderScreen(<ProfileTab />);
+    fireEvent.press(getByText('ATTENDED'));
+    expect(router.push).toHaveBeenCalledWith('/my-events');
+  });
+
   test('renders MY STUFF section with the friends count from the store', () => {
     const { getByText, getAllByText } = renderScreen(<ProfileTab />);
     expect(getByText('MY STUFF')).toBeTruthy();

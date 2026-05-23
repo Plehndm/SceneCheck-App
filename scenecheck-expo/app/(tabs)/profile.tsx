@@ -154,7 +154,7 @@ export default function ProfileTab() {
       <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
         <SCCard style={{ flexDirection: 'row', padding: 14, justifyContent: 'space-around' }}>
           <Stat label="HOSTED" value={String(hostedCount)} />
-          <Stat label="ATTENDED" value={String(joined.size)} />
+          <Stat label="ATTENDED" value={String(joined.size)} onPress={() => router.push('/my-events' as never)} />
           <Stat
             label="RATING"
             value={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★` : '—'}
@@ -220,13 +220,19 @@ export default function ProfileTab() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, onPress }: { label: string; value: string; onPress?: () => void }) {
   const t = useTokens();
-  return (
+  const content = (
     <View style={{ alignItems: 'center' }}>
       <SCText variant="displayTight" size={24}>{value}</SCText>
-      <SCText variant="mono" size={10} color={t.ink3} style={{ marginTop: 2 }}>{label}</SCText>
+      <SCText variant="mono" size={10} color={onPress ? t.primary : t.ink3} style={{ marginTop: 2 }}>{label}</SCText>
     </View>
+  );
+  if (!onPress) return content;
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+      {content}
+    </Pressable>
   );
 }
 
