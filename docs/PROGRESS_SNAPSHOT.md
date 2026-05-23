@@ -76,6 +76,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Fix: a friend showing twice (duplicate React key).** Signed in as one user, a friend rendered twice in the friends list with the same key. Root cause: a cross friend-request (A→B *and* B→A) that both get accepted leaves two accepted rows — `UNIQUE(from_id,to_id)` permits the mirror pair — so `fetchFriends` (which unions the `from_id=me` and `to_id=me` queries) returned the same profile from both sides. Fix: `fetchFriends` now dedupes the union by id (repairs display for rows already in the DB), and `sendFriendRequest` no-ops when a pending/accepted friendship already exists in **either** direction so a mirror row can't form. No test-count change (378/378); `tsc` clean. See §37. |
 | 2026-05-22 | **Search ALL filter + auto-selected filters, "Orgs" rename, and avatars stored in Supabase.** Four UX/data items. **(1)** The Profile-tab "Following" row is renamed **"Orgs"** (it opens your followed-orgs list). **(2)** "Browse orgs" now opens Search with the **orgs** filter pre-selected, and "Find people" / "Find more people" pre-select the **people** filter — via a new `?tab=` param `search.tsx` reads on open. **(3)** Search gained an **ALL** tab (now the default) that shows events + people + orgs in one combined feed, so you don't have to click between filters; the per-type tabs still narrow. **(4)** Profile photos are now **stored in Supabase**: new migration `00022` adds a public `avatars` storage bucket + per-user RLS, `api.uploadAvatar` uploads the picked image and persists the public URL on `profiles.avatar_url` (which AuthBootstrap already loads into `me.picture`), `api.removeAvatar` clears it; the Profile tab uploads on change (optimistic preview + revert on failure) so the photo is retained and loads on every device. +7 tests (385/385); `tsc` clean. See §38. |
 | 2026-05-22 | **Chat send fixed (RLS recursion) + delivery robustness + dynamic "events attended."** **(1) Messages now send.** The real blocker was an **infinite-recursion RLS policy**: `chat_members`' SELECT policy (`00011`) sub-queried `chat_members` itself, so Postgres aborted (`infinite recursion detected in policy for relation chat_members`) on every RLS-checked chat access — the failing `messages` INSERT surfaced as the "couldn't send / [object Object]" failed-retry indicator, and it also broke the chat list + message reads. Migration `00023` adds a `SECURITY DEFINER` `is_chat_member()` helper (bypasses RLS, so no recursion) and rewrites the four chat policies to use it. `api.sendMessage` now throws the real PostgREST message instead of `[object Object]`. **(2) Delivery robustness:** AuthBootstrap authorizes Realtime with the user JWT (`realtime.setAuth`) so RLS `postgres_changes` are delivered, and the chat thread + chat tab re-fetch on focus (new `useChatMessages.reload`) so the recipient sees messages even if a realtime event was missed. **(3) "Events attended" is dynamic:** the Profile ATTENDED stat now uses the live `joined` set size (confirmed subscriptions from Supabase) instead of a static field. No test-count change (385/385); `tsc` clean. See §39. |
+| 2026-05-22 | **Fix the profile "Message" button (second chat-send bug).** After the RLS fix, sending still failed from a profile with `invalid input syntax for type uuid: "dm-<uuid>"`. Cause: the other-profile **Message** button navigated to `/chat/dm-${id}` — a fabricated mock-style chat id — so live mode pushed that non-UUID straight into the `messages` insert. It now calls `api.createChat([id], 'dm')` (RPC → real chat id in live; the `dm-<id>` stable id in mock) and routes to `/chat/<id>`, matching the new-chat flow. +1 test (386/386); `tsc` clean. See §39.5. |
 
 ### Current layout
 
@@ -2528,6 +2529,18 @@ project, then: sign in as two users sharing a chat, send from one → it sends
 chat); the ATTENDED number reflects real confirmed subscriptions.
 
 See `docs/TEST_PLAN.md` §2.34.
+
+### 39.5 Follow-up: the profile "Message" button (commit ce09429)
+
+After `00023` was applied, sending still failed when starting a chat from a
+profile, with `invalid input syntax for type uuid: "dm-<uuid>"`. The
+other-profile **Message** button (`app/profile/[id].tsx`) navigated to
+`/chat/dm-${id}` — a fabricated, mock-style chat id — so in live mode that
+non-UUID string was sent straight into the `messages` insert (`chat_id`). It now
+calls `api.createChat([id], 'dm')` — which returns the real chat id from the
+`create_chat` RPC in live mode (and the legacy `dm-<id>` stable id in mock) — and
+routes to `/chat/<id>`, the same path `new-chat` uses. +1 regression test in
+`other-profile.test.tsx` (MESSAGE → `createChat` → `/chat/dm-p1` in mock). 386/386.
 
 ---
 
