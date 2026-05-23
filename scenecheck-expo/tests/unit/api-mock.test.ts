@@ -136,6 +136,18 @@ describe('api.subscribeToEvent (mock)', () => {
   });
 });
 
+describe('api.rateEvent (mock)', () => {
+  test('returns rated:true without hitting a backend', async () => {
+    expect(await api.rateEvent('e1', 5, 'great event')).toEqual({ rated: true });
+  });
+});
+
+describe('api.deleteRating (mock)', () => {
+  test('returns deleted:true without hitting a backend', async () => {
+    expect(await api.deleteRating('e1')).toEqual({ deleted: true });
+  });
+});
+
 describe('api.sendFriendRequest (mock)', () => {
   test('returns pending status', async () => {
     const result = await api.sendFriendRequest('p2');
