@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **391/391** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.38 — chat list refresh, rejoin button, joined-icon colors, live conflict chip)._
+_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **406/406** across 55 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.42 — edit/delete reviews, bolder rate symbol, selected map pin)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1209,6 +1209,107 @@ recommended/other + recolor with interests); and `ConflictChip` takes an
 **What this section deliberately does NOT do:** add a live navigation/RLS harness
 for the focus refetch or the live conflict lookup — both are validated on the
 hosted project. No new migrations.
+
+---
+
+### 2.39 Consistent event category, map View-location, past/upcoming, rating system (post-§2.38 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §44._
+
+Four items: a single `eventCategory` classifier feeds both pin color and label
+(they could disagree before); an event's **View location** opens the Map focused
+on that event (`Map` `centerOn` prop + `/(tabs)/map?focus=<id>`); the joined-events
+screen splits **Upcoming** / **Past** (new `SCEvent.startAt`); and a rating system
+(`RateEventSheet` → `api.rateEvent` upsert into `ratings`, linked to the host via
+`events.creator_id`; migration `00026` adds the own-row UPDATE/DELETE policies).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `lib/events.ts` (`eventCategory`, `EVENT_CATEGORY_LABEL`) | `tests/unit/events.test.ts` (NEW, +5) | `yours`/`friend` win over interest match; non-yours/non-friend is `recommended` only on a shared interest tag (else `other`); the label map covers every category; `isRecommendedFor` is false with no interests, true on a shared tag. |
+| `lib/api.ts` `fetchEvents` (live interest merge) | covered (live) | Root cause of "NEARBY on home, RECOMMENDED on detail": `rank_events_query` is a SETOF RPC, so its rows can't carry a PostgREST `event_interests` embed → empty interests → every live event read as `other` on the feed + map. `fetchEvents` now fetches the tags for the ranked ids and merges them in. Validated on the hosted project; mock mode (`SC_EVENTS`) is unaffected. |
+| `lib/api.ts` `rateEvent` | `tests/unit/api-mock.test.ts` (+1) | Mock mode returns `{ rated: true }` without a backend call. |
+| `Map` `centerOn`, `app/(tabs)/map.tsx` `?focus`, `app/my-events.tsx` past/upcoming, `RateEventSheet`, event-detail rate button + linked host | covered | Navigation/live behavior; existing Map / my-events / event-detail render tests still pass (the jest navigation mock makes the focus param + map recenter a no-op; the past/upcoming split keeps mock fixtures — no `startAt` — as Upcoming). |
+
+**Delivered count**: 397 / 397 (+6). 54 suites (new `events.test.ts`); `tsc` clean.
+
+**What this section deliberately does NOT do:** render the device map to assert the
+`centerOn` pan, or hit a live `ratings` table — both are validated on the hosted
+project after applying migration `00026`.
+
+---
+
+### 2.40 Friend+recommended dual label, joined-list focus refresh, search colours, radius-driven feed (post-§2.39 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §45._
+
+Four live-reported follow-ups: a friend-hosted event matching your interests now
+also shows a **RECOMMENDED** badge (`isAlsoRecommended`); the events-you've-joined
+screen reloads on focus + hides mid-leave events; search rows colour by category
+from your live interests instead of a fixed blue; and home + search honour the
+persisted discovery radius so changing it re-fetches the in-range feed.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `lib/events.ts` (`isAlsoRecommended`) | `tests/unit/events.test.ts` (+3) | True only for a `friend` event sharing an interest; false with no/again-no shared interest; false when the match already makes the event its own `recommended` category (`other`) or when it's `yours`. |
+| `SCEventCard`, `app/events.tsx`, `app/search.tsx`, `app/event/[id].tsx` (RECOMMENDED badge) | covered | Render the extra badge from `isAlsoRecommended`; existing card/list/detail render tests still pass. |
+| `app/search.tsx` (`pinColor` icon + radius), `app/(tabs)/index.tsx` (radius) | covered | Search icon colour + label derive from `pinColor`/`eventCategory` over the live `meInterests`; home + search pass `radiusM` to `useEvents`. Mock fixtures keep their interests so categories are unchanged in tests. |
+| `app/my-events.tsx` (`useFocusEffect` reload + `pendingLeave` filter) | covered | Reloads on focus and excludes pending-leave events; the jest navigation mock makes `useFocusEffect` a no-op, so the existing render test still passes. |
+
+**Delivered count**: 400 / 400 (+3). 54 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live navigation harness to
+assert the focus refetch or the radius-driven refetch, or a real friend-hosted
+matching event — all verified on the hosted project. No new migrations.
+
+---
+
+### 2.41 Map focused-card chip + interests, loading skeletons, refresh indicator (post-§2.40 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §46._
+
+The map focused-event card gains the category chip + `RECOMMENDED` badge + the
+event's interest tags (truncated past 3 into a "+N" pill); new reusable
+`SCSkeleton`/`SCListSkeleton`/`SCRailSkeleton` + `SCEmptyState` give every data
+screen a shape-matched loading skeleton and a `!loading`-gated empty state; and
+`Screen` shows a spinning "REFRESHING" pill on all platforms while refreshing,
+with each page's handler re-running all of its queries.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `components/SCSkeleton.tsx` (NEW), `components/SCEmptyState.tsx` (NEW) | `tests/components/skeleton.test.tsx` (NEW, +5) | `SCSkeleton` renders one "Loading"-labelled block; `SCListSkeleton rows={3}` renders 9 (3 per row); `SCRailSkeleton` renders placeholder cards; `SCEmptyState` renders its title/subtitle and an optional action. |
+| `app/(tabs)/map.tsx` (focused-card chip + interests + `onRefresh`) | covered | Category chip/badge + truncated tags render; existing map render test still passes (mock fixtures populate interests). |
+| `app/(tabs)/index.tsx`, `app/events.tsx`, `app/search.tsx`, `app/my-events.tsx`, `app/(tabs)/chat.tsx`, `app/ratings/[hostId].tsx`, `app/attendees/[id].tsx` (skeleton + gated empty + refresh) | covered | Loading-gated skeleton/empty; in mock mode `loading` is false so the existing screen tests still see real rows. |
+| `components/Screen.tsx` (`RefreshIndicator`) | `tests/components/Screen.test.tsx` (existing) | Indicator only mounts while `refreshing`; existing web-button / RefreshControl wiring tests still pass. |
+
+**Delivered count**: 405 / 405 (+5). 55 suites (new `skeleton.test.tsx`); `tsc` clean.
+
+**What this section deliberately does NOT do:** drive a live fetch to assert the
+skeleton→list→empty transition or the spinning indicator timing — both are
+verified on the hosted project. No new migrations.
+
+---
+
+### 2.42 Edit/delete reviews, bolder rate symbol, selected map pin (post-§2.41 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §47._
+
+Your own reviews gain a "⋮" menu to edit (reopen the pre-filled rate sheet) or
+delete (`api.deleteRating`); the event-detail rate star becomes a filled gold
+button with a dark star; and the map highlights the focused/clicked pin via a new
+`Map` `selectedId` prop.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `lib/api.ts` `deleteRating` | `tests/unit/api-mock.test.ts` (+1) | Mock mode returns `{ deleted: true }` without a backend call. |
+| `app/ratings/[hostId].tsx` (⋮ menu + edit/delete), `components/RateEventSheet.tsx` (`initialStars`/`initialText` edit mode) | covered | "Mine" via `toMockId(me.id) === reviewerId`; menu/edit-sheet/confirm-delete wiring. Existing ratings render test still passes (mock self has reviews but the menu only adds a button). |
+| `components/SCIcon.tsx` (`more`, `trash`), `app/event/[id].tsx` (filled rate button), `components/Map/*` + `app/(tabs)/map.tsx` (`selectedId`) | covered | New icons render; rate button + selected-pin styling are visual; existing Map/event-detail render tests still pass (`selectedId` defaults undefined). |
+
+**Delivered count**: 406 / 406 (+1). 55 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** assert the dropdown open/close or
+the live delete/edit round-trip, or render the leaflet/native pin to check the
+selected size — all verified on the hosted project. Re-uses migration `00026`
+(own-row UPDATE/DELETE on `ratings`); no new migration.
 
 ---
 

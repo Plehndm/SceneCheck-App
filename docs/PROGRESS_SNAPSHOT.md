@@ -81,6 +81,10 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Compact event hero, other-profile stats, and a "joined events" list.** **(1)** The event-detail hero panel was 50% empty space — halved (240 → 120). **(2)** The `SCButton` `ghost` border was bumped `t.line` → `t.ink3` so the profile **Message** action unmistakably reads as a button. **(3)** Other people's profiles (friends + public) now show a **hosted / attended / rating** stat row like your own tab, and the bio area shows *"No bio yet."* when empty instead of nothing. Attended for other users goes through a new `attended_count()` RPC (migration `00025`, SECURITY DEFINER — `event_subscriptions` RLS hides others' rows). **(4)** The **ATTENDED** stat on your own profile is now tappable → a new `app/my-events.tsx` screen listing every event you've joined (new `api.fetchJoinedEvents` + `useJoinedEvents`), since there was no single place to see them. +4 tests (390/390, 53 suites); `tsc` clean. See §41. |
 | 2026-05-23 | **Join/leave button state fixed + linked event host.** **(1)** The join/joined button didn't reflect actual attendance, and leaving/re-joining didn't stick. Two causes: (a) AuthBootstrap built the `joined` set from raw `event_id` UUIDs, but every event id elsewhere is `toMockId(row.id)` (seeded events → `e1`…), so `isJoined('e1')` never matched the UUID set — now `joined` is `toMockId`-mapped; (b) `cancelSubscription` soft-deleted (`status='cancelled'`), but the `subscribe_to_event_atomic` RPC treats *any* existing row as "already subscribed", so re-joining was a no-op — `cancelSubscription` now hard-DELETEs the row (allowed by `00024`; the subscriber_count trigger COALESCEs NEW/OLD on delete). **(2)** The event-detail "Hosted by" row now shows the host's **name** (via `useProfile(hostId)`) and is a button that opens their profile (`/profile/<hostId>`); app-created events stay non-interactive. No test-count change (390/390); `tsc` clean. See §42. |
 | 2026-05-23 | **Chat list refresh, rejoin button, joined-event icon colors, live conflict chip.** **(1)** Existing chats didn't appear until you messaged the person: the Chat tab mounts/fetches at app start while unfocused, and it skipped its first focus — so the first time you actually opened it, it showed stale data. It now reloads on **every** focus. **(2)** Rejoining an event during the 5s leave grace showed the "Joined" toast but the button/chip didn't flip: `joinEvent` early-returned when the id was still in `joined` and never cleared `pendingLeave` (and `isJoined = joined.has && !pendingLeave.has`). `joinEvent` now clears `pendingLeave`. **(3)** The "events you've joined" list icons were a fixed blue — they now use `pinColor(e, tokens, meInterests)` so each matches its yours / friend / recommended / other label. **(4)** Recommendation already recomputes reactively from `me.interests` everywhere (via `isRecommendedFor`), and `toggleInterestSub` syncs `me.interests` — so adding/removing interests reclassifies events live; the joined-list icons (now `pinColor`) recolor with it too. **(5)** The overlap **conflict chip** only resolved joined events via `SC_EVENT_BY_ID` (seeded only); it now takes an `eventsById` prop that the events list + home build from the live feed, so overlaps are detected for real events. +1 test (391/391); `tsc` clean. See §43. |
+| 2026-05-23 | **Consistent event category, map "View location", past/upcoming joined events, event rating system.** **(1)** Color and label sometimes disagreed (e.g. an org event matching your interest showed a blue "recommended" pin under an "ORG · POSTED" label). New `lib/events.eventCategory` (yours > friend > recommended > other) is the single source for both — `pinColor` + every label (`SCEventCard`, events list, event detail) derive from it. (Live root cause: the home feed + map come from the `rank_events_query` RPC, whose SETOF rows can't carry a PostgREST embed, so `event_interests` was empty and every event read as NEARBY — only the detail page's direct table query had the tags. `fetchEvents` now merges the tags back in.) **(2)** An event's **View location** now opens the Map focused on that event: new `Map` `centerOn` prop (wins over the you-are-here center; `user ?? initialCenter` always centered on the user before), and `/(tabs)/map?focus=<id>` selects + centers it. **(3)** The "events you've joined" screen splits into **Upcoming** / **Past** (new `SCEvent.startAt` from `transformEventRow`). **(4) Rating system:** `RateEventSheet` (1–5 stars + optional review) on the event detail (non-host) → `api.rateEvent` upserts into `ratings` (migration `00026` adds the UPDATE policy so re-rating works); the rating links to the host via `events.creator_id`, so it appears in their reviews + computed average. +6 tests (397/397, 54 suites); `tsc` clean. See §44. |
+| 2026-05-23 | **Friend+recommended dual label, joined-list refresh, search colors, radius-driven feed.** **(1)** A **friend-hosted** event that also matches your interests now shows a **RECOMMENDED** badge next to "FRIEND HOSTING" (new `isAlsoRecommended` — `eventCategory` short-circuits on `friend`, keeping the friend colour, so the match was invisible before). Badge appears on the home card, events list, search row, and event-detail hero. **(2)** The **events-you've-joined** screen now reloads on focus (`useFocusEffect`) so joining/leaving elsewhere and navigating back reflects immediately — it was stale because the screen stays mounted under the stack and only fetched on mount — and hides events you're mid-leave on (`pendingLeave`). **(3)** **Search** event rows were a fixed blue and never reclassified; they now colour the icon via `pinColor` + show the category label / `RECOMMENDED` badge from your live interests. **(4)** Home + search now pass the persisted **discovery radius** to `useEvents` (only the Map did), so changing the radius re-fetches the in-range events and their recommendations re-derive. +3 tests (400/400, 54 suites); `tsc` clean. See §45. |
+| 2026-05-23 | **Map focused-card chip + interests, loading skeletons, refresh indicator.** **(1)** Selecting a pin now shows the **category chip** (yours/friend/recommended/other + the `RECOMMENDED` badge) and the event's **interest tags**, truncated past 3 into a "+N" pill, on the focused-event card. **(2)** New reusable `SCSkeleton` / `SCListSkeleton` / `SCRailSkeleton` + `SCEmptyState`: data screens now show a shape-matched **skeleton while loading** and an explicit empty state **only after** the fetch returns nothing (gated on `!loading` so the empty no longer flashes during load) — wired into home, events list, search, joined-events, chat, ratings, and attendees. **(3)** `Screen` shows a spinning **"REFRESHING"** pill on every platform while a pull/▾ refresh is in flight (native's RefreshControl spinner is easy to miss, web had none); refresh handlers re-run all of a page's queries, and the events-list/map/attendees screens that lacked refresh now have it. +5 tests (405/405, 55 suites); `tsc` clean. See §46. |
+| 2026-05-23 | **Edit/delete reviews, bolder rate symbol, selected map pin.** **(1)** Each of **your own** reviews on a host's ratings screen gets a **"⋮" menu** (new `more`/`trash` icons) → **Edit** (reopens `RateEventSheet` pre-filled with your stars + text; upsert overwrites) or **Delete** (confirm → new `api.deleteRating`, the own-row DELETE from migration `00026`). "Mine" = `api.toMockId(me.id) === r.reviewerId` (works in mock + live + seeded-self). **(2)** The event-detail **rate button** was a faint gold outline star that blended in — now a **filled gold button with a dark star** so it's clearly the review affordance. **(3)** Opening the map from an event's **View location** (and tapping any pin) now renders that pin **selected** — enlarged + dark-ringed on web, raised on native — via a new `Map` `selectedId` prop fed by the focused event. +1 test (406/406, 55 suites); `tsc` clean. See §47. |
 
 ### Current layout
 
@@ -2749,7 +2753,218 @@ See `docs/TEST_PLAN.md` §2.38.
 
 ---
 
-## 44. How to re-snapshot this file
+## 44. Consistent event category, map "View location", past/upcoming, rating system
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+### 44.1 One source for color + label (eventCategory)
+
+The label was derived from `event.kind` while the pin color was derived from
+interest match — so they could disagree (a matching **org** event showed a blue
+"Recommended" pin under an "ORG · POSTED" label; a matching scraped event vs not
+was handled ad-hoc per screen). New `lib/events.eventCategory(event, meInterests)`
+returns one bucket — `yours > friend > recommended (interest match) > other` —
+and `EVENT_CATEGORY_LABEL` maps it to the label. `pinColor`, `SCEventCard`, the
+events list, and the event-detail hero all use it, so color + label always match
+and both recolor/relabel as interests change. +5 unit tests (`events.test.ts`).
+
+**Live-mode root cause (the "NEARBY on home, RECOMMENDED on detail" bug):** the
+home feed + map get events from the `rank_events_query` RPC, but a SETOF RPC's
+result rows can't carry a PostgREST relation embed — so `event_interests` came
+back empty and every live event classified as `other` (NEARBY). The detail page
+uses `getEventById` (a direct table query that *does* embed the tags), so it
+alone showed RECOMMENDED. `fetchEvents` now fetches the tags for the ranked event
+ids in a follow-up query and merges them onto the rows before `transformEventRow`,
+so the feed, map, and detail page agree.
+
+### 44.2 "View location" centers the map on the event
+
+Both Map impls computed `center = user ?? initialCenter`, so the you-are-here
+location always won and `initialCenter` was ignored. Added a `centerOn` prop
+that takes precedence (web pans imperatively via the existing `Recenter`; native
+re-inits via a remount key). The event-detail location row now routes to
+`/(tabs)/map?focus=<id>`; the Map tab consumes the param to select that event
+(focused card) and center on it.
+
+### 44.3 Joined events split past / upcoming
+
+`transformEventRow` now carries `startAt` (raw ISO) on `SCEvent`; `app/my-events.tsx`
+groups the list into **Upcoming** and **Past** sections by comparing `startAt`
+to now (events without a start — mock fixtures — count as upcoming).
+
+### 44.4 Event rating system
+
+- **UI:** `components/RateEventSheet.tsx` — a bottom sheet with a 1–5 star picker
+  + an optional review. A star button on the event-detail bottom CTA opens it
+  (hidden on your own event).
+- **API:** `api.rateEvent` now upserts directly into `ratings` (on the
+  `(event_id, user_id)` PK) instead of calling the undeployed `rollup-rating`
+  Edge Function. Migration `00026` adds the own-row UPDATE/DELETE policies so
+  re-rating works (00011 only had SELECT + INSERT).
+- **Link to host:** ratings carry `event_id`; `api.fetchRatings(hostId)` joins
+  `ratings ⨝ events` on `events.creator_id`, so a rating automatically shows in
+  the host's reviews list and their computed average (profile RATING stat). No
+  separate avg column write needed — the profile computes the average live.
+
+### 44.5 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **397/397, 54 suites** (+6: `events.test.ts`
+category/recommend cases + the `rateEvent` mock). Live paths (centerOn on a real
+device map, the ratings upsert) are verified on the hosted project after applying
+migration `00026`.
+
+See `docs/TEST_PLAN.md` §2.39.
+
+---
+
+## 45. Friend+recommended dual label, joined-list refresh, search colors, radius-driven feed
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+Follow-ups after the §44 category work, all reported from a live build.
+
+### 45.1 A friend's event can ALSO be recommended
+
+`eventCategory` is a single bucket and short-circuits on `friend`, so a
+friend-hosted event that matched your interests stayed the friend colour with
+only the "FRIEND HOSTING" label — the interest match was invisible. New
+`lib/events.isAlsoRecommended(event, meInterests)` is true only for a `friend`
+event that shares an interest (an `other` match is already its own
+`recommended` category; your own event's recommendation is moot). When true, the
+UI shows an extra **RECOMMENDED** badge alongside the friend label, keeping the
+friend colour. Wired into `SCEventCard` (home), the events list, the search row,
+and the event-detail hero. +3 unit tests.
+
+### 45.2 "Events you've joined" refreshes on focus
+
+The screen's live list comes from `api.fetchJoinedEvents()` and only fetched on
+mount / when the `joined` set changed. Because it stays mounted under the nav
+stack, joining or leaving an event elsewhere and navigating back left it stale
+(the post-join server write also races the `joined`-triggered refetch). It now
+`reload()`s on `useFocusEffect`, and hides events you're mid-leave on
+(`pendingLeave`) so the list tracks the Join/Leave button immediately.
+
+### 45.3 Search events colour by category
+
+`app/search.tsx` rendered every event icon a fixed `accentBlue` and never passed
+`meInterests`, so search never reflected recommendations and didn't react to
+interest changes. The row now colours the icon via `pinColor(e, t, meInterests)`
+and shows the category label + the `RECOMMENDED` badge, all derived from the live
+interest set (a reactive store selector), so editing interests recolours search.
+
+### 45.4 Discovery radius drives the home + search feed
+
+Only the Map passed `radiusM` to `useEvents`; home and search called `useEvents()`
+with no radius, so the persisted discovery-range slider didn't affect them. Both
+now convert the store `radius` (miles → meters) and pass it, so changing the range
+re-fetches the in-range events — and since recommendation is a client-side derive
+over that list, the recommendations re-compute for exactly the events now in range
+(the efficiency the user asked for: only in-radius events are ever classified).
+
+### 45.5 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **400/400, 54 suites** (+3 `isAlsoRecommended`
+cases). The live paths (radius refetch, friend+recommended on a real friend event,
+search recolour) are verified on the hosted project. No new migrations.
+
+See `docs/TEST_PLAN.md` §2.40.
+
+---
+
+## 46. Map focused-card chip + interests, loading skeletons, refresh indicator
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+### 46.1 Focused-event card: category chip + truncated interests
+
+Selecting a map pin opened a focused card with only title/when/where. It now
+leads with the same **category chip** the pins + legend use — a coloured dot +
+`eventCategory` label (`pinColor`) and the `RECOMMENDED` badge
+(`isAlsoRecommended`) — and lists the event's **interest tags** below, capped at
+`MAX_FOCUSED_TAGS` (3) with a "+N" pill so the card height stays bounded.
+
+### 46.2 Loading skeletons + gated empty states
+
+New reusable primitives:
+- `components/SCSkeleton.tsx` — a pulsing placeholder block, plus `SCListSkeleton`
+  (N card rows) and `SCRailSkeleton` (horizontal event-card placeholders).
+- `components/SCEmptyState.tsx` — a consistent icon + title + subtitle (+ optional
+  action) "nothing came back" card.
+
+Data screens now render `{loading && empty ? <skeleton> : empty ? <emptyState> :
+<list>}`, so a still-fetching page shows a shape-matched skeleton and the empty
+state shows **only after** the fetch returns nothing (it used to flash during the
+live load because the empty check didn't consider `loading`). Wired into: home
+(rail), events list, search, joined-events, chat, ratings, attendees. Mock mode
+resolves synchronously (`loading` is false), so the fixtures/tests are unaffected.
+
+### 46.3 Refresh indicator + rerun-all-queries
+
+`Screen` now renders a spinning **"REFRESHING"** pill (top-centre, all platforms)
+whenever a refresh is in flight — the native `RefreshControl` spinner is easy to
+miss and web had no indicator at all. Refresh handlers re-run **all** of a page's
+queries (e.g. profile reloads profile + hosted + reviews + interests; search
+reloads events + people + orgs); the events list, map, and attendees screens that
+had no refresh path now expose one (`useEvents`/`useAttendees` `reload`).
+
+### 46.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **405/405, 55 suites** (+5: the new
+`skeleton.test.tsx` covering `SCSkeleton`/`SCListSkeleton`/`SCRailSkeleton`/
+`SCEmptyState`). The skeletons/refresh indicator only appear in live mode (or
+mid-refresh), so they're verified on the hosted project. No new migrations.
+
+See `docs/TEST_PLAN.md` §2.41.
+
+---
+
+## 47. Edit/delete reviews, bolder rate symbol, selected map pin
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+### 47.1 Edit / delete your own reviews
+
+On a host's ratings screen, a review you wrote now shows a **"⋮"** button
+(new `more` + `trash` icons in `SCIcon`) that opens an anchored dropdown:
+- **Edit review** → reopens `RateEventSheet` seeded with your stars + text (new
+  `initialStars`/`initialText` props; the sheet switches its copy to
+  "EDIT/UPDATE RATING"). Submitting upserts over the existing `(event_id,
+  user_id)` row.
+- **Delete review** → a confirm dialog, then `api.deleteRating(eventId)` (new;
+  deletes the caller's row — the own-row DELETE policy from migration `00026`),
+  then reloads the list + host so the average recomputes.
+
+"This is mine" is `api.toMockId(me.id) === r.reviewerId`: `me.id` is a raw UUID
+in live mode / `'me'` in mock, and `reviewerId` is `toMockId(user_id)`, so
+normalising `me.id` the same way matches in mock, live, and the seeded-self case.
+
+### 47.2 Bolder rate-event symbol
+
+The "rate this event" star on the event-detail CTA was a faint gold outline star
+on a plain card and blended into the row. It's now a **filled gold button with a
+dark star** (`backgroundColor: t.warn`, `color: t.ink`, size 22), so the review
+affordance is unmistakable.
+
+### 47.3 Selected map pin
+
+Arriving at the map from an event's **View location** centered on the event but
+left its pin looking unselected. New `Map` `selectedId` prop (fed `focused?.id`):
+the matching pin renders **selected** — enlarged with a dark ring on web
+(`CircleMarker` radius 13 + `t.ink` stroke), raised `zIndex` on native. Tapping
+any pin sets `focused`, so a tap highlights it the same way.
+
+### 47.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **406/406, 55 suites** (+1: `deleteRating`
+mock). Live re-rating/deletion needs migration `00026` applied (already required
+for re-rating); the selected-pin look + filled rate button are verified on the
+hosted project.
+
+See `docs/TEST_PLAN.md` §2.42.
+
+---
+
+## 48. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
