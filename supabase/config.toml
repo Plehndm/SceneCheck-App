@@ -12,7 +12,10 @@ max_rows = 1000
 
 [db]
 port = 54322
-major_version = 15
+# Must match the linked project's Postgres major version (the CLI warns when it
+# differs). Recent Supabase projects run Postgres 17; if your CLI/dashboard
+# reports a different number, set it here. Only affects local `supabase start`.
+major_version = 17
 
 [db.pooler]
 enabled = false
