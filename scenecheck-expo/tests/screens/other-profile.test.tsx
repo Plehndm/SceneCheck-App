@@ -3,6 +3,7 @@
 // actions) and the org branch (follow + stats + events).
 
 import { fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import OtherProfileScreen from '@/app/profile/[id]';
 import { renderScreen, resetStore, setRouteParams } from '../test-utils';
 import { useStore } from '@/store/useStore';
@@ -27,6 +28,18 @@ describe('OtherProfileScreen — person', () => {
     expect(getByText('MESSAGE')).toBeTruthy();
     expect(getByText(/Block /)).toBeTruthy();
     expect(getByText('Report account')).toBeTruthy();
+  });
+
+  test('MESSAGE opens the DM via createChat (not a fabricated dm-<id> route)', async () => {
+    // Regression: it used to navigate to `/chat/dm-${id}` directly, which in
+    // live mode sent a non-UUID chat id into the messages insert. It now goes
+    // through api.createChat → /chat/<id> (mock returns the dm-<id> stable id).
+    setRouteParams({ id: 'p1' });
+    (router.push as jest.Mock).mockClear();
+    const { getByText } = renderScreen(<OtherProfileScreen />);
+    fireEvent.press(getByText('MESSAGE'));
+    await new Promise(resolve => setTimeout(resolve, 0)); // createChat resolves
+    expect(router.push).toHaveBeenCalledWith('/chat/dm-p1');
   });
 
   test('tapping ADD on a public stranger adds them as a friend', () => {

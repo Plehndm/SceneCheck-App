@@ -241,6 +241,24 @@ export default function OtherProfileScreen() {
     });
   };
 
+  // Open (or create) a DM with this person via createChat — which returns the
+  // real chat id in live mode (RPC) and the legacy dm-<id> stable id in mock.
+  // Previously this navigated to a fabricated `dm-<id>` route, which in live
+  // mode sent that non-UUID straight into the messages insert ("invalid input
+  // syntax for type uuid").
+  const handleMessage = async () => {
+    if (!id) return;
+    try {
+      const { id: chatId } = await api.createChat([id], 'dm');
+      router.push(`/chat/${chatId}` as never);
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? `Couldn't open chat: ${e.message}` : "Couldn't open chat.",
+        kind: 'error',
+      });
+    }
+  };
+
   const handleBlock = () => {
     if (!id) return;
     showConfirm({
@@ -331,7 +349,7 @@ export default function OtherProfileScreen() {
             <View style={{ flex: 1 }}>
               <SCButton
                 label="Message"
-                onPress={() => router.push(`/chat/dm-${id}` as never)}
+                onPress={handleMessage}
                 variant="ghost"
               />
             </View>
