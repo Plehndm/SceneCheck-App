@@ -3083,6 +3083,23 @@ relied on `service_role` being a JWT to pass `ingest-scraped`'s default
 - The function's privileged insert still uses its **platform-injected** service
   key via `createAdminClient()` — unchanged; Supabase still injects it.
 
+**Real scraper (replaces the stub).** `scrapeEvents()` now fetches Eventbrite's
+public "events in Irvine" listing (`EVENTS_SOURCE_URL`, overridable) and parses
+the schema.org **`ItemList` JSON-LD** it embeds — far more stable than DOM
+scraping and dependency-free. It maps each Event to the ingest payload
+(`title`←name, `start_at`/`end_at`←ISO-normalized dates, `location`←`geo`
+lat/lng, `location_name`←venue, `description`→auto-tagging), skips events without
+a valid title/start/geo (ingest requires lat/lng), dedupes Eventbrite's repeated
+listings, and caps at `MAX_EVENTS` (40). A **`DRY_RUN=1`** mode scrapes + prints
+the payloads without POSTing (and without needing credentials) for testing —
+verified pulling 40 unique real Irvine events.
+
+**Deploy fix.** `_shared/supabase-client.ts` imported supabase-js from
+`https://esm.sh/@supabase/supabase-js@2`, which intermittently 522'd during
+`supabase functions deploy` ("Import failed: 522"). Switched to Deno's native
+`npm:@supabase/supabase-js@2` specifier (the current Supabase template form),
+fixing bundling for every Edge Function.
+
 CI-only change — no Jest/tsc surface, so the test count is unchanged (409/409).
 
 ---
