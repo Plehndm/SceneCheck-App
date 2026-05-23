@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **406/406** across 55 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.42 — edit/delete reviews, bolder rate symbol, selected map pin)._
+_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **409/409** across 56 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.44 — dark-mode contrast fixes + darker review icon)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1310,6 +1310,55 @@ button with a dark star; and the map highlights the focused/clicked pin via a ne
 the live delete/edit round-trip, or render the leaflet/native pin to check the
 selected size — all verified on the hosted project. Re-uses migration `00026`
 (own-row UPDATE/DELETE on `ratings`); no new migration.
+
+---
+
+### 2.43 Tappable reviewer, consistent follow count, EVENTS/HOSTED profile lists (post-§2.42 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §48._
+
+The ratings reviewer is now tappable → their profile; the profile "Orgs" count
+matches the resolved my-following list; the ATTENDED stat is renamed EVENTS and
+HOSTED becomes a tappable list; `my-hosting` shows all hosted events (current +
+past) split Upcoming/Past via `useHostedEvents`.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `app/(tabs)/profile.tsx` (EVENTS rename, HOSTED tap, resolved Orgs count) | `tests/screens/profile-tab.test.tsx` (updated +1) | Stat tiles read HOSTED/EVENTS/RATING; tapping EVENTS → `/my-events`; tapping HOSTED → `/my-hosting`. |
+| `app/my-hosting.tsx` (useHostedEvents + Upcoming/Past) | `tests/screens/my-hosting.test.tsx` (existing) | Still renders the headline + rows for `hostId==='me'` events and routes to `/event/<id>` (mock `useHostedEvents('me')` returns the same set; events without `startAt` land under Upcoming). |
+| `app/ratings/[hostId].tsx` (reviewer → profile), `app/my-following.tsx` (focus reload) | covered | Reviewer Pressable + focus reload; existing ratings/following render tests still pass. |
+
+**Delivered count**: 407 / 407 (+1). 55 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live harness for the
+followed-org resolution/persistence or the past/upcoming hosted split — verified
+on the hosted project. No new migrations.
+
+---
+
+### 2.44 Dark-mode contrast fixes + darker review icon (post-§2.43 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §49._
+
+Active filled-pill labels (settings palette, ratings star filters, events filter,
+search tabs, map radius) used hardcoded `'white'` over a `t.ink` fill that turns
+near-white in dark mode → invisible; now `t.surface` (mode-adaptive inverse of
+ink). The gold review/rate star used `t.ink` (washed out in dark mode) → new
+constant `warnInk`.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `theme/tokens.ts` (`warnInk` constant) | `tests/unit/tokens.test.ts` (NEW, +2) | `warnInk` is `#1A1205` in every palette/mode; `surface !== ink` everywhere (active-pill label stays visible). |
+| `app/settings.tsx`, `app/ratings/[hostId].tsx`, `app/events.tsx`, `app/search.tsx`, `app/(tabs)/map.tsx` (`'white'` → `t.surface`) | covered | Color-only; existing screen tests assert text not colour, so unaffected. |
+| `app/event/[id].tsx` (rate star → `t.warnInk`; hero pills `'white'` → `t.card`) | covered | Color-only; hero category/RECOMMENDED pills now legible in dark mode. |
+| `components/Screen.tsx` (refresh icon/pill `t.ink2` → `t.ink`) | `tests/components/Screen.test.tsx` (existing) | Darker refresh affordance; existing web-button / RefreshControl wiring tests still pass. |
+| `supabase/config.toml` (`[db] major_version` 15 → 17) | n/a | Local-only Postgres version to match the linked project (CLI mismatch warning); not exercised by Jest. |
+
+**Delivered count**: 409 / 409 (+2). 56 suites (new `tokens.test.ts`); `tsc` clean.
+
+**What this section deliberately does NOT do:** snapshot-test rendered colours per
+mode — the invariant test (`surface !== ink`) guards the regression instead. No
+new migrations.
 
 ---
 

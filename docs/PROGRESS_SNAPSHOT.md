@@ -85,6 +85,9 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-23 | **Friend+recommended dual label, joined-list refresh, search colors, radius-driven feed.** **(1)** A **friend-hosted** event that also matches your interests now shows a **RECOMMENDED** badge next to "FRIEND HOSTING" (new `isAlsoRecommended` — `eventCategory` short-circuits on `friend`, keeping the friend colour, so the match was invisible before). Badge appears on the home card, events list, search row, and event-detail hero. **(2)** The **events-you've-joined** screen now reloads on focus (`useFocusEffect`) so joining/leaving elsewhere and navigating back reflects immediately — it was stale because the screen stays mounted under the stack and only fetched on mount — and hides events you're mid-leave on (`pendingLeave`). **(3)** **Search** event rows were a fixed blue and never reclassified; they now colour the icon via `pinColor` + show the category label / `RECOMMENDED` badge from your live interests. **(4)** Home + search now pass the persisted **discovery radius** to `useEvents` (only the Map did), so changing the radius re-fetches the in-range events and their recommendations re-derive. +3 tests (400/400, 54 suites); `tsc` clean. See §45. |
 | 2026-05-23 | **Map focused-card chip + interests, loading skeletons, refresh indicator.** **(1)** Selecting a pin now shows the **category chip** (yours/friend/recommended/other + the `RECOMMENDED` badge) and the event's **interest tags**, truncated past 3 into a "+N" pill, on the focused-event card. **(2)** New reusable `SCSkeleton` / `SCListSkeleton` / `SCRailSkeleton` + `SCEmptyState`: data screens now show a shape-matched **skeleton while loading** and an explicit empty state **only after** the fetch returns nothing (gated on `!loading` so the empty no longer flashes during load) — wired into home, events list, search, joined-events, chat, ratings, and attendees. **(3)** `Screen` shows a spinning **"REFRESHING"** pill on every platform while a pull/▾ refresh is in flight (native's RefreshControl spinner is easy to miss, web had none); refresh handlers re-run all of a page's queries, and the events-list/map/attendees screens that lacked refresh now have it. +5 tests (405/405, 55 suites); `tsc` clean. See §46. |
 | 2026-05-23 | **Edit/delete reviews, bolder rate symbol, selected map pin.** **(1)** Each of **your own** reviews on a host's ratings screen gets a **"⋮" menu** (new `more`/`trash` icons) → **Edit** (reopens `RateEventSheet` pre-filled with your stars + text; upsert overwrites) or **Delete** (confirm → new `api.deleteRating`, the own-row DELETE from migration `00026`). "Mine" = `api.toMockId(me.id) === r.reviewerId` (works in mock + live + seeded-self). **(2)** The event-detail **rate button** was a faint gold outline star that blended in — now a **filled gold button with a dark star** so it's clearly the review affordance. **(3)** Opening the map from an event's **View location** (and tapping any pin) now renders that pin **selected** — enlarged + dark-ringed on web, raised on native — via a new `Map` `selectedId` prop fed by the focused event. +1 test (406/406, 55 suites); `tsc` clean. See §47. |
+| 2026-05-23 | **Tappable reviewer, consistent follow count, EVENTS/HOSTED profile lists.** **(1)** On the ratings screen, the reviewer's avatar + name is now a button → their profile (`/profile/<reviewerId>`). **(2)** The profile "Orgs" count showed `following.size` (raw set) while the my-following list showed only orgs whose profile **resolves** — so a followed org missing from the live `profiles` table left "2" next to a 1-row list. The profile count now uses the **resolved** followed-orgs count (`useFollowedOrgs`), and my-following re-resolves on focus; `following` is persisted locally as before. **(3)** Renamed the profile **ATTENDED** stat to **EVENTS** and made the **HOSTED** stat tappable → a hosting list. `my-hosting` now uses `useHostedEvents` (all statuses/times via `fetchEventsByHost`) instead of the discovery feed (which drops past/cancelled), and splits into **Upcoming / Past** (current on top) — matching the joined-events screen. +1 test (407/407, 55 suites); `tsc` clean. See §48. |
+| 2026-05-23 | **Dark-mode contrast fixes + darker review icon.** Active "filled" pills draw their label in hardcoded `'white'` over a `t.ink` fill — but `ink` flips to near-**white** in dark mode, so the active label vanished. Replaced `'white'` with `t.surface` (the mode-adaptive inverse of `ink`) on the **settings palette** chips, the **ratings star-filter** chips, and the same pattern on the events filter, search tabs, and map radius chips. The event-detail **review (rate) button** drew its star in `t.ink`, which washed out on its constant-gold fill in dark mode — new constant `warnInk` (`#1A1205`) keeps it dark in both modes. Same pass: the event-detail **hero chips** (category + RECOMMENDED pills) had hardcoded white backgrounds → switched to `t.card`; the **refresh** icon/pill bumped `t.ink2` → `t.ink` (darker). Also pinned `supabase/config.toml` `[db] major_version` to **17** to match the linked project (CLI version-mismatch warning). +2 token-invariant tests (409/409, 56 suites); `tsc` clean. See §49. |
+| 2026-05-23 | **Scraper auth → new secret key + shared token.** Supabase is deprecating the `service_role` key. The events scraper → `ingest-scraped` pipeline used the `service_role` JWT to pass the function's default JWT gate; the new `sb_secret_…` key isn't a JWT, so it can't. Reworked: deploy `ingest-scraped` with `--no-verify-jwt`, send the new secret key as the `apikey` and authorize via a shared **`INGEST_TOKEN`** (`x-ingest-token` header) the function matches (fail-closed). `scrape-events.mjs` + the workflow now read `SUPABASE_SECRET_KEY` + `INGEST_TOKEN`. The function's own insert still uses its platform-injected key. CI-only (no Jest/tsc surface). See §50. |
 
 ### Current layout
 
@@ -2964,7 +2967,127 @@ See `docs/TEST_PLAN.md` §2.42.
 
 ---
 
-## 48. How to re-snapshot this file
+## 48. Tappable reviewer, consistent follow count, EVENTS/HOSTED profile lists
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+### 48.1 Tap a reviewer to open their profile
+
+On the ratings screen each review's avatar + name is now a `Pressable` →
+`/profile/<reviewerId>` (the stars + "⋮" menu stay separate).
+
+### 48.2 Followed-orgs count matches the list
+
+The profile "Orgs" row showed `following.size` (the raw local set), but the
+my-following screen lists only orgs that **resolve** via `getProfilesByIds` — so a
+followed org that isn't in the live `profiles` table (e.g. a seeded demo org not
+present in the hosted DB) was counted but never shown, giving "2" beside a 1-row
+list. The profile count now derives from the same resolved list
+(`useFollowedOrgs().orgs.length`), and `my-following` re-resolves on focus. The
+`following` set is persisted locally (partialize/merge) as before — this aligns
+the count with what's actually displayable rather than the raw id set.
+
+### 48.3 EVENTS + HOSTED profile lists (Upcoming / Past)
+
+- Renamed the profile **ATTENDED** stat tile to **EVENTS** (still → `/my-events`,
+  the joined-events list).
+- Made the **HOSTED** tile tappable → `/my-hosting`.
+- `my-hosting` previously filtered the discovery feed (`useEvents`), which only
+  returns published, in-range, **future** events — so past/cancelled events you
+  hosted never appeared. It now uses `useHostedEvents` (→ `fetchEventsByHost`,
+  all statuses/times) and splits into **Upcoming / Past** (current on top), with a
+  loading skeleton + focus reload — mirroring the joined-events screen, which
+  already split that way.
+
+### 48.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **407/407, 55 suites** (+1: tapping the
+HOSTED stat routes to `/my-hosting`; the ATTENDED→EVENTS rename updated in the
+profile-tab test). No new migrations.
+
+See `docs/TEST_PLAN.md` §2.43.
+
+---
+
+## 49. Dark-mode contrast fixes + darker review icon
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+### 49.1 Active-pill labels in dark mode
+
+The "filled" toggle pills (settings palette selector, ratings star filters, events
+filter chips, search tabs, map radius chips) fill the active option with `t.ink`
+and drew its label in hardcoded `'white'`. In **dark mode** `ink` is near-white
+(e.g. sunset `#F4ECDD`), so white text on it was invisible. The label now uses
+`t.surface` — the mode-adaptive inverse of `ink` (near-white in light mode,
+near-black in dark mode) — so the active option is legible in both. A token test
+(`tests/unit/tokens.test.ts`) asserts `surface !== ink` for every palette/mode so
+this can't regress.
+
+Two more `'white'`-in-dark-mode fixes in the same pass: the **event-detail hero
+chips** (the category label + RECOMMENDED pills) had a hardcoded `backgroundColor:
+'white'` with `t.ink` text — invisible in dark mode (light ink on white). They now
+use `backgroundColor: t.card`, which is white in light mode and dark in dark mode,
+so the `t.ink` / `t.accentBlue` text stays legible over the colored hero in both.
+
+### 49.2 Darker review (rate) icon + refresh icon
+
+The event-detail rate button is a constant-gold (`warn`) fill; its star used
+`t.ink`, which is dark in light mode but flips to near-white in dark mode — so the
+icon washed out. New constant token **`warnInk` (`#1A1205`)** is the dark ink for
+text/icons on a gold fill; the rate star uses it, staying dark in both modes.
+
+The pull-to-refresh affordances (`Screen`'s "REFRESHING" pill icon + label and the
+web refresh button) were `t.ink2` (muted) — bumped to `t.ink` so the refresh icon
+is darker / more prominent in light mode (and still legible on the dark card in
+dark mode).
+
+### 49.3 Local Postgres version (config.toml)
+
+Unrelated CLI warning: "Local database version differs from the linked project."
+`supabase/config.toml` pinned `[db] major_version = 15` while the linked hosted
+project runs a newer Postgres — set to **17** (the current Supabase default; match
+whatever the CLI/dashboard reports). Affects only local `supabase start`, not the
+hosted DB or migrations.
+
+### 49.4 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **409/409, 56 suites** (+2 token invariants:
+`warnInk` constant; `surface !== ink`). Color-only change — existing screen tests
+(which assert text, not colour) are unaffected. No new migrations.
+
+See `docs/TEST_PLAN.md` §2.44.
+
+---
+
+## 50. Scraper auth → new secret key + shared token
+
+_Last updated: 2026-05-23 (shipped to main 2026-05-23)_
+
+Supabase is deprecating the legacy `anon` / `service_role` JWT keys in favor of
+`sb_publishable_…` / `sb_secret_…` (opaque, non-JWT). The FR6 scraper pipeline
+relied on `service_role` being a JWT to pass `ingest-scraped`'s default
+`verify_jwt` gate, so the new secret key would be rejected there.
+
+**New design (decoupled from the key model):**
+- `ingest-scraped` is deployed with `--no-verify-jwt` (the non-JWT secret key
+  can't satisfy a JWT gate), and now **fails closed** on a shared secret: it
+  401s unless the `x-ingest-token` header matches its `INGEST_TOKEN` function
+  secret (`supabase secrets set INGEST_TOKEN=…`). That's the real auth, immune
+  to the anon/service_role → publishable/secret migration.
+- `scripts/scrape-events.mjs` sends the new secret key as `apikey` (project key
+  for the gateway) + `x-ingest-token: INGEST_TOKEN`; it reads `SUPABASE_URL`,
+  `SUPABASE_SECRET_KEY`, `INGEST_TOKEN`.
+- `.github/workflows/scrape-events.yml` provides those three from repo secrets
+  (`SUPABASE_SECRET_KEY` replaces `SUPABASE_SERVICE_ROLE_KEY`; add `INGEST_TOKEN`).
+- The function's privileged insert still uses its **platform-injected** service
+  key via `createAdminClient()` — unchanged; Supabase still injects it.
+
+CI-only change — no Jest/tsc surface, so the test count is unchanged (409/409).
+
+---
+
+## 51. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
