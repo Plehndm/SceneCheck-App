@@ -80,6 +80,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Event join fixed (no Edge Function) + chat UI polish.** **(1) Joining an event failed** with "Failed to send a request to the Edge Function" / "non-2xx" because `api.subscribeToEvent` invoked the `subscribe-to-event` Edge Function, which isn't deployed on the hosted project. It now calls the `subscribe_to_event_atomic` RPC directly (migration `00015`; SECURITY DEFINER, so it bypasses the INSERT-less `event_subscriptions` RLS and does the capacity/waitlist/idempotency check) — same pattern as the friend-request + create-chat fixes. **(2) Leaving an event** was also silently broken: `event_subscriptions` had only SELECT policies, so `cancelSubscription`'s direct `UPDATE` matched zero rows. Migration `00024` adds own-row INSERT/UPDATE/DELETE policies. **(3) UI polish:** the `SCButton` `ghost` variant now has a visible border so the profile **Message** action reads as a button; the chat composer gained bottom padding (`insets.bottom + 24`) so it isn't cramped against the screen edge. No test-count change (386/386); `tsc` clean. See §40. |
 | 2026-05-22 | **Compact event hero, other-profile stats, and a "joined events" list.** **(1)** The event-detail hero panel was 50% empty space — halved (240 → 120). **(2)** The `SCButton` `ghost` border was bumped `t.line` → `t.ink3` so the profile **Message** action unmistakably reads as a button. **(3)** Other people's profiles (friends + public) now show a **hosted / attended / rating** stat row like your own tab, and the bio area shows *"No bio yet."* when empty instead of nothing. Attended for other users goes through a new `attended_count()` RPC (migration `00025`, SECURITY DEFINER — `event_subscriptions` RLS hides others' rows). **(4)** The **ATTENDED** stat on your own profile is now tappable → a new `app/my-events.tsx` screen listing every event you've joined (new `api.fetchJoinedEvents` + `useJoinedEvents`), since there was no single place to see them. +4 tests (390/390, 53 suites); `tsc` clean. See §41. |
 | 2026-05-23 | **Join/leave button state fixed + linked event host.** **(1)** The join/joined button didn't reflect actual attendance, and leaving/re-joining didn't stick. Two causes: (a) AuthBootstrap built the `joined` set from raw `event_id` UUIDs, but every event id elsewhere is `toMockId(row.id)` (seeded events → `e1`…), so `isJoined('e1')` never matched the UUID set — now `joined` is `toMockId`-mapped; (b) `cancelSubscription` soft-deleted (`status='cancelled'`), but the `subscribe_to_event_atomic` RPC treats *any* existing row as "already subscribed", so re-joining was a no-op — `cancelSubscription` now hard-DELETEs the row (allowed by `00024`; the subscriber_count trigger COALESCEs NEW/OLD on delete). **(2)** The event-detail "Hosted by" row now shows the host's **name** (via `useProfile(hostId)`) and is a button that opens their profile (`/profile/<hostId>`); app-created events stay non-interactive. No test-count change (390/390); `tsc` clean. See §42. |
+| 2026-05-23 | **Chat list refresh, rejoin button, joined-event icon colors, live conflict chip.** **(1)** Existing chats didn't appear until you messaged the person: the Chat tab mounts/fetches at app start while unfocused, and it skipped its first focus — so the first time you actually opened it, it showed stale data. It now reloads on **every** focus. **(2)** Rejoining an event during the 5s leave grace showed the "Joined" toast but the button/chip didn't flip: `joinEvent` early-returned when the id was still in `joined` and never cleared `pendingLeave` (and `isJoined = joined.has && !pendingLeave.has`). `joinEvent` now clears `pendingLeave`. **(3)** The "events you've joined" list icons were a fixed blue — they now use `pinColor(e, tokens, meInterests)` so each matches its yours / friend / recommended / other label. **(4)** Recommendation already recomputes reactively from `me.interests` everywhere (via `isRecommendedFor`), and `toggleInterestSub` syncs `me.interests` — so adding/removing interests reclassifies events live; the joined-list icons (now `pinColor`) recolor with it too. **(5)** The overlap **conflict chip** only resolved joined events via `SC_EVENT_BY_ID` (seeded only); it now takes an `eventsById` prop that the events list + home build from the live feed, so overlaps are detected for real events. +1 test (391/391); `tsc` clean. See §43. |
 
 ### Current layout
 
@@ -2691,7 +2692,64 @@ See `docs/TEST_PLAN.md` §2.37.
 
 ---
 
-## 43. How to re-snapshot this file
+## 43. Chat list refresh, rejoin button, joined-icon colors, live conflict chip
+
+_Last updated: 2026-05-23 (commit 4f058ad)_
+
+### 43.1 Existing chats didn't show until you messaged the person
+
+The Chat tab is part of the `(tabs)` group, so it **mounts** (and runs its
+initial `useChats` fetch) at app start while you're on Home — i.e. unfocused.
+The focus-refetch I'd added skipped the *first* focus, so the first time you
+actually opened the tab it showed that stale app-start data and missed any chat
+created since (e.g. one the other person started). Fix: the Chat tab now
+`reload()`s on **every** focus (no skip).
+
+### 43.2 Rejoin button/chip didn't flip
+
+Leaving an event starts a 5s grace (`schedulePendingLeave`), and
+`isJoined = joined.has(id) && !pendingLeave.has(id)`. `joinEvent` early-returned
+when the id was still in `joined` (it is, during the grace) and so never cleared
+`pendingLeave` — the "Joined" toast fired but the button stayed JOIN with no
+chip. `joinEvent` now also removes the id from `pendingLeave`. +1 store test.
+
+### 43.3 Joined-event icon colors
+
+`app/my-events.tsx` drew every event icon in `accentBlue`. It now uses
+`pinColor(event, tokens, meInterests)` — the same map/legend mapping — so the
+icon is primary (yours) / accentFriend (friend) / accentBlue (recommended, i.e.
+interest match) / mapPinMute (other).
+
+### 43.4 Recommendation reacts to interest changes
+
+This already worked: every recommendation surface (map `pinColor`, events-list
+"FOR YOU" filter + label, `SCEventCard`, event detail) computes from
+`isRecommendedFor(event, me.interests)` at render, and `toggleInterestSub`
+keeps `me.interests` in sync — so adding/removing an interest reclassifies
+events live. With 43.3 the joined-list icons recolor on interest change too.
+
+### 43.5 Conflict chip in live mode
+
+`findConflict` resolves the joined events' times via an id→event map;
+`ConflictChip` only passed `SC_EVENT_BY_ID` (the seeded fixtures), so overlaps
+with real (non-seeded) joined events were never detected in live. `ConflictChip`
+now takes an optional `eventsById` prop; the events list and Home rail build it
+from the live feed (and `SCEventCard` forwards it). Mock/back-compat default is
+still `SC_EVENT_BY_ID`.
+
+### 43.6 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **391/391, 53 suites** (+1: the store
+re-join-clears-pendingLeave test). The chat-tab focus refetch + live conflict
+lookup are exercised manually on the hosted project (focus refetch is a no-op in
+the jest navigation mock; the conflict chip's mock path is covered by
+`ConflictChip.test.tsx`). No new migrations.
+
+See `docs/TEST_PLAN.md` §2.38.
+
+---
+
+## 44. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

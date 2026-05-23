@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **390/390** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.37 — join/leave button state fix + linked event host)._
+_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **391/391** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.38 — chat list refresh, rejoin button, joined-icon colors, live conflict chip)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1186,6 +1186,29 @@ name and links to their profile.
 **What this section deliberately does NOT do:** add a live AuthBootstrap/RLS
 harness — the id-mapping + hard-delete + host fetch are validated on the hosted
 project (no new migration needed; relies on `00024` already applied).
+
+---
+
+### 2.38 Chat list refresh, rejoin button, joined-icon colors, live conflict chip (post-§2.37 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §43._
+
+Four UX fixes: the Chat tab reloads on every focus (existing chats show without
+messaging first); `joinEvent` clears `pendingLeave` (rejoin during the grace
+flips the button); `my-events` icons use `pinColor` (match yours/friend/
+recommended/other + recolor with interests); and `ConflictChip` takes an
+`eventsById` prop so overlap detection resolves real joined events in live.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `store/useStore.ts` `joinEvent` | `tests/unit/store.test.ts` (+1) | After `schedulePendingLeave('e1')`, `joinEvent('e1')` clears `pendingLeave` and `isJoined('e1')` is true again. |
+| Chat-tab focus reload, `my-events` `pinColor`, `ConflictChip`/`SCEventCard` `eventsById` | covered | Live/navigation behavior; existing `ConflictChip` / `my-events` / `chat-tab` render tests still pass (the conflict chip's default lookup stays `SC_EVENT_BY_ID`; the focus refetch is a no-op in the jest navigation mock). |
+
+**Delivered count**: 391 / 391 (+1). 53 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live navigation/RLS harness
+for the focus refetch or the live conflict lookup — both are validated on the
+hosted project. No new migrations.
 
 ---
 
