@@ -57,9 +57,11 @@ export function SCButton({ label, onPress, size = 'md', disabled, variant = 'pri
   const t = useTokens();
   const s = SIZES[size];
   const palette = {
-    primary: { bg: t.primary, fg: t.primaryInk },
-    secondary: { bg: t.ink, fg: t.card },
-    ghost: { bg: 'transparent', fg: t.ink },
+    // `ghost` gets a visible border so it still reads as a tappable button
+    // (e.g. the profile "Message" action) rather than plain text.
+    primary: { bg: t.primary, fg: t.primaryInk, border: t.primary },
+    secondary: { bg: t.ink, fg: t.card, border: t.ink },
+    ghost: { bg: 'transparent', fg: t.ink, border: t.ink3 },
   }[variant];
   return (
     <Pressable
@@ -67,6 +69,7 @@ export function SCButton({ label, onPress, size = 'md', disabled, variant = 'pri
       style={({ pressed }) => [{
         height: s.h, paddingHorizontal: s.h * 0.5, borderRadius: RADIUS.lg,
         backgroundColor: palette.bg,
+        borderWidth: 1, borderColor: palette.border,
         alignItems: 'center', justifyContent: 'center',
         opacity: disabled ? 0.5 : 1,
       }, pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] }]}

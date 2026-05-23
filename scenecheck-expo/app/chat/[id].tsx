@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SCText } from '@/components/SCText';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
@@ -22,6 +22,7 @@ import { RADIUS } from '@/theme/tokens';
 
 export default function ChatThreadScreen() {
   const t = useTokens();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const showToast = useStore(s => s.showToast);
   const mock = api.isMock();
@@ -218,9 +219,10 @@ export default function ChatThreadScreen() {
           })}
         </ScrollView>
 
-        {/* Composer */}
+        {/* Composer — lift it off the bottom edge (+ the home-indicator inset
+            on devices that have one) so it isn't cramped against the screen. */}
         <View style={{
-          paddingHorizontal: 14, paddingTop: 8, paddingBottom: 16,
+          paddingHorizontal: 14, paddingTop: 8, paddingBottom: insets.bottom + 24,
           flexDirection: 'row', gap: 8, alignItems: 'center',
         }}>
           <TextInput

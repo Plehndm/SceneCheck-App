@@ -228,8 +228,8 @@ export default function EventDetailScreen() {
 
   return (
     <Screen contentContainerStyle={{ paddingBottom: 140 }} onRefresh={() => { reloadEvent(); reloadAttendees(); }}>
-      {/* Hero panel */}
-      <View style={{ position: 'relative', height: 240, backgroundColor: accent, overflow: 'hidden' }}>
+      {/* Hero panel — kept compact; the old 240px left a lot of dead space. */}
+      <View style={{ position: 'relative', height: 120, backgroundColor: accent, overflow: 'hidden' }}>
         <SCTopBar
           onBack={() => router.back()}
           right={

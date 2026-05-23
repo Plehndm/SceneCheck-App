@@ -333,13 +333,26 @@ export const api = {
     return data;
   },
 
-  async subscribeToEvent(eventId: string, joinChat = false) {
+  async subscribeToEvent(eventId: string, _joinChat = false) {
     if (isMock()) return { status: 'confirmed' as const, chat_id: null };
-    const { data, error } = await requireClient().functions.invoke('subscribe-to-event', {
-      body: { event_id: toUUID(eventId), join_chat: joinChat },
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    // Call the atomic-subscribe RPC directly (migration 00015): it's
+    // SECURITY DEFINER, so it bypasses the INSERT-less event_subscriptions RLS
+    // and handles the capacity check / waitlist / idempotency in one locked
+    // statement. This replaces the `subscribe-to-event` Edge Function, which
+    // isn't deployed on the hosted project — the source of the "Failed to send
+    // a request to the Edge Function" / non-2xx errors when joining.
+    const { data, error } = await sb.rpc('subscribe_to_event_atomic', {
+      p_event_id: toUUID(eventId),
+      p_user_id: user.id,
     });
-    if (error) throw error;
-    return data;
+    if (error) throw new Error(error.message || 'Failed to join event');
+    // The RPC returns a set of rows; take the first.
+    const row = Array.isArray(data) ? data[0] : data;
+    const status = (row?.status ?? 'confirmed') as 'confirmed' | 'waitlisted' | 'already';
+    return { status, chat_id: null };
   },
 
   // Remove the caller's row from event_subscriptions. The legacy used
@@ -357,6 +370,38 @@ export const api = {
       .eq('user_id', user.id);
     if (error) throw error;
     return { ok: true };
+  },
+
+  // Count of events a user has attended (confirmed subscriptions). Used for
+  // the hosted/attended/rating stat row on OTHER profiles — event_subscriptions
+  // RLS hides other users' rows, so this goes through the attended_count RPC
+  // (SECURITY DEFINER, migration 00025). Mock returns 0 (not modeled offline).
+  async getAttendedCount(userId: string): Promise<number> {
+    if (isMock()) return 0;
+    const sb = requireClient();
+    const { data, error } = await sb.rpc('attended_count', { p_user: toUUID(userId) });
+    if (error) throw error;
+    return (data as number) ?? 0;
+  },
+
+  // The caller's joined (confirmed) events, as SCEvent rows — powers the
+  // "events you've joined" screen. Mock mode returns [] (the hook derives the
+  // list from the local `joined` set + SC_EVENTS instead).
+  async fetchJoinedEvents(): Promise<SCEvent[]> {
+    if (isMock()) return [];
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const me = user.id;
+    const { data, error } = await sb
+      .from('event_subscriptions')
+      .select('events(*, event_interests(interest_id(name)))')
+      .eq('user_id', me)
+      .eq('status', 'confirmed')
+      // to-one embed of the events row; override the inferred array shape.
+      .overrideTypes<{ events: EventRow | null }[], { merge: false }>();
+    if (error) throw error;
+    return (data ?? []).flatMap(r => (r.events ? [transformEventRow(r.events, me)] : []));
   },
 
   // Host-only edit. Accepts the in-memory SCEvent shape and translates
