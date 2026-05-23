@@ -92,6 +92,7 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
       (typeof ei === 'string' ? ei : ei.interest_id?.name || ei.name || '') as string
     ),
     when: isoToWhen(row.start_at),
+    startAt: row.start_at ?? undefined,
     endTime: isoToTime(row.end_at),
     where: row.location_name || '',
     attendees: row.subscriber_count || 0,
@@ -280,7 +281,28 @@ export const api = {
       p_user_id: (user && 'id' in user) ? user.id : null,
     });
     if (error) throw error;
-    return (data || []).map((row: EventRow) =>
+    const rows = (data || []) as EventRow[];
+    // `rank_events_query` is a SETOF RPC, so PostgREST can't embed
+    // `event_interests` onto its result rows the way the direct table queries
+    // (getEventById / fetchEventsByHost) do. Without the tags every event on
+    // the home feed + map classified as "other" (NEARBY) — even ones the
+    // detail page, which DOES have the tags, showed as RECOMMENDED. Fetch the
+    // tags for the ranked events and merge them back in before transforming.
+    const ids = rows.map(r => r.id);
+    if (ids.length) {
+      const { data: tagRows } = await sb
+        .from('event_interests')
+        .select('event_id, interest_id(name)')
+        .in('event_id', ids);
+      const byEvent: Record<string, { name?: string }[]> = {};
+      for (const tr of (tagRows ?? []) as { event_id: string; interest_id: { name?: string } | null }[]) {
+        const name = tr.interest_id?.name;
+        if (!name) continue;
+        (byEvent[tr.event_id] ||= []).push({ name });
+      }
+      for (const r of rows) r.event_interests = byEvent[r.id] ?? [];
+    }
+    return rows.map(row =>
       transformEventRow(row, (user && 'id' in user) ? user.id : null)
     );
   },
@@ -1061,13 +1083,39 @@ export const api = {
   },
 
   // ── Ratings ──
+  // Rate an event (1–5 stars + optional text). Upserts on the (event_id,
+  // user_id) PK so re-rating updates the existing row. The rating links to the
+  // host via events.creator_id, so it shows up in the host's reviews +
+  // computed average (api.fetchRatings). Direct DB write (RLS: own row,
+  // migrations 00011 INSERT + 00026 UPDATE) — replaces the undeployed
+  // rollup-rating Edge Function.
   async rateEvent(eventId: string, stars: number, text: string) {
     if (isMock()) return { rated: true as const };
-    const { data, error } = await requireClient().functions.invoke('rollup-rating', {
-      body: { event_id: toUUID(eventId), stars, text },
-    });
-    if (error) throw error;
-    return data;
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('ratings').upsert(
+      { event_id: toUUID(eventId), user_id: user.id, stars, text: text || '' },
+      { onConflict: 'event_id,user_id' },
+    );
+    if (error) throw new Error(error.message || 'Failed to submit rating');
+    return { rated: true as const };
+  },
+
+  // Delete the caller's rating for an event. The PK is (event_id, user_id), so
+  // this removes exactly one row; migration 00026 added the own-row DELETE
+  // policy. Mock mode is a no-op.
+  async deleteRating(eventId: string) {
+    if (isMock()) return { deleted: true as const };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('ratings')
+      .delete()
+      .eq('event_id', toUUID(eventId))
+      .eq('user_id', user.id);
+    if (error) throw new Error(error.message || 'Failed to delete rating');
+    return { deleted: true as const };
   },
 
   // ── Reports ──

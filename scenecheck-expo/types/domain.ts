@@ -58,6 +58,9 @@ export interface SCEvent {
   // when present. Optional because the mock fixtures only have x/y.
   lat?: number;
   lng?: number;
+  // Raw ISO start timestamp (live mode), used to split past vs upcoming.
+  // Mock fixtures only carry the friendly `when` string, so this is optional.
+  startAt?: string;
   desc?: string;
 }
 
