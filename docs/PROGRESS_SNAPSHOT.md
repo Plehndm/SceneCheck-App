@@ -3094,6 +3094,16 @@ listings, and caps at `MAX_EVENTS` (40). A **`DRY_RUN=1`** mode scrapes + prints
 the payloads without POSTing (and without needing credentials) for testing —
 verified pulling 40 unique real Irvine events.
 
+**CI resilience + diagnostics.** The scraper uses a real browser User-Agent
+(Eventbrite bot-blocks datacenter IPs) and, if the live source still returns
+nothing, **falls back to seed events** (loudly logged) so the ingest path runs
+regardless. It also prints exactly which stage failed (scrape vs every-ingest)
+with the likely cause. The workflow runs a **diagnostics step** first — file
+presence, secret presence (set/length, no values leaked), and an empty-body
+**function auth probe** that isolates auth (`401` = INGEST_TOKEN mismatch / not
+deployed `--no-verify-jwt`; `400` = auth OK so the scrape is the issue; `404` =
+not deployed).
+
 **Deploy fix.** `_shared/supabase-client.ts` imported supabase-js from
 `https://esm.sh/@supabase/supabase-js@2`, which intermittently 522'd during
 `supabase functions deploy` ("Import failed: 522"). Switched to Deno's native

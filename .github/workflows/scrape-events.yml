@@ -24,11 +24,34 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'   # Node 20 ships global fetch — no deps for the POST
+          node-version: '22'   # global fetch built in; no deps (the scraper parses JSON-LD with regex)
 
-      # If you parse HTML, install your scraping lib here, e.g.:
-      #   - run: npm install cheerio          # static HTML
-      #   - run: npx playwright install --with-deps chromium   # JS-rendered pages
+      # The scraper needs NO npm install — it uses built-in fetch + a regex over
+      # the page's JSON-LD (no cheerio/playwright). Only add those if you switch
+      # to DOM/JS-rendered scraping.
+
+      - name: Diagnostics (file presence, secrets, function reachability)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+        run: |
+          echo "cwd: $(pwd)"
+          echo "node: $(node -v)"
+          echo "--- scripts/ ---"; ls -la scripts || echo "(no scripts dir)"
+          chk() { if [ -n "$2" ]; then echo "$1: set (${#2} chars)"; else echo "$1: MISSING"; fi; }
+          chk SUPABASE_URL "$SUPABASE_URL"
+          chk SUPABASE_SECRET_KEY "$SUPABASE_SECRET_KEY"
+          chk INGEST_TOKEN "$INGEST_TOKEN"
+          # Probe the function with an EMPTY body to isolate auth from scraping:
+          #   401            → INGEST_TOKEN mismatch, or not deployed --no-verify-jwt
+          #   400 (missing…) → auth PASSED + function deployed (so the scrape is the issue)
+          #   404            → function not deployed
+          echo "--- function auth probe (empty POST) ---"
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST "$SUPABASE_URL/functions/v1/ingest-scraped" \
+            -H "apikey: $SUPABASE_SECRET_KEY" -H "x-ingest-token: $INGEST_TOKEN" \
+            -H "content-type: application/json" -d '{}') || echo "(curl failed)"
+          echo "HTTP $code"; cat /tmp/resp 2>/dev/null; echo
 
       - name: Scrape + ingest
         env:
