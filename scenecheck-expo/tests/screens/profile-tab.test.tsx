@@ -25,14 +25,20 @@ describe('ProfileTab', () => {
   test('renders all stat tiles', () => {
     const { getByText } = renderScreen(<ProfileTab />);
     expect(getByText('HOSTED')).toBeTruthy();
-    expect(getByText('ATTENDED')).toBeTruthy();
+    expect(getByText('EVENTS')).toBeTruthy();
     expect(getByText('RATING')).toBeTruthy();
   });
 
-  test('tapping the ATTENDED stat opens the joined-events list', () => {
+  test('tapping the EVENTS stat opens the joined-events list', () => {
     const { getByText } = renderScreen(<ProfileTab />);
-    fireEvent.press(getByText('ATTENDED'));
+    fireEvent.press(getByText('EVENTS'));
     expect(router.push).toHaveBeenCalledWith('/my-events');
+  });
+
+  test('tapping the HOSTED stat opens the hosting list', () => {
+    const { getByText } = renderScreen(<ProfileTab />);
+    fireEvent.press(getByText('HOSTED'));
+    expect(router.push).toHaveBeenCalledWith('/my-hosting');
   });
 
   test('renders MY STUFF section with the friends count from the store', () => {

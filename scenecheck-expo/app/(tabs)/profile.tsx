@@ -15,6 +15,7 @@ import { SCIcon, type IconName } from '@/components/SCIcon';
 import { EditProfileSheet } from '@/components/EditProfileSheet';
 import { useImagePicker } from '@/hooks/useImagePicker';
 import { useHostedEvents } from '@/hooks/useHostedEvents';
+import { useFollowedOrgs } from '@/hooks/useFollowedOrgs';
 import { useRatings } from '@/hooks/useRatings';
 import { useFriendRequests } from '@/hooks/useFriendRequests';
 import { useOutgoingRequests } from '@/hooks/useOutgoingRequests';
@@ -32,7 +33,6 @@ export default function ProfileTab() {
   const setPicture = useStore(s => s.setPicture);
   const setMe = useStore(s => s.setMe);
   const friends = useStore(s => s.friends);
-  const following = useStore(s => s.following);
   // Confirmed event subscriptions, hydrated from Supabase by AuthBootstrap —
   // the live "events attended" count (was a static me.events_attended field).
   const joined = useStore(s => s.joined);
@@ -50,6 +50,10 @@ export default function ProfileTab() {
   // from the same live hooks the other-profile screen uses.
   const { events: hostedEvents } = useHostedEvents(me.id);
   const { ratings: myRatings } = useRatings(me.id);
+  // Resolve the followed-org ids to actual rows so the count here matches the
+  // my-following list (a followed org whose profile can't be resolved was
+  // still counted by following.size, showing e.g. "2" next to a 1-row list).
+  const { orgs: followedOrgs } = useFollowedOrgs();
   const hostedCount = hostedEvents.length;
   const ratingSummary = summarizeRatings(myRatings);
 
@@ -153,8 +157,8 @@ export default function ProfileTab() {
           and received ratings; "—" when you have no ratings yet. */}
       <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
         <SCCard style={{ flexDirection: 'row', padding: 14, justifyContent: 'space-around' }}>
-          <Stat label="HOSTED" value={String(hostedCount)} />
-          <Stat label="ATTENDED" value={String(joined.size)} onPress={() => router.push('/my-events' as never)} />
+          <Stat label="HOSTED" value={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
+          <Stat label="EVENTS" value={String(joined.size)} onPress={() => router.push('/my-events' as never)} />
           <Stat
             label="RATING"
             value={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★` : '—'}
@@ -181,7 +185,7 @@ export default function ProfileTab() {
           <Row icon="calendar" label="Events I'm hosting" v={String(hostedCount)} onPress={() => router.push('/my-hosting' as never)} />
           <Row icon="people" label="Friends" v={String(friends.size)} onPress={() => router.push('/my-friends' as never)} />
           <Row icon="user-plus" label="Friend requests" v={`${incomingReqs.length} in · ${outgoingReqs.length} sent`} onPress={() => router.push('/requests' as never)} />
-          <Row icon="people" label="Orgs" v={String(following.size)} onPress={() => router.push('/my-following' as never)} />
+          <Row icon="people" label="Orgs" v={String(followedOrgs.length)} onPress={() => router.push('/my-following' as never)} />
           <Row icon="star" label="My ratings" v={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★ · ${ratingSummary.count}` : 'None yet'} onPress={() => router.push(`/ratings/${me.id}` as never)} />
           {drafts.length > 0 && (
             <Row icon="edit" label="Drafts" v={String(drafts.length)} onPress={() => router.push('/drafts' as never)} />

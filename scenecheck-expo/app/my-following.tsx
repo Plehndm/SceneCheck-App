@@ -1,7 +1,8 @@
 // Orgs you follow — surfaces in their event posts in your feed.
 
+import { useCallback } from 'react';
 import { Pressable, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -21,6 +22,9 @@ export default function MyFollowingScreen() {
   // Org rows come from Supabase via getProfilesByIds in live mode (fixtures in
   // mock mode); the `following` set itself stays local. See useFollowedOrgs.
   const { orgs: list, reload } = useFollowedOrgs();
+  // Re-resolve on focus so following/unfollowing elsewhere (and persisted
+  // follows after a reload) are reflected when you land here.
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
   return (
     <Screen onRefresh={reload}>

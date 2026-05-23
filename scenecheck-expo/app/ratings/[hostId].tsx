@@ -104,7 +104,7 @@ export default function RatingsScreen() {
               flexDirection: 'row', alignItems: 'center', gap: 4,
             }, pressed && { opacity: 0.85 }]}
           >
-            <SCText variant="mono" size={11} weight="600" color={stars === s ? 'white' : t.ink}>
+            <SCText variant="mono" size={11} weight="600" color={stars === s ? t.surface : t.ink}>
               {s === 0 ? 'ALL' : `${s}★`}
             </SCText>
           </Pressable>
@@ -138,11 +138,19 @@ export default function RatingsScreen() {
               <View key={r.id} style={{ position: 'relative', zIndex: menuOpen ? 5 : 0 }}>
                 <SCCard style={{ padding: 14, gap: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <SCAvatar person={reviewer} size={36} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <SCText size={14} weight="600">{reviewer?.name ?? 'Anonymous'}</SCText>
-                      <SCText variant="mono" size={11} color={t.ink3}>{r.when}</SCText>
-                    </View>
+                    {/* Tap the reviewer (avatar + name) to open their profile. */}
+                    <Pressable
+                      onPress={() => router.push(`/profile/${r.reviewerId}` as never)}
+                      style={({ pressed }) => [{
+                        flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0,
+                      }, pressed && { opacity: 0.7 }]}
+                    >
+                      <SCAvatar person={reviewer} size={36} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <SCText size={14} weight="600">{reviewer?.name ?? 'Anonymous'}</SCText>
+                        <SCText variant="mono" size={11} color={t.ink3}>{r.when}</SCText>
+                      </View>
+                    </Pressable>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       {Array.from({ length: 5 }).map((_, i) => (
                         <SCIcon
