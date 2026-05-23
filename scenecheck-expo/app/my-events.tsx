@@ -9,13 +9,19 @@ import { SCCard } from '@/components/SCCard';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
 import { SCButton } from '@/components/SCAddButton';
+import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useJoinedEvents } from '@/hooks/useJoinedEvents';
+import { pinColor } from '@/components/Map/types';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
 
 export default function MyEventsScreen() {
   const t = useTokens();
+  // Same interest set the map/legend uses, so the icon color reflects whether
+  // an event is yours / a friend's / recommended (interest match) / other —
+  // and recolors when you add/remove interests.
+  const meInterests = useStore(s => s.me.interests ?? []);
   const { events, reload } = useJoinedEvents();
 
   return (
@@ -48,7 +54,8 @@ export default function MyEventsScreen() {
             >
               <SCCard style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
                 <View style={{
-                  width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: t.accentBlue,
+                  width: 38, height: 38, borderRadius: RADIUS.md,
+                  backgroundColor: pinColor(e, t, meInterests),
                   alignItems: 'center', justifyContent: 'center',
                 }}>
                   <SCIcon name="pin" size={16} color="white" />

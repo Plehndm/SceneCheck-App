@@ -75,6 +75,16 @@ describe('events slice', () => {
     expect(useStore.getState().isJoined('e1')).toBe(false);
   });
 
+  test('re-joining during the grace window clears pendingLeave (isJoined back to true)', () => {
+    // Leave (start the 5s grace) then re-join: joinEvent must clear the
+    // pending leave, else isJoined stays false and the button/chip don't flip.
+    useStore.getState().schedulePendingLeave('e1');
+    expect(useStore.getState().isJoined('e1')).toBe(false);
+    useStore.getState().joinEvent('e1');
+    expect(useStore.getState().pendingLeave.has('e1')).toBe(false);
+    expect(useStore.getState().isJoined('e1')).toBe(true);
+  });
+
   test('applyEventOverride merges patches', () => {
     useStore.getState().applyEventOverride('e1', { title: 'Updated' });
     useStore.getState().applyEventOverride('e1', { where: 'New place' });

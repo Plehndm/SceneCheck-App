@@ -214,10 +214,14 @@ export const useStore = create<State>()(
         return s.joined.has(id) && !s.pendingLeave.has(id);
       },
       joinEvent: (id) => set(s => {
-        if (s.joined.has(id)) return s;
         const next = new Set(s.joined);
         next.add(id);
-        return { joined: next };
+        // Re-joining cancels any pending leave — otherwise isJoined stays
+        // false (joined.has && !pendingLeave.has) and the button/chip don't
+        // flip even though we just "joined".
+        const pending = new Set(s.pendingLeave);
+        pending.delete(id);
+        return { joined: next, pendingLeave: pending };
       }),
       leaveEvent: (id) => set(s => {
         const next = new Set(s.joined);

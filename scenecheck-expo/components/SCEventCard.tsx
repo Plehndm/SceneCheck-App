@@ -21,9 +21,12 @@ interface Props {
   // Your subscribed interests — decides whether a scraped/app-discovered
   // event reads as "RECOMMENDED" (matches an interest) or "NEARBY" (doesn't).
   meInterests?: string[];
+  // id → event lookup forwarded to ConflictChip so overlap detection resolves
+  // real joined events in live mode (not just the SC_* fixtures).
+  conflictLookup?: Record<string, SCEvent>;
 }
 
-export function SCEventCard({ event, joined, showConflict, onPress, meInterests = [] }: Props) {
+export function SCEventCard({ event, joined, showConflict, onPress, meInterests = [], conflictLookup }: Props) {
   const t = useTokens();
   // A scraped event (kind 'recommended') is only "RECOMMENDED" when it matches
   // one of your interests; otherwise it's just "NEARBY". yours/friend/org keep
@@ -68,7 +71,7 @@ export function SCEventCard({ event, joined, showConflict, onPress, meInterests 
 
       <SCText variant="display" size={17}>{event.title}</SCText>
 
-      {showConflict && !joined && <ConflictChip event={event} />}
+      {showConflict && !joined && <ConflictChip event={event} eventsById={conflictLookup} />}
 
       <View style={{ marginTop: 'auto', gap: 4 }}>
         <SCText variant="mono" size={11} color={t.ink2}>{whenRange(event)}</SCText>

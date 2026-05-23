@@ -46,6 +46,9 @@ export default function HomeScreen() {
   const peopleNearby = excludeSelf(peopleResults, meId).slice(0, 4);
   // Live in live mode, fixture array in mock mode — see hooks/useEvents.
   const { events, loading, reload: reloadEvents } = useEvents();
+  // id → event lookup for the conflict chip (resolves joined events' times in
+  // live mode, where SC_EVENT_BY_ID only has the seeded events).
+  const eventsById = Object.fromEntries(events.map(e => [e.id, e]));
   // Live date + (if location granted) reverse-geocoded city.
   const dateCityLabel = useDateCityLabel();
 
@@ -142,6 +145,7 @@ export default function HomeScreen() {
                 joined={isJoinedNow(e.id)}
                 showConflict
                 meInterests={meInterests}
+                conflictLookup={eventsById}
                 onPress={() => router.push(`/event/${e.id}` as never)}
               />
             ))}

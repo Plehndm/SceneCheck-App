@@ -15,15 +15,20 @@ import type { SCEvent } from '@/types/domain';
 interface Props {
   event: SCEvent;
   compact?: boolean;
+  // Lookup of id → event used to resolve the user's joined events' times.
+  // Defaults to the SC_EVENT_BY_ID fixtures (mock); live screens pass a map
+  // built from the current feed so overlap detection works for real events,
+  // not just the seeded ones.
+  eventsById?: Record<string, SCEvent>;
 }
 
-export function ConflictChip({ event, compact }: Props) {
+export function ConflictChip({ event, compact, eventsById }: Props) {
   const t = useTokens();
   const enabled = useStore(s => s.tweaks.preflightConflicts);
   const joined = useStore(s => s.joined);
   if (!enabled) return null;
   if (joined.has(event.id)) return null;
-  const conflict = findConflict(event, joined, SC_EVENT_BY_ID);
+  const conflict = findConflict(event, joined, eventsById ?? SC_EVENT_BY_ID);
   if (!conflict) return null;
   const m = conflict.when.match(/(\d{1,2}:\d{2}\s(?:AM|PM))/);
   const timeStr = m ? m[1] : conflict.when;

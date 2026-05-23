@@ -2,7 +2,7 @@
 // list with filter chips (ALL / YOURS / FRIENDS / FOR YOU). Each row
 // taps through to /event/[id].
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -31,6 +31,12 @@ export default function EventsListScreen() {
   // Live in live mode, fixture array in mock mode — same hook the
   // Home tab + Map tab use.
   const { events: allEvents } = useEvents();
+  // id → event lookup so the conflict chip can resolve joined events' times
+  // (live mode — SC_EVENT_BY_ID only has the seeded ones).
+  const eventsById = useMemo(
+    () => Object.fromEntries(allEvents.map(e => [e.id, e])),
+    [allEvents],
+  );
 
   // "FOR YOU" = events that match one of your interests (see lib/events).
   const isRecommended = (e: SCEvent) => isRecommendedFor(e, meInterests);
@@ -156,7 +162,7 @@ export default function EventsListScreen() {
                         <SCText variant="mono" size={9} weight="600" color="white">JOINED</SCText>
                       </View>
                     )}
-                    {!joinedNow && <ConflictChip event={e} compact />}
+                    {!joinedNow && <ConflictChip event={e} compact eventsById={eventsById} />}
                   </View>
                   <SCText variant="display" size={16} style={{ marginBottom: 4 }}>{e.title}</SCText>
                   <SCText variant="mono" size={11} color={t.ink2}>{whenRange(e)}</SCText>
