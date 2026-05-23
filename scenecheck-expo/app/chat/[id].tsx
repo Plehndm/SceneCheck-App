@@ -3,9 +3,9 @@
 // CTA. The legacy long-press → edit/delete flow is left for Phase 4.x
 // (it needs gesture-handler wiring on RN).
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCText } from '@/components/SCText';
 import { SCIcon } from '@/components/SCIcon';
@@ -28,7 +28,17 @@ export default function ChatThreadScreen() {
   // useChatMessages owns the message list, the realtime subscription,
   // and the optimistic send / retry path. The legacy UIMessage shape
   // is preserved so the screen below doesn't have to change.
-  const { messages: msgs, send, retry } = useChatMessages(id);
+  const { messages: msgs, send, retry, reload } = useChatMessages(id);
+  // Re-fetch the thread when it regains focus (returning to it) so the latest
+  // messages show even if a realtime event was missed — the initial mount
+  // already fetches, so skip the first focus to avoid a double fetch.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) { firstFocus.current = false; return; }
+      reload();
+    }, [reload]),
+  );
   // Header data: the chat row comes from the (dual-mode) chat list and the
   // event banner from useEvent — both Supabase-backed in live mode, so the
   // header reads no SC_* there.

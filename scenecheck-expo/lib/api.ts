@@ -887,7 +887,9 @@ export const api = {
       .insert({ chat_id: toUUID(chatId), sender_id: user.id, body })
       .select()
       .single();
-    if (error) throw error;
+    // Throw a real Error (with the PostgREST message) rather than the raw
+    // error object — otherwise it surfaces in the UI as "[object Object]".
+    if (error) throw new Error(error.message || 'Failed to send message');
     return data;
   },
 

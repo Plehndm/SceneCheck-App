@@ -188,10 +188,21 @@ export function AuthBootstrap() {
     const metaDisplayName = (u: { user_metadata?: { display_name?: string } } | null | undefined) =>
       u?.user_metadata?.display_name ?? null;
 
+    // Authorize the Realtime socket with the user's JWT. RLS-scoped
+    // postgres_changes (chat messages) are only delivered to a socket carrying
+    // the user's token — without this, the OTHER chat member receives no live
+    // INSERT events. supabase-js wires this on token change, but we set it
+    // explicitly so the token is present before the first channel subscribes
+    // (a known React-Native timing gap).
+    const authorizeRealtime = (token: string | null) => {
+      try { supabase!.realtime.setAuth(token); } catch { /* socket not up yet — fine */ }
+    };
+
     // 1. Initial session check (fires once at mount).
     supabase.auth.getSession().then(({ data }) => {
       const session = data.session;
       if (session?.user) {
+        authorizeRealtime(session.access_token);
         setSession({ userId: session.user.id, email: session.user.email ?? null });
         hydrate(session.user.id, session.user.email ?? null, metaDisplayName(session.user));
       } else {
@@ -203,11 +214,13 @@ export function AuthBootstrap() {
     const sub = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (session?.user) {
+          authorizeRealtime(session.access_token);
           setSession({ userId: session.user.id, email: session.user.email ?? null });
           hydrate(session.user.id, session.user.email ?? null, metaDisplayName(session.user));
         }
       }
       if (event === 'SIGNED_OUT') {
+        authorizeRealtime(null);
         setSession(null);
         reset();
       }

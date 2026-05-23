@@ -1,8 +1,9 @@
 // Chat tab — minimal list of conversations. Threaded view ships in Phase 4
 // as app/chat/[id].tsx.
 
+import { useCallback, useRef } from 'react';
 import { Pressable, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -19,6 +20,17 @@ export default function ChatTab() {
   // chat_members ⨝ messages join) and SC_CHATS in mock mode.
   const { chats, reload } = useChats();
   const mock = api.isMock();
+  // The chat tab stays mounted, so re-fetch when it regains focus (e.g. after
+  // sending in a thread, or when a new message arrives) so the list + last
+  // message stay current. Skip the first focus — the hook already fetched on
+  // mount.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) { firstFocus.current = false; return; }
+      reload();
+    }, [reload]),
+  );
   return (
     <Screen onRefresh={reload}>
       <View style={{

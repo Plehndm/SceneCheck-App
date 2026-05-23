@@ -43,6 +43,7 @@ interface UseChatMessagesResult {
   error: Error | null;
   send: (text: string) => Promise<void>;
   retry: (localId: string) => Promise<void>;
+  reload: () => void;
 }
 
 export function useChatMessages(chatId: string | undefined): UseChatMessagesResult {
@@ -66,8 +67,12 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
   });
   const [loading, setLoading] = useState(() => !mock && !!chatId);
   const [error, setError] = useState<Error | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
 
-  // Initial fetch in live mode.
+  // Initial fetch in live mode (re-runs on reload() — e.g. re-focusing the
+  // thread — so the recipient sees new messages even if a realtime event was
+  // missed). Merges with optimistic/realtime messages instead of clobbering:
+  // a fetched row replaces a matching id, new rows are appended.
   useEffect(() => {
     if (!chatId || mock) return;
     let cancelled = false;
@@ -77,7 +82,13 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
       .then(rows => {
         if (cancelled) return;
         const mapped = (rows as unknown as DbMessageRow[]).map(r => transformRow(r, meIdRef.current));
-        setMessages(mapped);
+        setMessages(prev => {
+          // Keep any still-sending/failed optimistic messages (no real id yet).
+          const pending = prev.filter(m => m.id.startsWith('tmp-') && m.status !== 'sent');
+          const byId = new Map<string, UIMessage>();
+          for (const m of mapped) byId.set(m.id, m);
+          return [...byId.values(), ...pending];
+        });
         setLoading(false);
       })
       .catch(e => {
@@ -86,7 +97,7 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [chatId, mock]);
+  }, [chatId, mock, reloadCounter]);
 
   // Realtime subscription in live mode.
   useEffect(() => {
@@ -177,7 +188,8 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
     }
   }, [messages, chatId, mock, offline]);
 
-  return { messages, loading, error, send, retry };
+  const reload = useCallback(() => setReloadCounter(c => c + 1), []);
+  return { messages, loading, error, send, retry, reload };
 }
 
 function transformRow(row: DbMessageRow, meId: string | null): UIMessage {

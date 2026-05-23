@@ -66,6 +66,8 @@ jest.mock('expo-router', () => {
     useLocalSearchParams: jest.fn(() => ({})),
     useSegments: jest.fn(() => []),
     usePathname: jest.fn(() => '/'),
+    // No-op: focus-refetch isn't exercised in tests (no navigation container).
+    useFocusEffect: jest.fn(),
     Stack: StackComp,
     Tabs: TabsComp,
     Link: Pass,

@@ -33,6 +33,9 @@ export default function ProfileTab() {
   const setMe = useStore(s => s.setMe);
   const friends = useStore(s => s.friends);
   const following = useStore(s => s.following);
+  // Confirmed event subscriptions, hydrated from Supabase by AuthBootstrap —
+  // the live "events attended" count (was a static me.events_attended field).
+  const joined = useStore(s => s.joined);
   // Request counts come from the same hooks the /requests screen uses, so the
   // hint always reflects the true, current in/out numbers (and matches what
   // you'll see on that screen) instead of a snapshot of the store sets.
@@ -151,7 +154,7 @@ export default function ProfileTab() {
       <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
         <SCCard style={{ flexDirection: 'row', padding: 14, justifyContent: 'space-around' }}>
           <Stat label="HOSTED" value={String(hostedCount)} />
-          <Stat label="ATTENDED" value={String(me.events_attended ?? 0)} />
+          <Stat label="ATTENDED" value={String(joined.size)} />
           <Stat
             label="RATING"
             value={ratingSummary.average != null ? `${ratingSummary.average.toFixed(1)}★` : '—'}
