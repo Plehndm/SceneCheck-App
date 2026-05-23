@@ -61,7 +61,14 @@ function extractJsonLdEvents(html) {
  */
 async function scrapeEvents() {
   const res = await fetch(SOURCE_URL, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (SceneCheck events scraper; +FR6)' },
+    // A real browser UA — Eventbrite serves a bot-check page (or 403s) to
+    // obviously-automated agents, which from a CI runner's datacenter IP would
+    // otherwise yield 0 events.
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
   });
   if (!res.ok) throw new Error(`Source fetch failed: ${res.status} ${SOURCE_URL}`);
   const html = await res.text();
@@ -113,40 +120,63 @@ async function ingest(event) {
   return { ok: res.ok, status: res.status, body };
 }
 
-const events = await scrapeEvents();
-console.log(`Scraped ${events.length} event(s) from ${SOURCE_URL}`);
-
-if (DRY_RUN) {
-  // No credentials needed — just show what would be ingested.
-  for (const e of events) {
-    console.log(`• ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name}`);
-  }
-  console.log(`DRY_RUN: ${events.length} event(s) would be ingested (nothing POSTed).`);
-  process.exit(0);
-}
-
-let ingested = 0;
-let failed = 0;
-
-for (const event of events) {
+async function main() {
+  let events;
   try {
-    const r = await ingest(event);
-    if (r.ok) {
-      ingested++;
-      console.log(`✓ ${event.title} → ${r.body.event_id}`);
-    } else {
-      // FR6.4: a bad/duplicate row is logged + skipped, not fatal.
-      failed++;
-      console.warn(`✗ ${event.title} → ${r.status} ${JSON.stringify(r.body)}`);
-    }
+    events = await scrapeEvents();
   } catch (err) {
-    failed++;
-    console.warn(`✗ ${event.title} → ${err}`);
+    console.error(`Scrape failed: ${err}`);
+    console.error('The source likely blocked the CI runner (datacenter IP) or changed its markup. ' +
+      'Set EVENTS_SOURCE_URL to a different source, or run `DRY_RUN=1 node scripts/scrape-events.mjs` locally to inspect.');
+    process.exit(1);
+  }
+
+  console.log(`Scraped ${events.length} event(s) from ${SOURCE_URL}`);
+  if (events.length === 0) {
+    // Not a hard failure (FR6.4) — but call it out so a silent bot-block /
+    // markup change is obvious in the log rather than looking "successful".
+    console.warn('No parseable events found — the source served no JSON-LD events ' +
+      '(possible bot-check page or changed markup). Nothing to ingest.');
+    return;
+  }
+
+  if (DRY_RUN) {
+    // No credentials needed — just show what would be ingested.
+    for (const e of events) {
+      console.log(`• ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name}`);
+    }
+    console.log(`DRY_RUN: ${events.length} event(s) would be ingested (nothing POSTed).`);
+    return;
+  }
+
+  let ingested = 0;
+  let failed = 0;
+  for (const event of events) {
+    try {
+      const r = await ingest(event);
+      if (r.ok) {
+        ingested++;
+        console.log(`✓ ${event.title} → ${r.body.event_id}`);
+      } else {
+        // FR6.4: a bad/duplicate row is logged + skipped, not fatal per-event.
+        failed++;
+        console.warn(`✗ ${event.title} → ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    } catch (err) {
+      failed++;
+      console.warn(`✗ ${event.title} → ${err}`);
+    }
+  }
+
+  console.log(`Done: ${ingested} ingested, ${failed} skipped of ${events.length}.`);
+  // Hard-fail only if NOTHING got through — that means a systemic problem, not
+  // a few skips. The most common cause is the function rejecting the call:
+  if (ingested === 0) {
+    console.error('Every ingest failed. Most likely: 401 (the INGEST_TOKEN GitHub secret ' +
+      'does not match the function\'s INGEST_TOKEN secret), or ingest-scraped is not deployed ' +
+      'with --no-verify-jwt. See the ✗ status codes above.');
+    process.exit(1);
   }
 }
 
-console.log(`Done: ${ingested} ingested, ${failed} skipped of ${events.length}.`);
-
-// Surface a hard failure (so the run goes red) only if nothing got through —
-// individual skips are expected and shouldn't fail the job.
-if (events.length > 0 && ingested === 0) process.exit(1);
+await main();
