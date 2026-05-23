@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **390/390** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.36 — compact event hero, other-profile stats, joined-events list)._
+_Last updated: 2026-05-22 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **390/390** across 53 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.37 — join/leave button state fix + linked event host)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -1163,6 +1163,29 @@ and the profile ATTENDED stat now opens a new `my-events` list of joined events
 or the live joined-events fetch — both are live-only (RPC / RLS), verified on the
 hosted project after applying migration `00025`. The hero resize + ghost border
 are styling, covered by existing render tests.
+
+---
+
+### 2.37 Join/leave button state fix + linked event host (post-§2.36 delta)
+
+_Captured 2026-05-23 alongside `docs/PROGRESS_SNAPSHOT.md` §42._
+
+Join/joined state was wrong + rejoin failed: AuthBootstrap now `toMockId`-maps
+the `joined` set so it matches the app's event ids, and `cancelSubscription`
+hard-`DELETE`s (the subscribe RPC treated a soft-cancelled row as "already
+subscribed", blocking rejoin). The event "Hosted by" row now shows the host's
+name and links to their profile.
+
+| Area | Tests | Notes |
+|---|---|---|
+| AuthBootstrap `joined` id-mapping, `cancelSubscription` hard-delete | none added | Live-only (AuthBootstrap short-circuits in mock; cancel is a no-op in mock). Verified on the hosted project: join sticks across reload, leave + re-join work. The mock `joined` set (resetStore) already uses mock ids, so existing event/home tests are unaffected. |
+| "Hosted by" name + profile link | covered | `useProfile(hostId)` resolves the host; existing event-detail render tests still pass (no asserted "Hosted by" text). |
+
+**Delivered count**: 390 / 390 (no change). 53 suites; `tsc` clean.
+
+**What this section deliberately does NOT do:** add a live AuthBootstrap/RLS
+harness — the id-mapping + hard-delete + host fetch are validated on the hosted
+project (no new migration needed; relies on `00024` already applied).
 
 ---
 

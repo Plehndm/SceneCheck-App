@@ -79,6 +79,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-22 | **Fix the profile "Message" button (second chat-send bug).** After the RLS fix, sending still failed from a profile with `invalid input syntax for type uuid: "dm-<uuid>"`. Cause: the other-profile **Message** button navigated to `/chat/dm-${id}` — a fabricated mock-style chat id — so live mode pushed that non-UUID straight into the `messages` insert. It now calls `api.createChat([id], 'dm')` (RPC → real chat id in live; the `dm-<id>` stable id in mock) and routes to `/chat/<id>`, matching the new-chat flow. +1 test (386/386); `tsc` clean. See §39.5. |
 | 2026-05-22 | **Event join fixed (no Edge Function) + chat UI polish.** **(1) Joining an event failed** with "Failed to send a request to the Edge Function" / "non-2xx" because `api.subscribeToEvent` invoked the `subscribe-to-event` Edge Function, which isn't deployed on the hosted project. It now calls the `subscribe_to_event_atomic` RPC directly (migration `00015`; SECURITY DEFINER, so it bypasses the INSERT-less `event_subscriptions` RLS and does the capacity/waitlist/idempotency check) — same pattern as the friend-request + create-chat fixes. **(2) Leaving an event** was also silently broken: `event_subscriptions` had only SELECT policies, so `cancelSubscription`'s direct `UPDATE` matched zero rows. Migration `00024` adds own-row INSERT/UPDATE/DELETE policies. **(3) UI polish:** the `SCButton` `ghost` variant now has a visible border so the profile **Message** action reads as a button; the chat composer gained bottom padding (`insets.bottom + 24`) so it isn't cramped against the screen edge. No test-count change (386/386); `tsc` clean. See §40. |
 | 2026-05-22 | **Compact event hero, other-profile stats, and a "joined events" list.** **(1)** The event-detail hero panel was 50% empty space — halved (240 → 120). **(2)** The `SCButton` `ghost` border was bumped `t.line` → `t.ink3` so the profile **Message** action unmistakably reads as a button. **(3)** Other people's profiles (friends + public) now show a **hosted / attended / rating** stat row like your own tab, and the bio area shows *"No bio yet."* when empty instead of nothing. Attended for other users goes through a new `attended_count()` RPC (migration `00025`, SECURITY DEFINER — `event_subscriptions` RLS hides others' rows). **(4)** The **ATTENDED** stat on your own profile is now tappable → a new `app/my-events.tsx` screen listing every event you've joined (new `api.fetchJoinedEvents` + `useJoinedEvents`), since there was no single place to see them. +4 tests (390/390, 53 suites); `tsc` clean. See §41. |
+| 2026-05-23 | **Join/leave button state fixed + linked event host.** **(1)** The join/joined button didn't reflect actual attendance, and leaving/re-joining didn't stick. Two causes: (a) AuthBootstrap built the `joined` set from raw `event_id` UUIDs, but every event id elsewhere is `toMockId(row.id)` (seeded events → `e1`…), so `isJoined('e1')` never matched the UUID set — now `joined` is `toMockId`-mapped; (b) `cancelSubscription` soft-deleted (`status='cancelled'`), but the `subscribe_to_event_atomic` RPC treats *any* existing row as "already subscribed", so re-joining was a no-op — `cancelSubscription` now hard-DELETEs the row (allowed by `00024`; the subscriber_count trigger COALESCEs NEW/OLD on delete). **(2)** The event-detail "Hosted by" row now shows the host's **name** (via `useProfile(hostId)`) and is a button that opens their profile (`/profile/<hostId>`); app-created events stay non-interactive. No test-count change (390/390); `tsc` clean. See §42. |
 
 ### Current layout
 
@@ -2646,7 +2647,51 @@ See `docs/TEST_PLAN.md` §2.36.
 
 ---
 
-## 42. How to re-snapshot this file
+## 42. Join/leave button state + linked event host
+
+_Last updated: 2026-05-23 (commit 283e880)_
+
+### 42.1 Join/joined button didn't reflect attendance (and rejoin failed)
+
+The event-detail join/leave button is driven by the Zustand `joined` set
+(`isJoined(id)`). Two bugs made it wrong in live mode:
+
+1. **Id-space mismatch.** AuthBootstrap hydrated `joined` from raw
+   `event_subscriptions.event_id` (UUIDs), but `transformEventRow` stamps every
+   event id with `toMockId(row.id)` — so seeded events are `e1`…`e9` everywhere
+   in the UI. `isJoined('e1')` therefore never matched the UUID in the set, and
+   the button showed the wrong state for seeded events (and the Home/feed JOINED
+   badge too). Fix: AuthBootstrap maps the joined ids through `toMockId`.
+2. **Rejoin no-op.** `cancelSubscription` soft-deleted (`status='cancelled'`),
+   but `subscribe_to_event_atomic` (00015) short-circuits to `'already'` when
+   ANY subscription row exists — so after leaving, re-joining didn't re-confirm
+   you. Fix: `cancelSubscription` now hard-`DELETE`s the row (own-row DELETE
+   policy from `00024`; the `subscriber_count` trigger handles DELETE via
+   `COALESCE(NEW.event_id, OLD.event_id)`). Re-joining then inserts a fresh
+   confirmed row.
+
+### 42.2 "Hosted by" shows the host + links to them
+
+`transformEventRow` doesn't carry the host's name in live mode, so the row read
+"Hosted by —". The event-detail screen now fetches the host via
+`useProfile(baseEvent?.hostId)` and the "Hosted by" `DetailRow` shows their name
+with a "View profile →" affordance, navigating to `/profile/<hostId>`.
+App-created events (no creator) stay non-interactive.
+
+### 42.3 Verification
+
+`npx tsc --noEmit` clean; `npm test` → **390/390, 53 suites** (no new tests — the
+`joined` id-mapping + cancel/rejoin are AuthBootstrap/RPC behavior on the live
+path, and the host link is covered by the existing event-detail render tests).
+Manual on the hosted project: join an event → button flips to JOINED and stays
+on reload; leave → flips back; re-join works; "Hosted by" opens the host's
+profile.
+
+See `docs/TEST_PLAN.md` §2.37.
+
+---
+
+## 43. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
