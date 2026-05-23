@@ -4,7 +4,7 @@
 // platform implementation might need is declared once.
 
 import type { SCEvent } from '@/types/domain';
-import { isRecommendedFor } from '@/lib/events';
+import { eventCategory } from '@/lib/events';
 
 export interface LatLng {
   latitude: number;
@@ -18,6 +18,10 @@ export interface MapProps {
   user?: LatLng;
   // Initial region center; defaults to UCI when omitted.
   initialCenter?: LatLng;
+  // Center the map here, taking precedence over `user`/`initialCenter`. Used to
+  // focus a specific event (e.g. tapping "View location" on an event). On web
+  // it pans imperatively; on native, remount the Map (key) for it to apply.
+  centerOn?: LatLng;
   // Search radius in meters — drawn as a translucent circle around `user`.
   radiusM?: number;
   // Interest tags the current user has subscribed to. Used by pinColor to
@@ -27,6 +31,10 @@ export interface MapProps {
   meInterests?: string[];
   // Pin tap callback. Native uses the marker's onPress; web uses the marker click.
   onPinPress?: (event: SCEvent) => void;
+  // The currently-selected event's id. Its pin renders enlarged + ringed (the
+  // same look a tap produces) — so arriving from an event's "View location"
+  // highlights that pin, not just centers on it.
+  selectedId?: string;
   // Optional callback when the user pans/zooms — Phase 5.x will use this
   // to refresh `events` from `api.fetchEvents(lat, lng, radius)`.
   onRegionChange?: (center: LatLng) => void;
@@ -81,13 +89,12 @@ export function pinColor(
   tokens: { primary: string; accentFriend: string; accentBlue: string; mapPinMute: string },
   meInterests: string[] = [],
 ): string {
-  if (e.kind === 'yours') return tokens.primary;
-  // A friend's event is always "Friends" — previously this was gated on a
-  // shared interest, so a friend's event you had no tag in common with
-  // mis-coloured as "Other".
-  if (e.kind === 'friend') return tokens.accentFriend;
-  // "Recommended" is purely interest-driven (see lib/events.isRecommendedFor):
-  // a scraped event with no matching interest now falls through to "Other".
-  if (isRecommendedFor(e, meInterests)) return tokens.accentBlue;
-  return tokens.mapPinMute;
+  // Same bucket the labels use (lib/events.eventCategory), so color + label
+  // never disagree.
+  switch (eventCategory(e, meInterests)) {
+    case 'yours': return tokens.primary;
+    case 'friend': return tokens.accentFriend;
+    case 'recommended': return tokens.accentBlue;
+    default: return tokens.mapPinMute;
+  }
 }

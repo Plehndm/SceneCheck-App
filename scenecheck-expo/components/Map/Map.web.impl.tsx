@@ -37,12 +37,14 @@ function RegionChangeReporter({ onChange }: { onChange?: (c: LatLng) => void }) 
 }
 
 export function Map({
-  events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
+  events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
   meInterests = [],
-  onPinPress, onRegionChange, interactive = true, style,
+  onPinPress, onRegionChange, interactive = true, style, selectedId,
 }: MapProps) {
   const t = useTokens();
-  const center = user ?? initialCenter;
+  // centerOn (a focused event) wins over the you-are-here center.
+  const center = centerOn ?? user ?? initialCenter;
+  const recenterTo = centerOn ?? user;
 
   return (
     <View
@@ -70,7 +72,7 @@ export function Map({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <RegionChangeReporter onChange={onRegionChange} />
-        {user && <Recenter lat={user.latitude} lng={user.longitude} />}
+        {recenterTo && <Recenter lat={recenterTo.latitude} lng={recenterTo.longitude} />}
         {user && radiusM > 0 && (
           <Circle
             center={[user.latitude, user.longitude]}
@@ -88,12 +90,19 @@ export function Map({
         {events.map(e => {
           const ll = eventLatLng(e);
           const color = pinColor(e, t, meInterests);
+          const selected = e.id === selectedId;
           return (
             <CircleMarker
               key={e.id}
               center={[ll.latitude, ll.longitude]}
-              radius={9}
-              pathOptions={{ color: 'white', weight: 2, fillColor: color, fillOpacity: 1 }}
+              // Selected pin: bigger with a dark ring so it reads as picked.
+              radius={selected ? 13 : 9}
+              pathOptions={{
+                color: selected ? t.ink : 'white',
+                weight: selected ? 4 : 2,
+                fillColor: color,
+                fillOpacity: 1,
+              }}
               eventHandlers={{ click: () => onPinPress?.(e) }}
             >
               <Tooltip>{e.title}</Tooltip>

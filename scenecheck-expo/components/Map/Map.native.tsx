@@ -14,12 +14,14 @@ import {
 } from './types';
 
 export function Map({
-  events, user, initialCenter = DEFAULT_REGION, radiusM = DEFAULT_RADIUS_M,
+  events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
   meInterests = [],
-  onPinPress, onRegionChange, interactive = true, style,
+  onPinPress, onRegionChange, interactive = true, style, selectedId,
 }: MapProps) {
   const t = useTokens();
-  const center = user ?? initialCenter;
+  // centerOn (a focused event) wins over the you-are-here center. initialRegion
+  // is mount-only, so the Map tab remounts (key) when the focus target changes.
+  const center = centerOn ?? user ?? initialCenter;
 
   return (
     <View
@@ -61,6 +63,7 @@ export function Map({
         {events.map(e => {
           const ll = eventLatLng(e);
           const color = pinColor(e, t, meInterests);
+          const selected = e.id === selectedId;
           return (
             <Marker
               key={e.id}
@@ -68,6 +71,9 @@ export function Map({
               title={e.title}
               description={e.where}
               pinColor={color}
+              // Selected pin floats above the rest (and the callout shows when
+              // it's the focused event arriving from "View location").
+              zIndex={selected ? 999 : undefined}
               onPress={() => onPinPress?.(e)}
             />
           );
