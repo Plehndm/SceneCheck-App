@@ -280,7 +280,7 @@ export default function SettingsScreen() {
                   borderColor: palette === name ? t.ink : t.line,
                 }, pressed && { opacity: 0.85 }]}
               >
-                <SCText variant="mono" size={11} weight="600" color={palette === name ? 'white' : t.ink}>
+                <SCText variant="mono" size={11} weight="600" color={palette === name ? t.surface : t.ink}>
                   {PALETTES[name].label.toUpperCase()}
                 </SCText>
               </Pressable>

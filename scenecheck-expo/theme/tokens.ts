@@ -36,12 +36,17 @@ export interface Tokens {
   // Semantic colors (constant across palettes for now)
   good: string;
   warn: string;
+  // Dark ink for text/icons sitting on a `warn` (gold) fill. Constant in both
+  // modes — `ink` flips to near-white in dark mode, which washed out the gold
+  // review button, so it can't be used there.
+  warnInk: string;
   danger: string;
 }
 
 const CONSTANTS = {
   good: '#2BB673',
   warn: '#F2B33C',
+  warnInk: '#1A1205',
   danger: '#C73B2B',
 };
 

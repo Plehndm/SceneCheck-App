@@ -107,7 +107,7 @@ export default function EventsListScreen() {
               borderColor: filter === c.k ? t.ink : t.line,
             }, pressed && { opacity: 0.85 }]}
           >
-            <SCText variant="mono" size={11} weight="600" color={filter === c.k ? 'white' : t.ink}>
+            <SCText variant="mono" size={11} weight="600" color={filter === c.k ? t.surface : t.ink}>
               {c.label}
             </SCText>
           </Pressable>

@@ -224,7 +224,7 @@ export default function SearchScreen() {
               borderColor: tab === c.k ? t.ink : t.line,
             }, pressed && { opacity: 0.85 }]}
           >
-            <SCText variant="mono" size={11} weight="600" color={tab === c.k ? 'white' : t.ink}>
+            <SCText variant="mono" size={11} weight="600" color={tab === c.k ? t.surface : t.ink}>
               {c.label}
             </SCText>
           </Pressable>

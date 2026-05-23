@@ -251,14 +251,14 @@ export default function EventDetailScreen() {
           flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap',
         }}>
           <View style={{
-            backgroundColor: 'white',
+            backgroundColor: t.card,
             paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
           }}>
             <SCText variant="mono" size={10} weight="600" color={t.ink}>{label}</SCText>
           </View>
           {alsoRec && (
             <View style={{
-              backgroundColor: 'white',
+              backgroundColor: t.card,
               paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
             }}>
               <SCText variant="mono" size={10} weight="600" color={t.accentBlue}>RECOMMENDED</SCText>
@@ -407,7 +407,7 @@ export default function EventDetailScreen() {
               alignItems: 'center', justifyContent: 'center',
             }, pressed && { opacity: 0.85 }]}
           >
-            <SCIcon name="star" size={22} color={t.ink} />
+            <SCIcon name="star" size={22} color={t.warnInk} />
           </Pressable>
         )}
         <View style={{ flex: 1 }}>

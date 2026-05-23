@@ -169,7 +169,7 @@ export default function MapTab() {
                   borderColor: active ? t.ink : t.line,
                 }, pressed && { opacity: 0.85 }]}
               >
-                <SCText variant="mono" size={10} weight="600" color={active ? 'white' : t.ink}>
+                <SCText variant="mono" size={10} weight="600" color={active ? t.surface : t.ink}>
                   {mi} MI
                 </SCText>
               </Pressable>

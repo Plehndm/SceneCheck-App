@@ -38,9 +38,9 @@ function RefreshIndicator() {
         paddingHorizontal: 12, paddingVertical: 6,
       }}>
         <Animated.View style={{ transform: [{ rotate }] }}>
-          <SCIcon name="rotate-ccw" size={14} color={t.ink2} />
+          <SCIcon name="rotate-ccw" size={14} color={t.ink} />
         </Animated.View>
-        <SCText variant="mono" size={10} weight="600" color={t.ink2}>REFRESHING</SCText>
+        <SCText variant="mono" size={10} weight="600" color={t.ink}>REFRESHING</SCText>
       </View>
     </View>
   );
@@ -85,7 +85,7 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
         opacity: refreshing ? 0.5 : 1,
       }, pressed && { opacity: 0.7 }]}
     >
-      <SCIcon name="rotate-ccw" size={18} color={t.ink2} />
+      <SCIcon name="rotate-ccw" size={18} color={t.ink} />
     </Pressable>
   ) : null;
 
