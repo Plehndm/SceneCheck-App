@@ -32,6 +32,7 @@ jobs:
 
       - name: Scrape + ingest
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}                       # https://<ref>.supabase.co
-          INGEST_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}          # service_role key
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}                # https://<ref>.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}  # sb_secret_… (new key; replaces service_role)
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}                # shared secret the function matches (x-ingest-token)
         run: node scripts/scrape-events.mjs

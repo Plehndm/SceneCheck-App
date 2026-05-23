@@ -12,11 +12,12 @@
 // Node 20+ only (uses global fetch). No dependencies for the POST itself; add
 // cheerio / Playwright in the workflow if you parse real HTML.
 
-const SUPABASE_URL = process.env.SUPABASE_URL;   // https://<project-ref>.supabase.co
-const TOKEN = process.env.INGEST_TOKEN;          // Supabase service_role key
+const SUPABASE_URL = process.env.SUPABASE_URL;        // https://<project-ref>.supabase.co
+const SECRET_KEY = process.env.SUPABASE_SECRET_KEY;   // sb_secret_… (replaces the deprecated service_role key)
+const INGEST_TOKEN = process.env.INGEST_TOKEN;        // shared secret the ingest-scraped function matches
 
-if (!SUPABASE_URL || !TOKEN) {
-  console.error('Missing SUPABASE_URL or INGEST_TOKEN env vars.');
+if (!SUPABASE_URL || !SECRET_KEY || !INGEST_TOKEN) {
+  console.error('Missing one of: SUPABASE_URL, SUPABASE_SECRET_KEY, INGEST_TOKEN.');
   process.exit(1);
 }
 
@@ -57,8 +58,14 @@ async function ingest(event) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: TOKEN,
-      Authorization: `Bearer ${TOKEN}`, // service_role key passes the JWT gate
+      // The new secret key is the project key for the gateway. The function is
+      // deployed with --no-verify-jwt because sb_secret_… is NOT a JWT (so it
+      // can't satisfy the default JWT gate the legacy service_role key did).
+      apikey: SECRET_KEY,
+      // Actual authorization: the function matches this against its own
+      // INGEST_TOKEN secret — independent of Supabase's anon/service_role →
+      // publishable/secret key migration.
+      'x-ingest-token': INGEST_TOKEN,
     },
     body: JSON.stringify(event),
   });

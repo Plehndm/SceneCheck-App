@@ -1,6 +1,11 @@
 // Edge Function: ingest-scraped — FR6 (App-Created Events)
 // Validates scraped event data, auto-tags, and inserts with source='scraped'.
-// Called by GitHub Actions scraper with service_role_key auth.
+//
+// Auth: deploy with `--no-verify-jwt` (the new sb_secret_… key isn't a JWT, so
+// it can't satisfy the default JWT gate). The caller is instead authorized by a
+// shared `INGEST_TOKEN` secret it sends in the `x-ingest-token` header — set it
+// with `supabase secrets set INGEST_TOKEN=…`. The privileged insert still uses
+// the function's platform-injected service key via createAdminClient().
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createAdminClient, jsonResponse, errorResponse, handlePreflight } from "../_shared/supabase-client.ts";
@@ -10,6 +15,14 @@ serve(async (req: Request) => {
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
+
+  // Shared-secret gate. Fail closed: if INGEST_TOKEN isn't configured (or the
+  // header doesn't match), reject — the function is --no-verify-jwt, so this is
+  // the only thing standing between the public internet and an insert.
+  const expectedToken = Deno.env.get("INGEST_TOKEN");
+  if (!expectedToken || req.headers.get("x-ingest-token") !== expectedToken) {
+    return errorResponse("Unauthorized", 401);
+  }
 
   try {
     const body = await req.json();
