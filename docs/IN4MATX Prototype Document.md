@@ -6,6 +6,10 @@
 
 Mock UIs:
 
+<img width="512" height="196" alt="image" src="https://github.com/user-attachments/assets/da0abef5-0f3d-422e-ba79-85cf90d7002f" />
+
+<img width="384" height="512" alt="image" src="https://github.com/user-attachments/assets/8018af80-5036-42c5-8513-5872d43579fd" />
+
 
 **COLOR THEORY** - App Design
 
@@ -21,7 +25,9 @@ Research Results:
   - apple
 - green for natural/agricultural feel
 
+<img width="512" height="377" alt="image" src="https://github.com/user-attachments/assets/1ce48a1b-58ed-4445-b62e-d05a1a0f814c" />
 
+<img width="512" height="222" alt="image" src="https://github.com/user-attachments/assets/4accdd5f-5e8e-48fe-bc8b-80bff37afdf8" />
 
 What our app should use:
 
@@ -31,18 +37,19 @@ Thus, warmer colors to imbue friendliness would be best.
 
 **Current main colors:**
 
-# ff5b47 -
+# ff5b47 - <img width="66" height="30" alt="image" src="https://github.com/user-attachments/assets/03578582-fc84-4650-97b0-25cda9dfb3a2" />
 
-# 13110f - 
+# 13110f - <img width="82" height="36" alt="image" src="https://github.com/user-attachments/assets/0c5a89f1-f8a2-4a73-9a40-832b21876caa" />
 
-# fffbf5 - 
+# fffbf5 - <img width="64" height="36" alt="image" src="https://github.com/user-attachments/assets/4619f298-6185-4aa7-b90f-39886d0fc077" />
+(there’s a color here)
 
-# fefefe - 
-
+# fefefe - <img width="66" height="32" alt="image" src="https://github.com/user-attachments/assets/23a5646e-9a1f-4674-8e9d-84005feb5244" />
+(there’s also a color here, although it is much closer to white)
 
 
 We are close to obtaining a 'warm color palette'.
-
+<img width="800" height="940" alt="image" src="https://github.com/user-attachments/assets/a7944f06-e229-4ea2-ab74-e894294d5bf8" />
 The black color makes for a good background color / separator between the white colors and the _main_ color. Our current main color is a red-orange variant. Possible experimentation with changing only the main color and seeing what our app would look like. The current white and off-white background color are good for creating the foundation of a warm tone, as opposed to a more blue-ish cool tone.
 
 Diving deeper into specific colors (with emphasis on warmer ones):  
@@ -55,6 +62,43 @@ Reading: <https://forum.freecodecamp.org/t/the-basic-principles-of-web-design-th
 - **note**: CMYK "is NOT to be used when you are creating designs for the digital platform!"
 
 **Prototype's UI:**
+
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/b4d6351b-bf0c-4e93-82e6-d412c1a92152" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/88f48efc-8f03-467a-b275-83e095964475" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/336bc481-6b25-4a8d-b40c-301c247fdad1" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/9f34b553-cc04-40c3-8f8a-9c140d9fd7ec" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/4dbcef75-5fe7-47f5-b270-e698e82e94ab" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/bf29644a-89e4-450b-b6eb-fd70e4114605" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/4aa7bcc9-950b-41f6-aef8-4108fd37d34f" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/dca4fbf4-e726-4efc-aee7-1c365a47c09e" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/24d92cf7-7cd5-4187-8861-30b0166db2b0" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/9de68f05-0306-495b-9e7f-daea8fcfcf17" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/d2890f47-5f33-428d-a175-7babebe265af" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/6c4a5198-c63c-482b-ba69-a91bee17e028" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/c5b1eba0-7e08-425b-bca9-67592edb4b46" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/836c78e9-a258-4d59-9781-e1eae2daab41" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/e7d7affd-f008-45a6-9809-4dc509e57f99" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/d4b48953-446c-4a1d-aa5f-f911cb6f7c4d" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/f8f5ba03-1fb9-47d0-b59e-87b59c3e477d" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/fd16123b-aa38-41b3-b6d1-be9428c2f3ec" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/f9332e40-8af9-4b83-a75b-60e18b456112" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/18567501-056d-4c36-81c8-bf2ff8d9ede6" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/fbfc3d67-63fc-4252-9b81-03e3c789c716" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/6d592ab3-f68d-4018-8644-7ad5e13e8bdf" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/6f977ebb-b0a7-42e9-8f7b-ddb0382863f9" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/5bdc3f56-1cc0-42c7-9d86-444b200832b0" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/e90390bb-5a64-471d-9f6b-6a65df2edc6d" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/fe976e91-21c1-4309-b598-5de9baaa8943" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/5215a5f4-b48d-4a64-b303-fdcaf5b9ec00" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/0ac207b9-14db-46d4-8e59-722c8f2a5ba1" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/1f4ccf7a-d02b-43b8-9707-a7fa88ece1f3" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/da401e03-ed85-4ad8-8e57-7fa3d7705516" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/4adc86a3-c815-4aa6-90da-35395d5343a3" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/3cab4fb2-8606-4bbd-ac3e-d2d161079aa8" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/524b10a9-ea59-4087-9eae-408ea5d5368c" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/82f6e40d-5521-4712-b197-91dfcf7e5932" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/bd7fa7f2-ffa1-4d2e-bf77-b128e24eb61d" />
+<img width="612" height="792" alt="image" src="https://github.com/user-attachments/assets/0902c64d-1b18-44c1-b8a5-428b79dca447" />
 
 # Heuristic Evaluation
 
