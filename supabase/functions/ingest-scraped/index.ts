@@ -10,6 +10,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createAdminClient, jsonResponse, errorResponse, handlePreflight } from "../_shared/supabase-client.ts";
 import { requireFields, validateLocation } from "../_shared/validators.ts";
+import { analyzeInterests, type CatalogInterest } from "../_shared/interest-matching.ts";
 
 serve(async (req: Request) => {
   const preflight = handlePreflight(req);
@@ -77,22 +78,52 @@ serve(async (req: Request) => {
 
     if (eventErr) return errorResponse(eventErr.message, 500);
 
-    // Auto-tag: match description keywords against interest names (FR6.2)
-    if (body.description) {
-      const { data: allInterests } = await admin
+    // Auto-tag (FR6.2): analyze the title + description against the interest
+    // catalog. Existing interests whose name (or a `similar_tags` alias) appears
+    // as a whole word get attached; when NOTHING matches, derive a new interest
+    // from the text, create it, and attach that — so a scraped event about
+    // something the catalog doesn't cover yet is still labeled, and the new
+    // interest enters the catalog for everyone. (The old version only scanned
+    // the description, matched on a raw substring, and never created a tag.)
+    const { data: catalog } = await admin
+      .from("interests")
+      .select("id, name, similar_tags");
+
+    const rows = (catalog ?? []) as { id: string; name: string; similar_tags: string[] | null }[];
+    const { matched, suggested } = analyzeInterests(
+      body.title,
+      body.description || "",
+      rows as CatalogInterest[],
+    );
+
+    const idByName = new Map(rows.map((r) => [r.name, r.id]));
+    let interestIds = matched
+      .map((name) => idByName.get(name))
+      .filter((id): id is string => Boolean(id));
+
+    if (interestIds.length === 0 && suggested) {
+      // No catalog interest matched — mint one from the text. Re-select on
+      // conflict so a concurrent insert (or a tag added since the SELECT) is
+      // reused instead of failing the whole ingest on a UNIQUE violation.
+      const { data: created, error: createErr } = await admin
         .from("interests")
-        .select("id, name");
-
-      if (allInterests) {
-        const desc = body.description.toLowerCase();
-        const matchedIds = allInterests
-          .filter((i: { name: string }) => desc.includes(i.name.toLowerCase()))
-          .map((i: { id: string }) => ({ event_id: event.id, interest_id: i.id }));
-
-        if (matchedIds.length) {
-          await admin.from("event_interests").insert(matchedIds);
-        }
+        .insert({ name: suggested, description: `Auto-created from "${body.title}".` })
+        .select("id")
+        .single();
+      if (created) {
+        interestIds = [created.id];
+      } else {
+        const { data: existing } = await admin
+          .from("interests").select("id").eq("name", suggested).maybeSingle();
+        if (existing) interestIds = [existing.id];
+        else console.error("Failed to create interest:", createErr);
       }
+    }
+
+    if (interestIds.length) {
+      const tagRows = interestIds.map((interest_id) => ({ event_id: event.id, interest_id }));
+      const { error: tagErr } = await admin.from("event_interests").insert(tagRows);
+      if (tagErr) console.error("Failed to insert event_interests:", tagErr);
     }
 
     return jsonResponse({ event_id: event.id }, 201);
