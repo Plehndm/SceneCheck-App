@@ -88,15 +88,26 @@ Deno.test("deriveTags is capped at MAX_DERIVED_TAGS and deduped by stem", () => 
   assertEquals(deriveTags("Running and runs", ""), ["running"]);
 });
 
-Deno.test("title emphasis: with many title words, the title's lead words win over description frequency", () => {
-  // 4 title candidates; the description hammers "drumming" (last in the title).
+Deno.test("title emphasis: title's lead words win over description frequency", () => {
+  // Comma-separated list of 4 topics; the description hammers "drumming" (last).
   // Title order wins — "drumming" does NOT displace the leading title words.
   const r = analyzeInterests(
-    "Pottery Sculpture Painting Drumming",
+    "Pottery, Sculpture, Painting, Drumming",
     "drumming drumming drumming drumming",
     CATALOG,
   );
   assertEquals(r.suggested, ["pottery", "sculpture", "painting"]);
+});
+
+Deno.test("related adjacent title words combine into a ≤2-word compound tag", () => {
+  // Whole-title compound.
+  assertEquals(analyzeInterests("Natural Medicine", "", CATALOG).suggested, ["natural medicine"]);
+  // Lead compound + trailing unigram ("drop" is a stop word, so it's excluded).
+  assertEquals(analyzeInterests("Cold Brew Bandana Drop", "", CATALOG).suggested,
+    ["cold brew", "bandana"]);
+  // A stop word ("and") breaks the run, so these stay two separate tags.
+  assertEquals(analyzeInterests("Pottery and Sculpture", "", CATALOG).suggested,
+    ["pottery", "sculpture"]);
 });
 
 Deno.test("a derived tag is singularized for a clean catalog label", () => {
@@ -104,8 +115,9 @@ Deno.test("a derived tag is singularized for a clean catalog label", () => {
   assertEquals(deriveTag("Puppies", ""), "puppy");
 });
 
-Deno.test("deriveTag prefers a repeated, specific word over filler", () => {
-  assertEquals(deriveTag("Kayak trip", "Beginner kayak session on the river"), "kayak");
+Deno.test("deriveTag returns the lead title tag (unigram or ≤2-word compound)", () => {
+  assertEquals(deriveTag("Pottery night", "Throw clay"), "pottery"); // single candidate
+  assertEquals(deriveTag("Cold Brew", "Strong coffee"), "cold brew"); // adjacent compound
 });
 
 Deno.test("deriveTag skips stop/format words and bare numbers", () => {

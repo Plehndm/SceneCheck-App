@@ -5,12 +5,13 @@
 //     aliases — appears in the text, OR
 //   - when the text matches NOTHING in the catalog, up to MAX_DERIVED_TAGS
 //     tags derived primarily from the TITLE (its lead words, in order — that's
-//     where the keywords people care about usually are; the description is only
-//     a fallback when the title has no usable word). The caller mints these as
-//     new interests and attaches them, so an event about something the catalog
-//     doesn't cover yet is still labeled. If neither title nor description has
-//     a usable word — only stop words / filler / numbers — we don't mint a junk
-//     interest; we fall back to the catch-all `unknown` tag.
+//     where the keywords people care about usually are). Adjacent words in a run
+//     combine into a single ≤2-word compound ("cold brew", "natural medicine");
+//     the description is only a fallback when the title has no usable word. The
+//     caller mints these as new interests and attaches them, so an event about
+//     something the catalog doesn't cover yet is still labeled. If neither title
+//     nor description has a usable word — only stop words / filler / numbers —
+//     we don't mint a junk interest; we fall back to the catch-all `unknown` tag.
 //
 // Note: an event matching several CATALOG interests already carries all of them
 // (the matched path is uncapped); the cap only limits how many brand-new
@@ -63,6 +64,7 @@ const STOP_WORDS = new Set<string>([
   "from", "this", "that", "these", "those", "here", "there", "into", "over",
   "what", "when", "where", "who", "how", "why", "come", "join", "lets", "let",
   "get", "got", "all", "any", "new", "off", "too", "not", "but", "about", "with",
+  "is", "no", "longer", "optional",
   // Event-format filler.
   "event", "events", "night", "nights", "day", "days", "week", "weekend",
   "weekends", "morning", "evening", "afternoon", "meetup", "meet", "session",
@@ -166,32 +168,73 @@ function singularize(w: string): string {
   return w;
 }
 
-// Take up to `max` words from `wordsInOrder`, one per stem (first occurrence
-// wins), singularized for a clean label.
-function takeByStem(wordsInOrder: string[], max: number): string[] {
+// Split a title into segments on punctuation that separates list items, so
+// words on opposite sides of a comma / dash / slash / pipe aren't fused into a
+// two-word phrase. (A spaced hyphen "A - B" is a separator; an intra-word
+// hyphen is left alone.)
+function titleSegments(title: string): string[] {
+  return title.replace(/\s[-–—]\s/g, " | ").split(/[,;:|/()&+]+/);
+}
+
+// Runs of CONSECUTIVE candidate words within the title. A non-candidate token
+// (stop word, number, short word) or a segment boundary breaks a run — so
+// "Pottery and Knitting" is two runs (the stop "and" splits them) while
+// "Natural Medicine" / "Cold Brew" each stay a single run.
+function titleRuns(title: string): string[][] {
+  const runs: string[][] = [];
+  for (const seg of titleSegments(title)) {
+    let run: string[] = [];
+    for (const w of words(seg)) {
+      if (isCandidate(w)) run.push(w);
+      else if (run.length) { runs.push(run); run = []; }
+    }
+    if (run.length) runs.push(run);
+  }
+  return runs;
+}
+
+// Title phrases, emphasizing the lead words. Within a run the first two words
+// combine into ONE ≤2-word tag — so a related adjacent compound like
+// "cold brew" / "natural medicine" becomes a single interest — and any further
+// words in the run stay as unigrams.
+function titlePhrases(title: string): string[] {
   const out: string[] = [];
-  const usedStems = new Set<string>();
-  for (const w of wordsInOrder) {
-    const k = stemKey(w);
-    if (usedStems.has(k)) continue; // dedupe by stem (one tag per topic)
-    usedStems.add(k);
-    out.push(singularize(w));
+  for (const run of titleRuns(title)) {
+    if (run.length >= 2) {
+      out.push(`${run[0]} ${run[1]}`);
+      for (let i = 2; i < run.length; i++) out.push(run[i]);
+    } else {
+      out.push(run[0]);
+    }
+  }
+  return out;
+}
+
+// Take up to `max` tags, one per stem-key (first wins). A 2-word phrase is kept
+// verbatim; a single word is singularized for a clean label.
+function takeTags(phrases: string[], max: number): string[] {
+  const out: string[] = [];
+  const used = new Set<string>();
+  for (const p of phrases) {
+    const parts = p.split(" ");
+    const key = parts.map(stemKey).join(" ");
+    if (used.has(key)) continue;
+    used.add(key);
+    out.push(parts.length === 1 ? singularize(p) : p);
     if (out.length >= max) break;
   }
   return out;
 }
 
-// Mint up to `max` candidate tags from free text when the catalog has nothing
-// for it. MOST emphasis goes to the TITLE: when it has any usable word, the tags
-// are taken straight from the title in reading order — its lead words are
-// generally the keywords people care about, and we don't let a word the
-// description happens to repeat displace them. Only when the title yields no
-// usable word do we fall back to the description, there ranked by stem frequency
-// (then length, then order) so a repeated topic word wins over incidental ones.
-// Deduped by stem and singularized. Returns [] when neither has a usable word.
+// Mint up to `max` tags from the text when the catalog has nothing for it. MOST
+// emphasis on the TITLE: its phrases (lead words in reading order, with adjacent
+// pairs combined into ≤2-word compounds) become the tags — a word the
+// description merely repeats can't displace them. The description is used only
+// as a fallback when the title has no usable word, ranked there by stem
+// frequency (then length, then order). Returns [] when neither has a usable word.
 export function deriveTags(title: string, description: string, max = MAX_DERIVED_TAGS): string[] {
-  const titleWords = words(title).filter(isCandidate);
-  if (titleWords.length) return takeByStem(titleWords, max);
+  const phrases = titlePhrases(title);
+  if (phrases.length) return takeTags(phrases, max);
 
   const descWords = words(description).filter(isCandidate);
   if (!descWords.length) return [];
@@ -205,7 +248,7 @@ export function deriveTags(title: string, description: string, max = MAX_DERIVED
     .sort((a, b) =>
       freq.get(stemKey(b.w))! - freq.get(stemKey(a.w))! || b.w.length - a.w.length || a.i - b.i)
     .map((r) => r.w);
-  return takeByStem(ranked, max);
+  return takeTags(ranked, max);
 }
 
 // Single best derived tag, or null. Thin wrapper over deriveTags for callers
