@@ -91,6 +91,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Scraped events auto-create interests + fuzzy tag matching.** `ingest-scraped` (FR6) used to scan only the description, match interest names by raw substring, and never create a tag — so a scraped event about an uncovered topic published unlabeled. New pure analyzer `supabase/functions/_shared/interest-matching.ts` now runs over **title + description**: existing interests match on their name OR a `similar_tags` alias, compared by a morphological **stem**, so `bike`/`biking`/`bikes`/`biker` and `spin`/`spinning` reuse one interest instead of minting near-duplicates (the dedup the user asked for); when nothing matches, a singularized tag is derived from the most salient word, created, and attached. Distinct roots never fuse (`hiking` ≠ `biking` — stemming is morphology-only, not edit-distance). Covered by Deno unit tests (`interest-matching.test.ts`, run via `deno test`); no Jest/tsc surface, so 409/409 is unchanged. Requires re-deploying the function. See §51. |
 | 2026-05-24 | **Scraped-event source links, dark-mode refresh spinner, bare auto-created tags.** Three polish items + plumbing. **(1)** Scraped (App-created) events now carry a `source_url` (new `events` column, migration `00027`; the scraper pulls it from each listing's JSON-LD `url`, `ingest-scraped` stores it, `transformEventRow` surfaces it as `SCEvent.sourceUrl`). The event-detail screen renders a **"View original listing →"** link (opens via `Linking.openURL`) **in place of the "Hosted by" row** when a scraped event has one — user events keep the host row. **(2)** The native pull-to-refresh spinner used the washed-out `ink3` grey; it now uses the adaptive `ink` (`tintColor` + Android `colors`/`progressBackgroundColor`), so it's dark in light mode and bright in dark mode — matching the web button + REFRESHING pill, which already used `ink`. **(3)** Auto-created interests are now stored with **just the name** (the `Auto-created from "…"` description is gone). +1 test (410/410); `tsc` clean. Needs migration `00027` applied + `ingest-scraped` redeployed. See §52. |
 | 2026-05-24 | **Auto-tag precision: expanded stop-list, `unknown` fallback, trimmed aliases.** Review of the first live re-run showed mediocre tags (e.g. `experience`, `orange`, `lunch`) — not duplicates, but low-signal. Three fixes in the shared analyzer + seed: **(1)** the stop-word list grew to cover marketing/commercial/format/locale filler (`experience`, `sale`, `networking`, `conference`, `orange`, `county`, `irvine`, day/season names, …) so those words can't become tags; **(2)** when the text yields **no** usable word, the analyzer now returns the catch-all **`unknown`** tag (new exported `UNKNOWN_TAG`) instead of minting a junk interest or leaving the event untagged; **(3)** over-broad seed `similar_tags` were trimmed — `live` off `music` and `irvine` off `uci` (in `seed.sql`, `seed-hosted.sql`, and `data/mocks.ts`) so "live …" / Irvine-anything stop auto-tagging those. +2 Deno tests. Because matching also fires on **existing** catalog rows, the live cleanup also deletes the bare auto-created interests (subs 0) so the new stop-list actually takes effect on re-run; aliases are trimmed with an `UPDATE`. Requires redeploy + a delete/trim SQL + re-run. See §53. |
+| 2026-05-24 | **Scraper CI resilience + verified live re-tag.** The scraper threw and `exit(1)` on a non-OK source response, so when Eventbrite served the GitHub runner's datacenter IP a `405` (intermittent bot defense) the whole workflow hard-failed. It now retries the fetch (rotating User-Agent + backoff, `SCRAPE_RETRIES` cfg) and, on total failure, falls back to seed events instead of exiting — the ingest path always runs. Verified the full FR6 pipeline end-to-end against the hosted project: migration `00027` applied, `ingest-scraped` redeployed with the tightened tagger, the catalog cleaned (scraped events + bare auto-created interests deleted, `live`/`irvine` aliases `UPDATE`-trimmed), then the scraper re-run from a non-datacenter IP → **40/40 events ingested with a real per-event `source_url` and ≥1 tag**; `uci`/`music` no longer over-match, junk tags (`experience`/`orange`/`lunch`/…) are gone, the 7 speed-dating events share one `dating` tag, and no duplicate same-meaning interests. Known precision gaps left for later user testing: a few proper-noun/brand/filler tags (`actually`, `jason`, `thermomix`, `spectrum`, …) and `biking` still over-matching via its own `running`/`spin` aliases (only `live`/`irvine` were trimmed). See §54. |
 
 ### Current layout
 
@@ -3251,7 +3252,54 @@ junk ones fall to `unknown`. (Known remaining broad aliases not trimmed here:
 
 ---
 
-## 54. How to re-snapshot this file
+## 54. Scraper CI resilience + verified live re-tag
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+**Resilience.** `scripts/scrape-events.mjs` used to `throw` on a non-OK source
+response and `exit(1)`, so when Eventbrite served the GitHub Actions runner a
+`405` (it bot-blocks datacenter IPs intermittently — the same run had succeeded
+days earlier) the whole workflow hard-failed. Now:
+
+- `fetchSourceHtml()` retries the fetch `SCRAPE_RETRIES` times (default 3),
+  rotating across three browser `User-Agent`s with linear backoff, and only
+  throws after the last attempt.
+- `main()` no longer `exit(1)`s on a scrape error — it logs loudly and falls
+  through to the existing **seed-event fallback**, so the ingest path always
+  runs (CI stays green even when the live source is blocked). The trade-off: a
+  blocked run ingests the 3 seed events, not the live listings — re-run, or run
+  from a non-datacenter IP, to get the real ones.
+
+**Verified live re-tag (end-to-end).** With migration `00027` applied and
+`ingest-scraped` redeployed with the tightened tagger (§53), the hosted catalog
+was cleaned (deleted `source='scraped'` events + the bare auto-created interests,
+`array_remove`'d the `live`/`irvine` aliases) and the scraper was re-run from a
+non-datacenter IP. Result, confirmed by querying the hosted DB with the anon key:
+
+- **40 / 40** events ingested, each with a **real per-event `source_url`**
+  (so the detail screen's "View original listing" link works) and **≥1 tag**.
+- `uci` no longer blanket-tags every Irvine event; `music` only lands on genuine
+  music events; the junk tags (`experience`, `orange`, `lunch`, `show`,
+  `professional`, `business`, `market`) are gone; the 7 speed-dating events all
+  share a single `dating` interest. **No duplicate same-meaning interests.** The
+  `unknown` fallback is deployed but didn't fire (every title had a usable word).
+
+**Known precision gaps (deferred to later user testing — current state is "good
+enough to refine"):** a handful of proper-noun / brand / filler tags still slip
+through title-only parsing (`actually`, `jason`, `martin`, `thermomix`,
+`networknite`, `spectrum`, `challenge`), and `biking` still over-matches via its
+own `running`/`spin` aliases (only `live`/`irvine` were trimmed this pass, e.g.
+"Blind Wine Tasting → biking"). Both are precision (not dedup) issues; candidate
+fixes are adding those filler words to `STOP_WORDS` and trimming `biking`'s
+aliases, on a future tightening pass.
+
+Local-run note: secrets for a manual `node scripts/scrape-events.mjs` go in a
+gitignored `scripts/.env.scrape` (`.gitignore` updated); it's a transient
+credentials file — delete it after use (it lives under a synced folder).
+
+---
+
+## 55. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

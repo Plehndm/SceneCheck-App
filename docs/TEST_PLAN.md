@@ -1445,6 +1445,33 @@ old tags persist.
 
 ---
 
+### 2.48 Scraper CI resilience + verified live FR6 re-tag (post-§2.47 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §54._
+
+The scraper hard-failed (`exit 1`) when Eventbrite served the CI runner a `405`
+(intermittent datacenter-IP bot defense). It now retries with rotating
+User-Agents and falls back to seed events on total failure, so the workflow never
+hard-fails. Also records the end-to-end live verification of the FR6 auto-tag
+pipeline (the analyzer's own behavior is covered by the Deno tests in §2.45/§2.47).
+
+| Surface | How verified | Result |
+|---|---|---|
+| `scripts/scrape-events.mjs` (retry + seed fallback) | CI-only script — no Jest harness. Exercised via `DRY_RUN=1` locally (parses 40 live events; retry/fallback path code-reviewed). | A non-OK source response retries then falls back instead of exiting 1; CI stays green. |
+| Hosted `ingest-scraped` pipeline (analyzer live) | Manual end-to-end: clean catalog → re-run scraper → query hosted DB via anon key. | 40/40 events with `source_url` + ≥1 tag; `uci`/`music` no longer over-match; junk tags gone; `dating` consolidated; no duplicate interests. |
+
+**Delivered count**: Jest unchanged (410/410; this is CI-script + live-data work,
+off the Jest path); `tsc` clean.
+
+**What this section deliberately does NOT do / defers to later user testing:** the
+remaining tag-precision gaps — proper-noun/brand/filler tags (`actually`, `jason`,
+`thermomix`, …) from title-only parsing, and `biking` over-matching via its own
+`running`/`spin` aliases — are left for a future tightening pass (add to
+`STOP_WORDS`; trim those aliases). They're precision, not dedup, and the current
+state is good enough to refine against real usage.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?
