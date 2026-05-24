@@ -1563,6 +1563,27 @@ hosted INSERT + redeploy + re-scrape.
 
 ---
 
+### 2.53 Unknown-capacity scraped events: unlimited join + listing warning (post-§2.52 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §59._
+
+Scraped events have no listed capacity (`cap` 0); the detail screen now treats
+that as "unknown / no limit" — shows "capacity unknown", keeps the CTA at JOIN
+EVENT, and warns the joiner to check the source listing.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `app/event/[id].tsx` (`capUnknown = e.cap <= 0`: capacity label, JOIN-not-WAITLIST, join warning toast) | `tests/screens/event-detail.test.tsx` (+1) | With `e4.cap` overridden to 0: the detail row reads "capacity unknown", the CTA is **JOIN EVENT** (not WAITLIST), pressing it joins, and a toast mentioning the **original listing** appears. |
+
+**Delivered count**: 412 / 412 (+1); `tsc` clean.
+
+**What this section deliberately does NOT do:** add a migration or touch the
+subscribe RPC — `subscribe_to_event_atomic` already confirms every join when
+`capacity IS NULL`, so unlimited joining works server-side unchanged. Purely
+client-side; ships with the app build.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

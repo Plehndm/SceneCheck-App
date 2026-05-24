@@ -96,6 +96,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Curated common-word interests + safer `-er` stemming + true-black/white refresh icon.** **(1)** Added 7 seed interests — `career`, `dating`, `business`, `dentist`, `workshop`, `concert`, `conference` (with aliases, e.g. `dentist`←`dentistry`/`dental`) — so scraped listings *match* a stable, readable tag (e.g. "Career Fair" → `career`) instead of deriving a noisy one-off, restoring good labels and cutting derive-noise (matching short-circuits derivation). In `seed.sql` + `seed-hosted.sql`. **(2)** Gated the `stemKey` `-er` strip to words >6 chars so it no longer over-reduces short words: `career` stays `career` (was `car`, which wrongly matched `care`/`cars` — e.g. "Self-Care…" → career), and `water` stays `water`; the cost is that short agentive forms (`biker`/`runner`) no longer collapse to `biking`/`running` (base forms still do). Deno tests updated. **(3)** The refresh affordance (web button, REFRESHING pill, native pull-spinner) now uses **pure `#000` in light / `#FFF` in dark** (via `useTheme().mode`) instead of the palette's tinted near-black/white `ink`. 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §56. |
 | 2026-05-24 | **Title-first tag derivation.** When a scraped event matches no catalog interest, `deriveTags` now takes the new tags straight from the **title in reading order** (its lead words are the keywords people care about) instead of ranking title+description by combined stem frequency — so a word the description merely repeats can no longer displace the title's lead words (e.g. a desc hammering "drumming" no longer pushes out "pottery/sculpture/painting" from the title). The description is used **only as a fallback** when the title has no usable word, and there it's still ranked by stem frequency (so a repeated topic like "astronomy" wins). Curated-interest *matching* (§56) is unchanged and still takes priority over derivation. +1 Deno test (411/411 Jest unchanged; `tsc` clean). Live effect needs `ingest-scraped` redeploy + re-scrape. See §57. |
 | 2026-05-24 | **More stop words + 17 curated interests + 2-word compound tags.** **(1)** Added `is`, `no`, `longer`, `optional` to `STOP_WORDS` (`for`/`into` were already there). **(2)** Seeded 17 more common descriptive interests — `cafe`, `choir`, `church`, `fair`, `solar`, `free`, `digital`, `virtual`, `networking`, `wine`, `games`, `india`, `irvine`, `executives`, `health`, `medicine`, `acupuncture` (with aliases, e.g. `health`←`wellness`, `church`←`worship`, `medicine`←`medical`) — so many more listings *match* a stable readable tag and skip noisy derivation. In `seed.sql` + `seed-hosted.sql`. **(3)** Derivation can now coin a **2-word compound** interest: within a title run, the first two adjacent candidate words combine into one ≤2-word tag (`cold brew`, `natural medicine`), while a stop word / comma / dash / "and" breaks the run so genuine lists ("Pottery and Sculpture") stay separate tags. +3 Deno tests (compound, stops, title-emphasis re-pointed to a comma list); Jest 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §58. |
+| 2026-05-24 | **Unknown-capacity scraped events: unlimited join + listing warning.** Scraped events have no listed capacity (DB `capacity` is null → `SCEvent.cap` 0). The event-detail screen now treats `cap <= 0` as **unknown / no limit**: the detail row shows "N going · capacity unknown" (not "N/0 · waitlist"), the CTA stays **JOIN EVENT** (never JOIN WAITLIST), and joining pops an info toast — *"No listed capacity — check the original listing for details"* — with a **VIEW LISTING** action opening `sourceUrl`. The server already allowed unlimited joins for null capacity (the `subscribe_to_event_atomic` RPC only waitlists when `capacity IS NOT NULL AND count >= capacity`), so this is client-only — no migration/redeploy. +1 test (412/412); `tsc` clean. Ships with the app build. See §59. |
 
 ### Current layout
 
@@ -3442,7 +3443,36 @@ candidates, so it occasionally fuses a topic + format word (e.g. `beis warehouse
 
 ---
 
-## 59. How to re-snapshot this file
+## 59. Unknown-capacity scraped events: unlimited join + listing warning
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+A scraped listing rarely exposes a max-attendee number, so the scraper sends
+`capacity: null` and `transformEventRow` yields `SCEvent.cap = 0`. The old event
+detail rendered that as "N/0 going · waitlist" and the CTA flipped to JOIN
+WAITLIST (since `goingCount >= 0` is always true) — wrong for an event that
+should accept anyone.
+
+`app/event/[id].tsx` now derives `capUnknown = e.cap <= 0` (only scraped events
+hit this — a user event always has a real cap ≥ 2) and:
+
+- the detail row shows **"N going · capacity unknown"** instead of `N/0` +
+  waitlist;
+- the CTA stays **JOIN EVENT** (the waitlist label is gated on
+  `!capUnknown && goingCount >= e.cap`);
+- joining shows an info toast — **"No listed capacity — check the original
+  listing for details"** — with a **VIEW LISTING** action that opens the event's
+  `sourceUrl` (the link added in §52).
+
+No server change: `subscribe_to_event_atomic` (migration 00015) only waitlists
+when `capacity IS NOT NULL AND count >= capacity`, so a null capacity already
+confirms every join. Purely client-side — ships with the app build, no redeploy.
++1 screen test (override `e4.cap` to 0 → "capacity unknown", JOIN EVENT, and the
+listing-warning toast on join). 412/412, `tsc` clean.
+
+---
+
+## 60. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

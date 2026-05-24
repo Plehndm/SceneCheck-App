@@ -102,6 +102,19 @@ describe('EventDetailScreen', () => {
     });
   });
 
+  test('a scraped event with no capacity shows "unknown", allows joining, and warns to check the listing', () => {
+    // e4 is scraped with a sourceUrl; override its cap to 0 to simulate "no
+    // listed capacity" (what live scraped events have — capacity null → 0).
+    setRouteParams({ id: 'e4' });
+    useStore.setState({ eventOverrides: { e4: { cap: 0 } }, joined: new Set() });
+    const { getByText } = renderScreen(<EventDetailScreen />);
+    expect(getByText(/capacity unknown/)).toBeTruthy();
+    // Unlimited: the CTA is JOIN EVENT, never JOIN WAITLIST.
+    fireEvent.press(getByText('JOIN EVENT'));
+    expect(useStore.getState().joined.has('e4')).toBe(true);
+    expect(useStore.getState().toasts.some(t => /original listing/i.test(t.message))).toBe(true);
+  });
+
   test('renders the "event is gone" fallback for unknown ids', () => {
     setRouteParams({ id: 'DOES_NOT_EXIST' });
     const { getByText } = renderScreen(<EventDetailScreen />);

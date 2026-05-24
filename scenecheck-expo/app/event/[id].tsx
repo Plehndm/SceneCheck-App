@@ -129,6 +129,11 @@ export default function EventDetailScreen() {
     ? [me, ...attendees]
     : attendees;
   const goingCount = goingPeople.length;
+  // Scraped events often have no listed capacity (DB capacity is null → cap 0
+  // here). Treat that as "unknown / no limit": show the count without a cap,
+  // never gate joining behind a waitlist, and warn the joiner to check the
+  // original listing. A user-created event always has a real cap (>= 2).
+  const capUnknown = e.cap <= 0;
   // `kind === 'yours'` is the canonical signal from transformEventRow;
   // hostId comparison falls back to me.id (not the literal string 'me')
   // so host actions also appear in live mode where hostId is a UUID.
@@ -166,7 +171,20 @@ export default function EventDetailScreen() {
     } else {
       // Optimistic add — local first, then commit.
       joinEvent(id);
-      showToast({ message: `Joined "${e.title}".`, kind: 'success' });
+      if (capUnknown) {
+        // No listed capacity (scraped) — joining is unlimited; warn the user to
+        // check the source for the real attendee limit / details.
+        showToast({
+          message: `Joined "${e.title}". No listed capacity — check the original listing for details.`,
+          kind: 'info',
+          duration: 6000,
+          action: e.sourceUrl
+            ? { label: 'VIEW LISTING', onPress: () => { Linking.openURL(e.sourceUrl!).catch(() => {}); } }
+            : undefined,
+        });
+      } else {
+        showToast({ message: `Joined "${e.title}".`, kind: 'success' });
+      }
       try {
         await api.subscribeToEvent(id, true);
       } catch (err) {
@@ -297,7 +315,9 @@ export default function EventDetailScreen() {
           <DetailRow
             icon="calendar"
             k={whenRange(e)}
-            v={`${goingCount}/${e.cap} going${goingCount >= e.cap ? ' · waitlist' : ''}`}
+            v={capUnknown
+              ? `${goingCount} going · capacity unknown`
+              : `${goingCount}/${e.cap} going${goingCount >= e.cap ? ' · waitlist' : ''}`}
           />
           <DetailRow
             icon="pin"
@@ -442,7 +462,7 @@ export default function EventDetailScreen() {
           <SCAddButton
             joined={isJoined}
             onPress={handleToggleJoin}
-            label={goingCount >= e.cap ? 'JOIN WAITLIST' : 'JOIN EVENT'}
+            label={!capUnknown && goingCount >= e.cap ? 'JOIN WAITLIST' : 'JOIN EVENT'}
           />
         </View>
       </View>
