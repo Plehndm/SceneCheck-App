@@ -110,7 +110,17 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
             keyboardShouldPersistTaps="handled"
             refreshControl={
               onRefresh && Platform.OS !== 'web'
-                ? <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={t.ink3} />
+                // Use the adaptive `ink` (near-black in light mode, near-white
+                // in dark) so the pull spinner is dark + legible instead of the
+                // washed-out `ink3` grey. `colors` tints the Android arrow,
+                // `progressBackgroundColor` its disc; `tintColor` is the iOS spinner.
+                ? <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={t.ink}
+                    colors={[t.ink]}
+                    progressBackgroundColor={t.card}
+                  />
                 : undefined
             }
             {...scrollProps}
