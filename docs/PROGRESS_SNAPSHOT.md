@@ -94,6 +94,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Scraper CI resilience + verified live re-tag.** The scraper threw and `exit(1)` on a non-OK source response, so when Eventbrite served the GitHub runner's datacenter IP a `405` (intermittent bot defense) the whole workflow hard-failed. It now retries the fetch (rotating User-Agent + backoff, `SCRAPE_RETRIES` cfg) and, on total failure, falls back to seed events instead of exiting — the ingest path always runs. Verified the full FR6 pipeline end-to-end against the hosted project: migration `00027` applied, `ingest-scraped` redeployed with the tightened tagger, the catalog cleaned (scraped events + bare auto-created interests deleted, `live`/`irvine` aliases `UPDATE`-trimmed), then the scraper re-run from a non-datacenter IP → **40/40 events ingested with a real per-event `source_url` and ≥1 tag**; `uci`/`music` no longer over-match, junk tags (`experience`/`orange`/`lunch`/…) are gone, the 7 speed-dating events share one `dating` tag, and no duplicate same-meaning interests. Known precision gaps left for later user testing: a few proper-noun/brand/filler tags (`actually`, `jason`, `thermomix`, `spectrum`, …) and `biking` still over-matching via its own `running`/`spin` aliases (only `live`/`irvine` were trimmed). See §54. |
 | 2026-05-24 | **Multiple derived tags per scraped event + share-event-to-friends.** Two features. **(1)** A scraped event can now mint **multiple** new interest tags, not just one: the matched-catalog path was already uncapped (e.g. Yoga Day → `yoga, bouldering, climbing`), but the *derive* path (no catalog match) coined a single word. New `deriveTags()` returns up to `MAX_DERIVED_TAGS` (3) meaningful words — ranked by stem frequency then length, deduped by stem, singularized — so "Pottery & Knitting" mints both. `InterestAnalysis.suggested` is now `string[]` (`[UNKNOWN_TAG]` when no usable word); `ingest-scraped` creates + attaches them all (deduped against the PK). `deriveTag()` kept as a single-tag wrapper. **(2)** New **`ShareEventSheet`** + a `share` hero button on the event detail: pick one or more friends (`useFriends`), add an optional note, and the event is sent into each friend's DM via `api.createChat` + `api.sendMessage` (dedupes to an existing DM) — no backend change. New `share` SCIcon. +2 tests (411/411); `tsc` clean. Feature (1) needs `ingest-scraped` redeploy + a re-run to apply to existing events; (2) ships with the app build. See §55. |
 | 2026-05-24 | **Curated common-word interests + safer `-er` stemming + true-black/white refresh icon.** **(1)** Added 7 seed interests — `career`, `dating`, `business`, `dentist`, `workshop`, `concert`, `conference` (with aliases, e.g. `dentist`←`dentistry`/`dental`) — so scraped listings *match* a stable, readable tag (e.g. "Career Fair" → `career`) instead of deriving a noisy one-off, restoring good labels and cutting derive-noise (matching short-circuits derivation). In `seed.sql` + `seed-hosted.sql`. **(2)** Gated the `stemKey` `-er` strip to words >6 chars so it no longer over-reduces short words: `career` stays `career` (was `car`, which wrongly matched `care`/`cars` — e.g. "Self-Care…" → career), and `water` stays `water`; the cost is that short agentive forms (`biker`/`runner`) no longer collapse to `biking`/`running` (base forms still do). Deno tests updated. **(3)** The refresh affordance (web button, REFRESHING pill, native pull-spinner) now uses **pure `#000` in light / `#FFF` in dark** (via `useTheme().mode`) instead of the palette's tinted near-black/white `ink`. 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §56. |
+| 2026-05-24 | **Title-first tag derivation.** When a scraped event matches no catalog interest, `deriveTags` now takes the new tags straight from the **title in reading order** (its lead words are the keywords people care about) instead of ranking title+description by combined stem frequency — so a word the description merely repeats can no longer displace the title's lead words (e.g. a desc hammering "drumming" no longer pushes out "pottery/sculpture/painting" from the title). The description is used **only as a fallback** when the title has no usable word, and there it's still ranked by stem frequency (so a repeated topic like "astronomy" wins). Curated-interest *matching* (§56) is unchanged and still takes priority over derivation. +1 Deno test (411/411 Jest unchanged; `tsc` clean). Live effect needs `ingest-scraped` redeploy + re-scrape. See §57. |
 
 ### Current layout
 
@@ -3377,7 +3378,36 @@ the fixed UUIDs) + a delete/re-scrape to apply them to the already-ingested 40.
 
 ---
 
-## 57. How to re-snapshot this file
+## 57. Title-first tag derivation
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+When a scraped event matches nothing in the catalog, `deriveTags` mints new
+tags. It used to restrict candidates to the title (good) but **rank** them by
+combined title+description stem frequency — so a word the description happened
+to repeat could outrank, and even displace, the title's own lead words (e.g. for
+"Pottery Sculpture Painting Drumming" with a description hammering "drumming",
+the old ranking surfaced `drumming` and dropped `pottery`).
+
+Now the title gets the emphasis the listing structure implies: when the title
+has any usable word, the tags are taken **straight from the title in reading
+order** (`takeByStem`), deduped by stem and singularized — the description is
+ignored for selection. Only when the title yields no usable word do we fall back
+to the **description, ranked by stem frequency** (then length, then order), so a
+repeated topic word ("astronomy astronomy …") still wins there.
+
+Catalog *matching* is unchanged and still runs first — a "Career Fair" still
+matches the curated `career` interest (§56) rather than deriving. This only
+changes which NEW tags are coined for un-matched events, and only their
+selection/ordering — it's the "refine from the title" knob.
+
++1 Deno test (title order beats description frequency). Jest unchanged
+(411/411), `tsc` clean. Applying it to the already-ingested events needs an
+`ingest-scraped` redeploy + a delete/re-scrape.
+
+---
+
+## 58. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

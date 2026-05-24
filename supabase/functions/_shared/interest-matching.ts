@@ -4,12 +4,13 @@
 //   - existing catalog interests whose name — or one of its `similar_tags`
 //     aliases — appears in the text, OR
 //   - when the text matches NOTHING in the catalog, up to MAX_DERIVED_TAGS
-//     tags derived from the text's most salient words, which the caller mints
-//     as new interests and attaches. So an event about something the catalog
-//     doesn't cover yet is still labeled (and one or more brand new interests
-//     are born from it). If the text has no usable word — only stop words /
-//     event filler / numbers — we don't mint a junk interest; we fall back to
-//     the catch-all `unknown` tag.
+//     tags derived primarily from the TITLE (its lead words, in order — that's
+//     where the keywords people care about usually are; the description is only
+//     a fallback when the title has no usable word). The caller mints these as
+//     new interests and attaches them, so an event about something the catalog
+//     doesn't cover yet is still labeled. If neither title nor description has
+//     a usable word — only stop words / filler / numbers — we don't mint a junk
+//     interest; we fall back to the catch-all `unknown` tag.
 //
 // Note: an event matching several CATALOG interests already carries all of them
 // (the matched path is uncapped); the cap only limits how many brand-new
@@ -165,38 +166,46 @@ function singularize(w: string): string {
   return w;
 }
 
-// Mint up to `max` candidate tags from free text when the catalog has nothing
-// for it. Title words win over description words (the title is the strongest
-// signal); candidates are ranked by stem frequency across the whole text (so
-// inflected repeats like "taco" + "tacos" reinforce one topic), then by length
-// (more specific), then first-seen order. Deduped by stem and singularized for
-// clean labels. Returns [] when the text has no usable word (empty, or all stop
-// words / digits).
-export function deriveTags(title: string, description: string, max = MAX_DERIVED_TAGS): string[] {
-  const titleWords = words(title).filter(isCandidate);
-  const descWords = words(description).filter(isCandidate);
-  const pool = titleWords.length ? titleWords : descWords;
-  if (!pool.length) return [];
-
-  const freq = new Map<string, number>();
-  for (const w of [...titleWords, ...descWords]) {
-    const k = stemKey(w);
-    freq.set(k, (freq.get(k) ?? 0) + 1);
-  }
-
-  const ranked = pool
-    .map((w, i) => ({ w, i, k: stemKey(w), f: freq.get(stemKey(w))! }))
-    .sort((a, b) => b.f - a.f || b.w.length - a.w.length || a.i - b.i);
-
+// Take up to `max` words from `wordsInOrder`, one per stem (first occurrence
+// wins), singularized for a clean label.
+function takeByStem(wordsInOrder: string[], max: number): string[] {
   const out: string[] = [];
   const usedStems = new Set<string>();
-  for (const r of ranked) {
-    if (usedStems.has(r.k)) continue; // dedupe by stem (one tag per topic)
-    usedStems.add(r.k);
-    out.push(singularize(r.w));
+  for (const w of wordsInOrder) {
+    const k = stemKey(w);
+    if (usedStems.has(k)) continue; // dedupe by stem (one tag per topic)
+    usedStems.add(k);
+    out.push(singularize(w));
     if (out.length >= max) break;
   }
   return out;
+}
+
+// Mint up to `max` candidate tags from free text when the catalog has nothing
+// for it. MOST emphasis goes to the TITLE: when it has any usable word, the tags
+// are taken straight from the title in reading order — its lead words are
+// generally the keywords people care about, and we don't let a word the
+// description happens to repeat displace them. Only when the title yields no
+// usable word do we fall back to the description, there ranked by stem frequency
+// (then length, then order) so a repeated topic word wins over incidental ones.
+// Deduped by stem and singularized. Returns [] when neither has a usable word.
+export function deriveTags(title: string, description: string, max = MAX_DERIVED_TAGS): string[] {
+  const titleWords = words(title).filter(isCandidate);
+  if (titleWords.length) return takeByStem(titleWords, max);
+
+  const descWords = words(description).filter(isCandidate);
+  if (!descWords.length) return [];
+  const freq = new Map<string, number>();
+  for (const w of descWords) {
+    const k = stemKey(w);
+    freq.set(k, (freq.get(k) ?? 0) + 1);
+  }
+  const ranked = descWords
+    .map((w, i) => ({ w, i }))
+    .sort((a, b) =>
+      freq.get(stemKey(b.w))! - freq.get(stemKey(a.w))! || b.w.length - a.w.length || a.i - b.i)
+    .map((r) => r.w);
+  return takeByStem(ranked, max);
 }
 
 // Single best derived tag, or null. Thin wrapper over deriveTags for callers

@@ -88,6 +88,17 @@ Deno.test("deriveTags is capped at MAX_DERIVED_TAGS and deduped by stem", () => 
   assertEquals(deriveTags("Running and runs", ""), ["running"]);
 });
 
+Deno.test("title emphasis: with many title words, the title's lead words win over description frequency", () => {
+  // 4 title candidates; the description hammers "drumming" (last in the title).
+  // Title order wins — "drumming" does NOT displace the leading title words.
+  const r = analyzeInterests(
+    "Pottery Sculpture Painting Drumming",
+    "drumming drumming drumming drumming",
+    CATALOG,
+  );
+  assertEquals(r.suggested, ["pottery", "sculpture", "painting"]);
+});
+
 Deno.test("a derived tag is singularized for a clean catalog label", () => {
   assertEquals(analyzeInterests("Taco crawl", "tasty tacos", CATALOG).suggested, ["taco"]);
   assertEquals(deriveTag("Puppies", ""), "puppy");

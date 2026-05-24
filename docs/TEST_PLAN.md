@@ -1521,6 +1521,26 @@ events needs a hosted INSERT + delete/re-scrape.
 
 ---
 
+### 2.51 Title-first tag derivation (post-§2.50 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §57._
+
+`deriveTags` now emphasizes the title: when the title has usable words, the
+minted tags come straight from it in reading order; the description is used only
+as a fallback (then frequency-ranked). Catalog matching is unchanged.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (`takeByStem`; title-order selection in `deriveTags`) + `interest-matching.test.ts` (+1) | Deno | With 4 title candidates and a description hammering the *last* one ("drumming"), the suggested tags are the title's lead words `["pottery","sculpture","painting"]` — description frequency no longer displaces them. All prior cases hold: title-only single/multi derive, stem-dedup, singular labels, the description-frequency **fallback** (`astronomy`), and `unknown`. |
+
+**Delivered count**: Jest 411/411 (analyzer is Deno, off the Jest path); `tsc` clean.
+
+**What this section deliberately does NOT do:** change catalog matching (still
+runs first / takes priority) or the description fallback's frequency ranking.
+Applying to already-ingested events needs a redeploy + re-scrape.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?
