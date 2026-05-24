@@ -165,16 +165,21 @@ async function main() {
     return;
   }
 
-  let ingested = 0;
+  let created = 0;
+  let deduped = 0;
   let failed = 0;
   for (const event of events) {
     try {
       const r = await ingest(event);
-      if (r.ok) {
-        ingested++;
+      if (r.ok && r.body.deduped) {
+        // Already in the table from a previous run — expected in steady state.
+        deduped++;
+        console.log(`↺ ${event.title} (already present)`);
+      } else if (r.ok) {
+        created++;
         console.log(`✓ ${event.title} → ${r.body.event_id}`);
       } else {
-        // FR6.4: a bad/duplicate row is logged + skipped, not fatal per-event.
+        // FR6.4: a bad row is logged + skipped, not fatal per-event.
         failed++;
         console.warn(`✗ ${event.title} → ${r.status} ${JSON.stringify(r.body)}`);
       }
@@ -184,10 +189,10 @@ async function main() {
     }
   }
 
-  console.log(`Done: ${ingested} ingested, ${failed} skipped of ${events.length}.`);
-  // Hard-fail only if NOTHING got through — that means a systemic problem, not
-  // a few skips. The most common cause is the function rejecting the call:
-  if (ingested === 0) {
+  console.log(`Done: ${created} new, ${deduped} already present, ${failed} failed of ${events.length}.`);
+  // Hard-fail only if EVERYTHING errored — a steady-state run where all events
+  // are already present (created + deduped both account for them) is a success.
+  if (created === 0 && deduped === 0) {
     console.error('Every ingest failed. Most likely: 401 (the INGEST_TOKEN GitHub secret ' +
       'does not match the function\'s INGEST_TOKEN secret), or ingest-scraped is not deployed ' +
       'with --no-verify-jwt. See the ✗ status codes above.');

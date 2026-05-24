@@ -41,6 +41,21 @@ serve(async (req: Request) => {
     const admin = createAdminClient();
     const { lat, lng } = body.location;
 
+    // Dedupe: the daily scraper re-sees the same source events, so skip if a
+    // scraped event with the same title + start already exists (idempotent
+    // re-runs). `.limit(1)` instead of `.maybeSingle()` so pre-existing dupes
+    // don't error here. Title + start_at is a good natural key for these.
+    const { data: dupes } = await admin
+      .from("events")
+      .select("id")
+      .eq("source", "scraped")
+      .eq("title", body.title)
+      .eq("start_at", body.start_at)
+      .limit(1);
+    if (dupes && dupes.length > 0) {
+      return jsonResponse({ event_id: dupes[0].id, deduped: true }, 200);
+    }
+
     // Insert the scraped event
     const { data: event, error: eventErr } = await admin
       .from("events")

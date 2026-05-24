@@ -3094,6 +3094,14 @@ listings, and caps at `MAX_EVENTS` (40). A **`DRY_RUN=1`** mode scrapes + prints
 the payloads without POSTing (and without needing credentials) for testing —
 verified pulling 40 unique real Irvine events.
 
+**Idempotent re-runs (dedupe).** Because the daily run re-sees the same source
+events, `ingest-scraped` now skips inserting when a `source='scraped'` event with
+the same `title` + `start_at` already exists (returns the existing id with
+`deduped: true`), so repeated runs don't pile up duplicate rows. The scraper
+counts these separately ("N new, M already present") and a steady-state run where
+everything is already present is still a **success** (it only fails if *every*
+ingest errored). Requires re-deploying the function.
+
 **CI resilience + diagnostics.** The scraper uses a real browser User-Agent
 (Eventbrite bot-blocks datacenter IPs) and, if the live source still returns
 nothing, **falls back to seed events** (loudly logged) so the ingest path runs
