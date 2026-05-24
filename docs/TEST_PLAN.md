@@ -1362,6 +1362,37 @@ new migrations.
 
 ---
 
+### 2.45 Scraped-event auto-tagging: create interests + fuzzy matching (post-§2.44 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §51._
+
+FR6's `ingest-scraped` auto-tagger matched **description-only** interest names by
+raw substring and never created a tag when nothing matched (events published
+unlabeled). New pure analyzer `supabase/functions/_shared/interest-matching.ts`
+runs over **title + description**, matches existing interests by name/alias on a
+morphological **stem** (so `bike`/`biking`/`bikes` and `spin`/`spinning` reuse one
+interest instead of minting duplicates), and on no match derives + singularizes a
+new tag the function creates and attaches.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (NEW analyzer) | `supabase/functions/_shared/interest-matching.test.ts` (NEW, 14 Deno cases) | name + alias matches; every inflected form of `bike`→`biking` and the run-family→`running`; `Spinning`→`biking` via the `spin` alias; **distinct roots not merged** (`hiking`≠`biking`); multi-word/hyphenated phrase needs all its words; no-match → derive + singularize (`tacos`→`taco`); stop-word/bare-number exclusion; empty→`null`. |
+| `supabase/functions/ingest-scraped/index.ts` (wired in) | covered indirectly (Edge Function — no Jest harness) | Fetches `id, name, similar_tags`; analyzes title+description; attaches matched interest ids; on no match inserts the derived interest (re-selects on UNIQUE conflict) and attaches it. |
+
+**Test runtime**: these are **Deno** tests (`deno test`), not Jest — the analyzer
+is Edge-Function code that imports via URL/`.ts` specifiers. The Jest suite is
+therefore unchanged at **409 / 409**; during development the same assertions were
+run through Node's `--experimental-strip-types` to confirm outputs (Deno isn't
+installed in the dev box). Requires re-deploying `ingest-scraped`.
+
+**What this section deliberately does NOT do:** use edit-distance / Levenshtein
+fuzziness — that wrongly fuses distinct short roots (`biking`/`hiking` differ by
+one letter). Matching is morphology-only (stemming), which collapses inflections
+without merging different topics. Agentive `-ist` forms (`cyclist`) are not
+stemmed (stripping `-ist` over-merges, e.g. `twist`).
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

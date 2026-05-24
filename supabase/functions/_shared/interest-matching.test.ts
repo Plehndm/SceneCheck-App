@@ -6,8 +6,9 @@ import { analyzeInterests, deriveTag, type CatalogInterest } from "./interest-ma
 
 const CATALOG: CatalogInterest[] = [
   { name: "biking", similar_tags: ["cycling", "spin"] },
-  { name: "cooking", similar_tags: ["baking"] },
+  { name: "cooking", similar_tags: ["baking", "dinner-club"] },
   { name: "board-games", similar_tags: ["catan"] },
+  { name: "running", similar_tags: ["jogging", "5k"] },
 ];
 
 Deno.test("matches an interest by its canonical name in the description", () => {
@@ -17,9 +18,30 @@ Deno.test("matches an interest by its canonical name in the description", () => 
 });
 
 Deno.test("matches via a similar_tags alias (cycling → biking)", () => {
-  const r = analyzeInterests("Cycling meetup", "", CATALOG);
-  assertEquals(r.matched, ["biking"]);
-  assertEquals(r.suggested, null);
+  assertEquals(analyzeInterests("Cycling tour downtown", "", CATALOG).matched, ["biking"]);
+});
+
+Deno.test("fuzzy: every inflected form of 'bike' reuses the 'biking' interest", () => {
+  // The whole point of stem matching — none of these mint a near-duplicate.
+  for (const v of ["bike", "bikes", "biked", "biker", "bikers"]) {
+    assertEquals(analyzeInterests(`Sunday ${v} ride`, "", CATALOG).matched, ["biking"], v);
+  }
+});
+
+Deno.test("fuzzy: run / runs / running / runner all reuse 'running'", () => {
+  for (const v of ["run", "runs", "running", "runner", "runners", "jogging"]) {
+    assertEquals(analyzeInterests(`Morning ${v} by the pier`, "", CATALOG).matched, ["running"], v);
+  }
+});
+
+Deno.test("fuzzy: 'Spinning class' reuses 'biking' via its 'spin' alias", () => {
+  assertEquals(analyzeInterests("Spinning class", "", CATALOG).matched, ["biking"]);
+});
+
+Deno.test("distinct roots are NOT merged ('hiking' ≠ 'biking')", () => {
+  const r = analyzeInterests("Hiking trail", "", CATALOG);
+  assertEquals(r.matched, []);
+  assertEquals(r.suggested, "hiking");
 });
 
 Deno.test("matches multiple interests, in catalog order, incl. hyphenated phrase", () => {
@@ -28,11 +50,8 @@ Deno.test("matches multiple interests, in catalog order, incl. hyphenated phrase
   assertEquals(r.suggested, null);
 });
 
-Deno.test("matches whole words only — 'spinning' does not hit the 'spin' alias", () => {
-  const r = analyzeInterests("Spinning class", "", CATALOG);
-  assertEquals(r.matched, []);
-  // Nothing matched, so a tag is derived from the text instead.
-  assertEquals(r.suggested, "spinning");
+Deno.test("a multi-word alias needs all its words (dinner without club ≠ cooking)", () => {
+  assertEquals(analyzeInterests("Dinner by the bay", "", CATALOG).matched, []);
 });
 
 Deno.test("derives a new tag from the title when nothing in the catalog matches", () => {
@@ -41,8 +60,14 @@ Deno.test("derives a new tag from the title when nothing in the catalog matches"
   assertEquals(r.suggested, "pottery"); // "night" is filler; "pottery" wins
 });
 
+Deno.test("a derived tag is singularized for a clean catalog label", () => {
+  // Frequency is counted by stem, so taco + tacos reinforce one topic, and the
+  // stored label is the singular form.
+  assertEquals(analyzeInterests("Taco crawl", "tasty tacos", CATALOG).suggested, "taco");
+  assertEquals(deriveTag("Puppies", ""), "puppy");
+});
+
 Deno.test("deriveTag prefers a repeated, specific word over filler", () => {
-  // "kayak" appears in title + description, so frequency lifts it over "river".
   assertEquals(deriveTag("Kayak trip", "Beginner kayak session on the river"), "kayak");
 });
 
@@ -55,7 +80,7 @@ Deno.test("deriveTag returns null for empty text", () => {
 });
 
 Deno.test("falls back to description words when the title is all filler", () => {
-  const r = analyzeInterests("Weekly meetup", "Bring your astronomy questions — astronomy for all", CATALOG);
+  const r = analyzeInterests("Weekly meetup", "Bring your astronomy questions, astronomy for all", CATALOG);
   assertEquals(r.matched, []);
-  assertEquals(r.suggested, "astronomy"); // repeated → highest frequency wins
+  assertEquals(r.suggested, "astronomy"); // repeated → highest stem frequency wins
 });

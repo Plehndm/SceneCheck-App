@@ -88,6 +88,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-23 | **Tappable reviewer, consistent follow count, EVENTS/HOSTED profile lists.** **(1)** On the ratings screen, the reviewer's avatar + name is now a button → their profile (`/profile/<reviewerId>`). **(2)** The profile "Orgs" count showed `following.size` (raw set) while the my-following list showed only orgs whose profile **resolves** — so a followed org missing from the live `profiles` table left "2" next to a 1-row list. The profile count now uses the **resolved** followed-orgs count (`useFollowedOrgs`), and my-following re-resolves on focus; `following` is persisted locally as before. **(3)** Renamed the profile **ATTENDED** stat to **EVENTS** and made the **HOSTED** stat tappable → a hosting list. `my-hosting` now uses `useHostedEvents` (all statuses/times via `fetchEventsByHost`) instead of the discovery feed (which drops past/cancelled), and splits into **Upcoming / Past** (current on top) — matching the joined-events screen. +1 test (407/407, 55 suites); `tsc` clean. See §48. |
 | 2026-05-23 | **Dark-mode contrast fixes + darker review icon.** Active "filled" pills draw their label in hardcoded `'white'` over a `t.ink` fill — but `ink` flips to near-**white** in dark mode, so the active label vanished. Replaced `'white'` with `t.surface` (the mode-adaptive inverse of `ink`) on the **settings palette** chips, the **ratings star-filter** chips, and the same pattern on the events filter, search tabs, and map radius chips. The event-detail **review (rate) button** drew its star in `t.ink`, which washed out on its constant-gold fill in dark mode — new constant `warnInk` (`#1A1205`) keeps it dark in both modes. Same pass: the event-detail **hero chips** (category + RECOMMENDED pills) had hardcoded white backgrounds → switched to `t.card`; the **refresh** icon/pill bumped `t.ink2` → `t.ink` (darker). Also pinned `supabase/config.toml` `[db] major_version` to **17** to match the linked project (CLI version-mismatch warning). +2 token-invariant tests (409/409, 56 suites); `tsc` clean. See §49. |
 | 2026-05-23 | **Scraper auth → new secret key + shared token.** Supabase is deprecating the `service_role` key. The events scraper → `ingest-scraped` pipeline used the `service_role` JWT to pass the function's default JWT gate; the new `sb_secret_…` key isn't a JWT, so it can't. Reworked: deploy `ingest-scraped` with `--no-verify-jwt`, send the new secret key as the `apikey` and authorize via a shared **`INGEST_TOKEN`** (`x-ingest-token` header) the function matches (fail-closed). `scrape-events.mjs` + the workflow now read `SUPABASE_SECRET_KEY` + `INGEST_TOKEN`. The function's own insert still uses its platform-injected key. CI-only (no Jest/tsc surface). See §50. |
+| 2026-05-24 | **Scraped events auto-create interests + fuzzy tag matching.** `ingest-scraped` (FR6) used to scan only the description, match interest names by raw substring, and never create a tag — so a scraped event about an uncovered topic published unlabeled. New pure analyzer `supabase/functions/_shared/interest-matching.ts` now runs over **title + description**: existing interests match on their name OR a `similar_tags` alias, compared by a morphological **stem**, so `bike`/`biking`/`bikes`/`biker` and `spin`/`spinning` reuse one interest instead of minting near-duplicates (the dedup the user asked for); when nothing matches, a singularized tag is derived from the most salient word, created, and attached. Distinct roots never fuse (`hiking` ≠ `biking` — stemming is morphology-only, not edit-distance). Covered by Deno unit tests (`interest-matching.test.ts`, run via `deno test`); no Jest/tsc surface, so 409/409 is unchanged. Requires re-deploying the function. See §51. |
 
 ### Current layout
 
@@ -3123,7 +3124,58 @@ CI-only change — no Jest/tsc surface, so the test count is unchanged (409/409)
 
 ---
 
-## 51. How to re-snapshot this file
+## 51. Scraped events auto-create interests + fuzzy tag matching
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+FR6's auto-tagging (matching a scraped event's text to interest tags) was a
+one-liner inside `ingest-scraped`: it lowercased the **description** only and
+kept any interest whose `name` was a raw **substring** of it. Two gaps:
+
+1. **Nothing matched → the event published with no tags at all** — so it never
+   surfaced as "Recommended" for anyone and added nothing to the catalog.
+2. The substring match both over- and under-fired: it ignored the **title**,
+   and an interest named `art` matched the word "p**art**y"; meanwhile `bike`
+   never matched an event that said "biking".
+
+**New design — a pure, tested analyzer.** `supabase/functions/_shared/interest-matching.ts`
+exposes `analyzeInterests(title, description, catalog)` returning
+`{ matched, suggested }`, with the DB I/O kept in the function:
+
+- **Match (whole-word, stemmed).** Both the event text and each interest's
+  `name` + `similar_tags` are tokenized and reduced to a coarse morphological
+  **stem key** (`bike`/`biking`/`bikes`/`biker` → `bik`; `run`/`running`/
+  `runner`/`runs` → `run`). An interest matches when all of a term's stem keys
+  appear in the text's. This is the **fuzziness that prevents duplicates**: a
+  scraped "Sunday bike ride" reuses the existing `biking` interest, and
+  "Spinning class" reuses it via the `spin` alias, instead of minting `bike` /
+  `spinning`. Stemming is morphology-only, so distinct roots are never merged
+  the way an edit-distance match would wrongly fuse `biking`/`hiking`.
+- **Create on no-match.** When nothing matches, the most salient word (title
+  preferred; highest **stem** frequency, then longer, then earliest; stop words
+  / event-format filler / bare numbers excluded) is **singularized** for a clean
+  label (`tacos` → `taco`) and returned as `suggested`. `ingest-scraped` then
+  inserts it into `interests` (re-selecting on a UNIQUE conflict so a race is a
+  no-op) and attaches it — so novel topics enter the catalog and the event is
+  always labeled.
+
+The function fetches `id, name, similar_tags`, runs the analyzer over
+`title + description`, maps matched names → ids, or mints the derived interest,
+then inserts the `event_interests` rows (all via the platform `createAdminClient`,
+which bypasses RLS — though migration `00011` also lets any authenticated user
+create interests).
+
+Tested with **Deno** (`interest-matching.test.ts`, 14 cases via `deno test`):
+name/alias matches, every inflected form of `bike`→`biking` and the run-family
+→`running`, `Spinning`→`biking` via the alias, distinct roots staying separate,
+multi-word/hyphenated phrases needing all their words, and the derive +
+singularize path. Deno isn't on the Jest path, so the Jest count is unchanged
+(409/409); during development the assertions were also run through Node's
+type-stripping to confirm outputs. Requires re-deploying `ingest-scraped`.
+
+---
+
+## 52. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
