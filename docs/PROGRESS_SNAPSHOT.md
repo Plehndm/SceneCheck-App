@@ -95,6 +95,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Multiple derived tags per scraped event + share-event-to-friends.** Two features. **(1)** A scraped event can now mint **multiple** new interest tags, not just one: the matched-catalog path was already uncapped (e.g. Yoga Day → `yoga, bouldering, climbing`), but the *derive* path (no catalog match) coined a single word. New `deriveTags()` returns up to `MAX_DERIVED_TAGS` (3) meaningful words — ranked by stem frequency then length, deduped by stem, singularized — so "Pottery & Knitting" mints both. `InterestAnalysis.suggested` is now `string[]` (`[UNKNOWN_TAG]` when no usable word); `ingest-scraped` creates + attaches them all (deduped against the PK). `deriveTag()` kept as a single-tag wrapper. **(2)** New **`ShareEventSheet`** + a `share` hero button on the event detail: pick one or more friends (`useFriends`), add an optional note, and the event is sent into each friend's DM via `api.createChat` + `api.sendMessage` (dedupes to an existing DM) — no backend change. New `share` SCIcon. +2 tests (411/411); `tsc` clean. Feature (1) needs `ingest-scraped` redeploy + a re-run to apply to existing events; (2) ships with the app build. See §55. |
 | 2026-05-24 | **Curated common-word interests + safer `-er` stemming + true-black/white refresh icon.** **(1)** Added 7 seed interests — `career`, `dating`, `business`, `dentist`, `workshop`, `concert`, `conference` (with aliases, e.g. `dentist`←`dentistry`/`dental`) — so scraped listings *match* a stable, readable tag (e.g. "Career Fair" → `career`) instead of deriving a noisy one-off, restoring good labels and cutting derive-noise (matching short-circuits derivation). In `seed.sql` + `seed-hosted.sql`. **(2)** Gated the `stemKey` `-er` strip to words >6 chars so it no longer over-reduces short words: `career` stays `career` (was `car`, which wrongly matched `care`/`cars` — e.g. "Self-Care…" → career), and `water` stays `water`; the cost is that short agentive forms (`biker`/`runner`) no longer collapse to `biking`/`running` (base forms still do). Deno tests updated. **(3)** The refresh affordance (web button, REFRESHING pill, native pull-spinner) now uses **pure `#000` in light / `#FFF` in dark** (via `useTheme().mode`) instead of the palette's tinted near-black/white `ink`. 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §56. |
 | 2026-05-24 | **Title-first tag derivation.** When a scraped event matches no catalog interest, `deriveTags` now takes the new tags straight from the **title in reading order** (its lead words are the keywords people care about) instead of ranking title+description by combined stem frequency — so a word the description merely repeats can no longer displace the title's lead words (e.g. a desc hammering "drumming" no longer pushes out "pottery/sculpture/painting" from the title). The description is used **only as a fallback** when the title has no usable word, and there it's still ranked by stem frequency (so a repeated topic like "astronomy" wins). Curated-interest *matching* (§56) is unchanged and still takes priority over derivation. +1 Deno test (411/411 Jest unchanged; `tsc` clean). Live effect needs `ingest-scraped` redeploy + re-scrape. See §57. |
+| 2026-05-24 | **More stop words + 17 curated interests + 2-word compound tags.** **(1)** Added `is`, `no`, `longer`, `optional` to `STOP_WORDS` (`for`/`into` were already there). **(2)** Seeded 17 more common descriptive interests — `cafe`, `choir`, `church`, `fair`, `solar`, `free`, `digital`, `virtual`, `networking`, `wine`, `games`, `india`, `irvine`, `executives`, `health`, `medicine`, `acupuncture` (with aliases, e.g. `health`←`wellness`, `church`←`worship`, `medicine`←`medical`) — so many more listings *match* a stable readable tag and skip noisy derivation. In `seed.sql` + `seed-hosted.sql`. **(3)** Derivation can now coin a **2-word compound** interest: within a title run, the first two adjacent candidate words combine into one ≤2-word tag (`cold brew`, `natural medicine`), while a stop word / comma / dash / "and" breaks the run so genuine lists ("Pottery and Sculpture") stay separate tags. +3 Deno tests (compound, stops, title-emphasis re-pointed to a comma list); Jest 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §58. |
 
 ### Current layout
 
@@ -3407,7 +3408,41 @@ selection/ordering — it's the "refine from the title" knob.
 
 ---
 
-## 58. How to re-snapshot this file
+## 58. More stop words + 17 curated interests + 2-word compound tags
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+Three quality knobs from continued review of the scraped tags:
+
+- **Stop words.** Added `is`, `no`, `longer`, `optional` (`for` / `into` were
+  already present) so "India Is No Longer Optional…" derives `india`, not the
+  filler words.
+- **17 curated interests.** Seeded `cafe`, `choir`, `church`, `fair`, `solar`,
+  `free`, `digital`, `virtual`, `networking`, `wine`, `games`, `india`, `irvine`,
+  `executives`, `health`, `medicine`, `acupuncture` (UUIDs 0023–0039, with
+  aliases so variants match: `health`←`wellness`/`healthcare`,
+  `church`←`worship`/`faith`, `medicine`←`medical`, `cafe`←`espresso`, …). Since
+  catalog matching short-circuits derivation, these turn many previously-derived
+  noisy tags into stable readable ones (e.g. a wellness retreat → `health`, an
+  Irvine event → `irvine`, a worship service → `church`). `seed.sql` +
+  `seed-hosted.sql`; the offline `data/mocks.ts` catalog is left as-is (these are
+  live-scraper tags).
+- **2-word compounds.** When deriving (no catalog match), the title is split into
+  runs of consecutive candidate words (a stop word, comma, dash, slash, pipe, or
+  "and" breaks a run); within a run the **first two words combine into one ≤2-word
+  tag** so a related adjacent compound like `cold brew` / `natural medicine`
+  becomes a single interest, while genuine lists stay separate. New
+  `titleSegments` / `titleRuns` / `titlePhrases` / `takeTags` helpers.
+
++3 Deno tests; Jest unchanged (411/411); `tsc` clean. The new interests need a
+hosted `INSERT` (idempotent on the fixed UUIDs) + a redeploy + re-scrape to apply
+to already-ingested events. Heuristic note: the compound rule pairs *adjacent*
+candidates, so it occasionally fuses a topic + format word (e.g. `beis warehouse`)
+— a known "refine from there" edge.
+
+---
+
+## 59. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

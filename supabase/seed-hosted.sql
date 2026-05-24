@@ -54,7 +54,24 @@ INSERT INTO interests (id, name, description, subscriber_count, similar_tags) VA
   ('10000000-0000-0000-0000-000000000019', 'dentist', 'Dentistry and dental-care events.', 0, ARRAY['dentistry','dental','orthodontist']),
   ('10000000-0000-0000-0000-000000000020', 'workshop', 'Hands-on workshops, classes, and seminars.', 0, ARRAY['workshops','seminar','class']),
   ('10000000-0000-0000-0000-000000000021', 'concert', 'Live music concerts and performances.', 0, ARRAY['concerts','gig','live-music']),
-  ('10000000-0000-0000-0000-000000000022', 'conference', 'Conferences, summits, and expos.', 0, ARRAY['conferences','summit','expo','convention'])
+  ('10000000-0000-0000-0000-000000000022', 'conference', 'Conferences, summits, and expos.', 0, ARRAY['conferences','summit','expo','convention']),
+  ('10000000-0000-0000-0000-000000000023', 'cafe', 'Cafes, coffee shops, and espresso bars.', 0, ARRAY['espresso']),
+  ('10000000-0000-0000-0000-000000000024', 'choir', 'Choir, chorus, and a cappella singing.', 0, ARRAY['choirs','chorus','acappella']),
+  ('10000000-0000-0000-0000-000000000025', 'church', 'Church services and faith gatherings.', 0, ARRAY['worship','faith','congregation']),
+  ('10000000-0000-0000-0000-000000000026', 'fair', 'Fairs, festivals, and expos.', 0, ARRAY['fairs','festival']),
+  ('10000000-0000-0000-0000-000000000027', 'solar', 'Solar energy and sustainability events.', 0, ARRAY['solarize','renewable']),
+  ('10000000-0000-0000-0000-000000000028', 'free', 'Free community events.', 0, ARRAY[]::text[]),
+  ('10000000-0000-0000-0000-000000000029', 'digital', 'Digital and tech events.', 0, ARRAY['tech','technology']),
+  ('10000000-0000-0000-0000-000000000030', 'virtual', 'Virtual and online events.', 0, ARRAY['online','remote']),
+  ('10000000-0000-0000-0000-000000000031', 'networking', 'Professional networking and mixers.', 0, ARRAY['mixer']),
+  ('10000000-0000-0000-0000-000000000032', 'wine', 'Wine tastings and vineyards.', 0, ARRAY['wines','vino','vineyard']),
+  ('10000000-0000-0000-0000-000000000033', 'games', 'Games, gaming, and tournaments.', 0, ARRAY['gaming','tournament']),
+  ('10000000-0000-0000-0000-000000000034', 'india', 'India, Indian culture, and community.', 0, ARRAY['indian','bollywood','desi']),
+  ('10000000-0000-0000-0000-000000000035', 'irvine', 'Events in and around Irvine.', 0, ARRAY[]::text[]),
+  ('10000000-0000-0000-0000-000000000036', 'executives', 'Executive and leadership events.', 0, ARRAY['executive','leadership']),
+  ('10000000-0000-0000-0000-000000000037', 'health', 'Health, wellness, and fitness.', 0, ARRAY['wellness','healthcare']),
+  ('10000000-0000-0000-0000-000000000038', 'medicine', 'Medicine and medical events.', 0, ARRAY['medical']),
+  ('10000000-0000-0000-0000-000000000039', 'acupuncture', 'Acupuncture and traditional medicine.', 0, ARRAY['acupuncturist'])
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══ EVENTS (with PostGIS points near UCI, Irvine CA) ═══

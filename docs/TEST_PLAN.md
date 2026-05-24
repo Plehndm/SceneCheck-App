@@ -1541,6 +1541,28 @@ Applying to already-ingested events needs a redeploy + re-scrape.
 
 ---
 
+### 2.52 More stop words + curated interests + 2-word compound tags (post-§2.51 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §58._
+
+Added 4 stop words, 17 curated interests, and a 2-word compound-tag rule in the
+derive path.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (`is/no/longer/optional` stops; `titleSegments`/`titleRuns`/`titlePhrases`/`takeTags` compound logic) + `interest-matching.test.ts` (+3) | Deno | `is/no/longer/optional` are filtered ("India Is No Longer Optional" → `india`); a within-run adjacent pair becomes one tag (`Natural Medicine` → `natural medicine`; `Cold Brew Bandana Drop` → `cold brew, bandana` — `drop` is a stop); a stop / comma breaks a run so lists stay separate (`Pottery and Sculpture` → two tags); title-emphasis re-pointed to a comma list. All prior cases hold. |
+| `supabase/seed.sql`, `supabase/seed-hosted.sql` (17 curated interests, UUIDs 0023–0039) | n/a (seed data) | `cafe`/`choir`/`church`/`fair`/`solar`/`free`/`digital`/`virtual`/`networking`/`wine`/`games`/`india`/`irvine`/`executives`/`health`/`medicine`/`acupuncture` with aliases; applied to the hosted catalog by INSERT. |
+
+**Delivered count**: Jest 411/411 (analyzer is Deno, off the Jest path); `tsc` clean.
+
+**What this section deliberately does NOT do:** detect compounds semantically —
+the rule pairs *adjacent* in-run candidates, so it can fuse a topic + format word
+(`beis warehouse`); separators/stop-words limit the damage and it's a documented
+refine-later edge. Applying the curated interests to existing events needs a
+hosted INSERT + redeploy + re-scrape.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?
