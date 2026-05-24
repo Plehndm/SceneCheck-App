@@ -1472,6 +1472,31 @@ state is good enough to refine against real usage.
 
 ---
 
+### 2.49 Multiple derived tags + share-event-to-friends (post-§2.48 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §55._
+
+Two features: scraped events can mint **multiple** new interest tags (not just
+one) when nothing in the catalog matches, and an event can be **shared to
+friends** from the detail screen.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (`deriveTags`, `MAX_DERIVED_TAGS`, `suggested: string[]`) + `interest-matching.test.ts` | Deno (updated + 2 new) | A multi-topic title ("Pottery and Knitting") derives **both** tags; `deriveTags` is capped at `MAX_DERIVED_TAGS` and deduped by stem; existing single-derive / match / `unknown` cases still hold with the array shape. |
+| `supabase/functions/ingest-scraped/index.ts` (mint + attach all suggested) | covered indirectly (Edge Function) | Loops the suggested tags, creates/reuses each interest, attaches all (ids deduped against the PK). |
+| `components/ShareEventSheet.tsx` (new) + `app/event/[id].tsx` (share hero button) + `components/SCIcon.tsx` (`share` glyph) | `tests/screens/event-detail.test.tsx` (+1) | The share button opens the sheet ("SHARE TO FRIENDS"); selecting a seeded friend (Maya, p1) and tapping SEND fires `createChat` + `sendMessage` and shows a "Shared with 1 friend" toast. |
+
+**Delivered count**: Jest 411 / 411 (+1; the analyzer's multi-derive is covered
+by the Deno suite, off the Jest path); `tsc` clean.
+
+**What this section deliberately does NOT do:** linkify the `/event/<id>`
+reference in the chat thread (messages render as plain text — the path is
+informational), or cap the matched-catalog tags (only newly *minted* tags are
+capped, at 3). Feature 1 needs a redeploy + re-scrape to retag existing events;
+feature 2 is client-side.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

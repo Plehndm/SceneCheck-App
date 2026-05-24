@@ -20,6 +20,7 @@ import { SCAvatar } from '@/components/SCAvatar';
 import { SCAddButton } from '@/components/SCAddButton';
 import { EditEventSheet } from '@/components/EditEventSheet';
 import { RateEventSheet } from '@/components/RateEventSheet';
+import { ShareEventSheet } from '@/components/ShareEventSheet';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvent } from '@/hooks/useEvent';
@@ -74,6 +75,7 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [editOpen, setEditOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // useEvent: in mock mode this is synchronous (SC_EVENT_BY_ID lookup);
   // in live mode it hits `api.getEventById` and re-renders when the
@@ -234,16 +236,30 @@ export default function EventDetailScreen() {
         <SCTopBar
           onBack={() => router.back()}
           right={
-            <Pressable
-              onPress={handleOpenChat}
-              style={({ pressed }) => [{
-                width: 38, height: 38, borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(255,255,255,0.9)',
-                alignItems: 'center', justifyContent: 'center',
-              }, pressed && { opacity: 0.85 }]}
-            >
-              <SCIcon name="send" size={16} color={t.ink} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                onPress={() => setShareOpen(true)}
+                accessibilityLabel="Share event with friends"
+                style={({ pressed }) => [{
+                  width: 38, height: 38, borderRadius: RADIUS.md,
+                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  alignItems: 'center', justifyContent: 'center',
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCIcon name="share" size={16} color={t.ink} />
+              </Pressable>
+              <Pressable
+                onPress={handleOpenChat}
+                accessibilityLabel="Open event chat"
+                style={({ pressed }) => [{
+                  width: 38, height: 38, borderRadius: RADIUS.md,
+                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  alignItems: 'center', justifyContent: 'center',
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCIcon name="send" size={16} color={t.ink} />
+              </Pressable>
+            </View>
           }
         />
         <View style={{
@@ -443,6 +459,13 @@ export default function EventDetailScreen() {
         eventId={e.id}
         eventTitle={e.title}
         onClose={() => setRateOpen(false)}
+      />
+
+      <ShareEventSheet
+        visible={shareOpen}
+        eventId={e.id}
+        eventTitle={e.title}
+        onClose={() => setShareOpen(false)}
       />
     </Screen>
   );

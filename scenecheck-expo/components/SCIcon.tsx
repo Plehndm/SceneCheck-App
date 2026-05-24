@@ -15,7 +15,7 @@ export type IconName =
   | 'lock' | 'bell' | 'logout' | 'shield' | 'flag' | 'help'
   | 'x' | 'edit' | 'mic' | 'camera' | 'switch'
   | 'user-plus' | 'user-check' | 'clock' | 'lock-open' | 'mail'
-  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon' | 'more' | 'trash';
+  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon' | 'more' | 'trash' | 'share';
 
 interface Props {
   name: IconName;
@@ -105,6 +105,9 @@ export function SCIcon({ name, size = 20, color = 'currentColor' }: Props) {
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="5" r="1.7" fill={color} stroke={color} /><Circle cx="12" cy="12" r="1.7" fill={color} stroke={color} /><Circle cx="12" cy="19" r="1.7" fill={color} stroke={color} /></Svg>;
     case 'trash':
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Polyline points="3 6 5 6 21 6" {...strokeProps} /><Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" {...strokeProps} /><Path d="M10 11v6M14 11v6" {...strokeProps} /><Path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" {...strokeProps} /></Svg>;
+    case 'share':
+      // Feather "share-2" — three nodes (you → two friends).
+      return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="18" cy="5" r="3" {...strokeProps} /><Circle cx="6" cy="12" r="3" {...strokeProps} /><Circle cx="18" cy="19" r="3" {...strokeProps} /><Line x1="8.59" y1="13.51" x2="15.42" y2="17.49" {...strokeProps} /><Line x1="15.41" y1="6.51" x2="8.59" y2="10.49" {...strokeProps} /></Svg>;
     default:
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="12" r="10" {...strokeProps} /></Svg>;
   }

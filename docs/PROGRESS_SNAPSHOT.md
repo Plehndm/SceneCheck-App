@@ -92,6 +92,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Scraped-event source links, dark-mode refresh spinner, bare auto-created tags.** Three polish items + plumbing. **(1)** Scraped (App-created) events now carry a `source_url` (new `events` column, migration `00027`; the scraper pulls it from each listing's JSON-LD `url`, `ingest-scraped` stores it, `transformEventRow` surfaces it as `SCEvent.sourceUrl`). The event-detail screen renders a **"View original listing →"** link (opens via `Linking.openURL`) **in place of the "Hosted by" row** when a scraped event has one — user events keep the host row. **(2)** The native pull-to-refresh spinner used the washed-out `ink3` grey; it now uses the adaptive `ink` (`tintColor` + Android `colors`/`progressBackgroundColor`), so it's dark in light mode and bright in dark mode — matching the web button + REFRESHING pill, which already used `ink`. **(3)** Auto-created interests are now stored with **just the name** (the `Auto-created from "…"` description is gone). +1 test (410/410); `tsc` clean. Needs migration `00027` applied + `ingest-scraped` redeployed. See §52. |
 | 2026-05-24 | **Auto-tag precision: expanded stop-list, `unknown` fallback, trimmed aliases.** Review of the first live re-run showed mediocre tags (e.g. `experience`, `orange`, `lunch`) — not duplicates, but low-signal. Three fixes in the shared analyzer + seed: **(1)** the stop-word list grew to cover marketing/commercial/format/locale filler (`experience`, `sale`, `networking`, `conference`, `orange`, `county`, `irvine`, day/season names, …) so those words can't become tags; **(2)** when the text yields **no** usable word, the analyzer now returns the catch-all **`unknown`** tag (new exported `UNKNOWN_TAG`) instead of minting a junk interest or leaving the event untagged; **(3)** over-broad seed `similar_tags` were trimmed — `live` off `music` and `irvine` off `uci` (in `seed.sql`, `seed-hosted.sql`, and `data/mocks.ts`) so "live …" / Irvine-anything stop auto-tagging those. +2 Deno tests. Because matching also fires on **existing** catalog rows, the live cleanup also deletes the bare auto-created interests (subs 0) so the new stop-list actually takes effect on re-run; aliases are trimmed with an `UPDATE`. Requires redeploy + a delete/trim SQL + re-run. See §53. |
 | 2026-05-24 | **Scraper CI resilience + verified live re-tag.** The scraper threw and `exit(1)` on a non-OK source response, so when Eventbrite served the GitHub runner's datacenter IP a `405` (intermittent bot defense) the whole workflow hard-failed. It now retries the fetch (rotating User-Agent + backoff, `SCRAPE_RETRIES` cfg) and, on total failure, falls back to seed events instead of exiting — the ingest path always runs. Verified the full FR6 pipeline end-to-end against the hosted project: migration `00027` applied, `ingest-scraped` redeployed with the tightened tagger, the catalog cleaned (scraped events + bare auto-created interests deleted, `live`/`irvine` aliases `UPDATE`-trimmed), then the scraper re-run from a non-datacenter IP → **40/40 events ingested with a real per-event `source_url` and ≥1 tag**; `uci`/`music` no longer over-match, junk tags (`experience`/`orange`/`lunch`/…) are gone, the 7 speed-dating events share one `dating` tag, and no duplicate same-meaning interests. Known precision gaps left for later user testing: a few proper-noun/brand/filler tags (`actually`, `jason`, `thermomix`, `spectrum`, …) and `biking` still over-matching via its own `running`/`spin` aliases (only `live`/`irvine` were trimmed). See §54. |
+| 2026-05-24 | **Multiple derived tags per scraped event + share-event-to-friends.** Two features. **(1)** A scraped event can now mint **multiple** new interest tags, not just one: the matched-catalog path was already uncapped (e.g. Yoga Day → `yoga, bouldering, climbing`), but the *derive* path (no catalog match) coined a single word. New `deriveTags()` returns up to `MAX_DERIVED_TAGS` (3) meaningful words — ranked by stem frequency then length, deduped by stem, singularized — so "Pottery & Knitting" mints both. `InterestAnalysis.suggested` is now `string[]` (`[UNKNOWN_TAG]` when no usable word); `ingest-scraped` creates + attaches them all (deduped against the PK). `deriveTag()` kept as a single-tag wrapper. **(2)** New **`ShareEventSheet`** + a `share` hero button on the event detail: pick one or more friends (`useFriends`), add an optional note, and the event is sent into each friend's DM via `api.createChat` + `api.sendMessage` (dedupes to an existing DM) — no backend change. New `share` SCIcon. +2 tests (411/411); `tsc` clean. Feature (1) needs `ingest-scraped` redeploy + a re-run to apply to existing events; (2) ships with the app build. See §55. |
 
 ### Current layout
 
@@ -3299,7 +3300,46 @@ credentials file — delete it after use (it lives under a synced folder).
 
 ---
 
-## 55. How to re-snapshot this file
+## 55. Multiple derived tags per scraped event + share-to-friends
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+**(1) Scraped events can carry multiple *new* tags.** The matched-catalog path
+was always uncapped — an event genuinely matching `yoga`, `bouldering`, and
+`climbing` got all three. The gap was the *derive* path (when nothing matched):
+it coined exactly one word. Now:
+
+- `deriveTags(title, description, max = MAX_DERIVED_TAGS)` returns up to 3
+  meaningful words, ranked by stem frequency (so inflected repeats reinforce a
+  topic) then length then order, deduped by stem, and singularized. `deriveTag()`
+  remains as a thin single-tag wrapper.
+- `InterestAnalysis.suggested` changed from `string | null` to `string[]`
+  (`[UNKNOWN_TAG]` when the text has no usable word; `[]` when the catalog
+  matched and nothing new is minted).
+- `ingest-scraped` now loops the suggested tags, creating/reusing each interest
+  and attaching them all (deduping ids against the `event_interests` PK).
+- The derive cap (3) keeps a wordy title from flooding the catalog; the matched
+  path stays uncapped. e.g. "Pottery & Knitting" now mints both `pottery` +
+  `knitting` instead of just one.
+
+**(2) Share an event to friends.** New `components/ShareEventSheet.tsx` — a
+bottom sheet that lists your friends (`useFriends`), lets you multi-select and
+add an optional note, and sends the event into each friend's 1:1 DM by reusing
+the existing chat plumbing: `api.createChat([friendId], 'dm')` (which dedupes to
+an existing DM) + `api.sendMessage` with a body referencing the event
+(`/event/<id>`). Best-effort per friend; a success toast reports the count. The
+event-detail hero gained a `share` button beside the existing chat button (new
+`share` glyph in `SCIcon`). No backend change — DMs + messages already exist in
+both mock and live modes.
+
++2 tests (a scraped event with multiple derived topics; the share button opens
+the sheet and sends to a friend). 411/411, `tsc` clean. Feature (1) requires an
+`ingest-scraped` redeploy + a re-scrape to apply to already-ingested events;
+feature (2) is client-side and ships with the next app build.
+
+---
+
+## 56. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

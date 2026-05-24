@@ -3,7 +3,7 @@
 // and the "event is gone" fallback when the id is unknown.
 
 import { Linking } from 'react-native';
-import { fireEvent } from '@testing-library/react-native';
+import { fireEvent, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import EventDetailScreen from '@/app/event/[id]';
 import { renderScreen, resetStore, setRouteParams } from '../test-utils';
@@ -87,6 +87,19 @@ describe('EventDetailScreen', () => {
     fireEvent.press(getByText('View original listing →'));
     expect(openURL).toHaveBeenCalledWith(SC_EVENT_BY_ID.e4.sourceUrl);
     openURL.mockRestore();
+  });
+
+  test('the share button opens the share sheet and sends the event to a friend', async () => {
+    // resetStore seeds friends p1/p3/p5 (Maya/Sasha/Priya), so the sheet lists them.
+    setRouteParams({ id: 'e1' });
+    const { getByLabelText, getByText } = renderScreen(<EventDetailScreen />);
+    fireEvent.press(getByLabelText('Share event with friends'));
+    expect(getByText('SHARE TO FRIENDS')).toBeTruthy();
+    fireEvent.press(getByLabelText('Share with Maya Chen'));
+    fireEvent.press(getByText('SEND'));
+    await waitFor(() => {
+      expect(useStore.getState().toasts.some(t => /Shared with 1 friend\b/.test(t.message))).toBe(true);
+    });
   });
 
   test('renders the "event is gone" fallback for unknown ids', () => {
