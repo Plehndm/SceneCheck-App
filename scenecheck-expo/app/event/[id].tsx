@@ -8,7 +8,7 @@
 // `eventOverrides`, so edits survive route changes without globals.
 
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
@@ -290,15 +290,27 @@ export default function EventDetailScreen() {
             // Open the Map tab focused on this event (selected + centered).
             onPress={() => router.push(`/(tabs)/map?focus=${e.id}` as never)}
           />
-          <DetailRow
-            icon="people"
-            k={`Hosted by ${e.host ?? host?.name ?? (e.hostId ? 'Host' : 'App-created')}`}
-            v={e.hostId ? 'View profile →' : (e.kind === 'recommended' ? 'Auto-discovered' : '')}
-            last
-            // Tap a real host to open their profile; app-created events
-            // (no creator) stay non-interactive.
-            onPress={e.hostId ? () => router.push(`/profile/${e.hostId}` as never) : undefined}
-          />
+          {e.sourceUrl ? (
+            // Scraped (app-created) events have no host — link to the original
+            // listing the info was scraped from instead.
+            <DetailRow
+              icon="globe"
+              k="Scraped event"
+              v="View original listing →"
+              last
+              onPress={() => { Linking.openURL(e.sourceUrl!).catch(() => {}); }}
+            />
+          ) : (
+            <DetailRow
+              icon="people"
+              k={`Hosted by ${e.host ?? host?.name ?? (e.hostId ? 'Host' : 'App-created')}`}
+              v={e.hostId ? 'View profile →' : (e.kind === 'recommended' ? 'Auto-discovered' : '')}
+              last
+              // Tap a real host to open their profile; app-created events
+              // (no creator) stay non-interactive.
+              onPress={e.hostId ? () => router.push(`/profile/${e.hostId}` as never) : undefined}
+            />
+          )}
         </SCCard>
       </View>
 

@@ -1393,6 +1393,32 @@ stemmed (stripping `-ist` over-merges, e.g. `twist`).
 
 ---
 
+### 2.46 Scraped-event source link + dark-mode refresh + bare auto-tags (post-§2.45 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §52._
+
+Scraped events now carry a `source_url` (migration `00027`) the detail screen
+links to in place of the (absent) host; the native refresh spinner switched from
+the washed-out `ink3` to the adaptive `ink`; and auto-created interests store
+just their name.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `app/event/[id].tsx` (source-link row) + `types/domain.ts` (`SCEvent.sourceUrl`) + `lib/api.ts` (`source_url`→`sourceUrl`) + `data/mocks.ts` (`e4.sourceUrl`) | `tests/screens/event-detail.test.tsx` (+1) | A scraped event (`e4`) renders **"View original listing →"** and **no** "Hosted by" row; pressing it calls `Linking.openURL(sourceUrl)`. The existing host-row path is unchanged for user events. |
+| `components/Screen.tsx` (RefreshControl `ink3`→`ink` + Android `colors`/`progressBackgroundColor`) | `tests/components/Screen.test.tsx` (existing) | Color-only; existing RefreshControl/web-button wiring tests still pass (the assertions are on behavior, not the spinner colour). |
+| `supabase/migrations/00027_events_source_url.sql` (new column) | n/a (DDL) | Adds `events.source_url TEXT`; applied on hosted Supabase, not exercised by Jest. |
+| `supabase/functions/ingest-scraped/index.ts` (store `source_url`; mint interest with name only) + `scripts/scrape-events.mjs` (capture JSON-LD `url`) | covered indirectly (Edge Function / CI script) | The scraper sends `source_url`; the function persists it and creates interests with no description prefix. |
+
+**Delivered count**: 410 / 410 (+1). `tsc` clean.
+
+**What this section deliberately does NOT do:** surface `source_url` through the
+`rank_events_query` RPC (the feed/cards have no link, so it isn't needed there —
+only `getEventById`, which selects `*`, carries it). **Live rollout order:** apply
+migration `00027` before redeploying `ingest-scraped`, or the `source_url` insert
+fails until the column exists.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

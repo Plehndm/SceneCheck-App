@@ -89,6 +89,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-23 | **Dark-mode contrast fixes + darker review icon.** Active "filled" pills draw their label in hardcoded `'white'` over a `t.ink` fill — but `ink` flips to near-**white** in dark mode, so the active label vanished. Replaced `'white'` with `t.surface` (the mode-adaptive inverse of `ink`) on the **settings palette** chips, the **ratings star-filter** chips, and the same pattern on the events filter, search tabs, and map radius chips. The event-detail **review (rate) button** drew its star in `t.ink`, which washed out on its constant-gold fill in dark mode — new constant `warnInk` (`#1A1205`) keeps it dark in both modes. Same pass: the event-detail **hero chips** (category + RECOMMENDED pills) had hardcoded white backgrounds → switched to `t.card`; the **refresh** icon/pill bumped `t.ink2` → `t.ink` (darker). Also pinned `supabase/config.toml` `[db] major_version` to **17** to match the linked project (CLI version-mismatch warning). +2 token-invariant tests (409/409, 56 suites); `tsc` clean. See §49. |
 | 2026-05-23 | **Scraper auth → new secret key + shared token.** Supabase is deprecating the `service_role` key. The events scraper → `ingest-scraped` pipeline used the `service_role` JWT to pass the function's default JWT gate; the new `sb_secret_…` key isn't a JWT, so it can't. Reworked: deploy `ingest-scraped` with `--no-verify-jwt`, send the new secret key as the `apikey` and authorize via a shared **`INGEST_TOKEN`** (`x-ingest-token` header) the function matches (fail-closed). `scrape-events.mjs` + the workflow now read `SUPABASE_SECRET_KEY` + `INGEST_TOKEN`. The function's own insert still uses its platform-injected key. CI-only (no Jest/tsc surface). See §50. |
 | 2026-05-24 | **Scraped events auto-create interests + fuzzy tag matching.** `ingest-scraped` (FR6) used to scan only the description, match interest names by raw substring, and never create a tag — so a scraped event about an uncovered topic published unlabeled. New pure analyzer `supabase/functions/_shared/interest-matching.ts` now runs over **title + description**: existing interests match on their name OR a `similar_tags` alias, compared by a morphological **stem**, so `bike`/`biking`/`bikes`/`biker` and `spin`/`spinning` reuse one interest instead of minting near-duplicates (the dedup the user asked for); when nothing matches, a singularized tag is derived from the most salient word, created, and attached. Distinct roots never fuse (`hiking` ≠ `biking` — stemming is morphology-only, not edit-distance). Covered by Deno unit tests (`interest-matching.test.ts`, run via `deno test`); no Jest/tsc surface, so 409/409 is unchanged. Requires re-deploying the function. See §51. |
+| 2026-05-24 | **Scraped-event source links, dark-mode refresh spinner, bare auto-created tags.** Three polish items + plumbing. **(1)** Scraped (App-created) events now carry a `source_url` (new `events` column, migration `00027`; the scraper pulls it from each listing's JSON-LD `url`, `ingest-scraped` stores it, `transformEventRow` surfaces it as `SCEvent.sourceUrl`). The event-detail screen renders a **"View original listing →"** link (opens via `Linking.openURL`) **in place of the "Hosted by" row** when a scraped event has one — user events keep the host row. **(2)** The native pull-to-refresh spinner used the washed-out `ink3` grey; it now uses the adaptive `ink` (`tintColor` + Android `colors`/`progressBackgroundColor`), so it's dark in light mode and bright in dark mode — matching the web button + REFRESHING pill, which already used `ink`. **(3)** Auto-created interests are now stored with **just the name** (the `Auto-created from "…"` description is gone). +1 test (410/410); `tsc` clean. Needs migration `00027` applied + `ingest-scraped` redeployed. See §52. |
 
 ### Current layout
 
@@ -3175,7 +3176,45 @@ type-stripping to confirm outputs. Requires re-deploying `ingest-scraped`.
 
 ---
 
-## 52. How to re-snapshot this file
+## 52. Scraped-event source links + dark-mode refresh + bare auto-created tags
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+Three end-user polish items from review of the live scraped events, plus the
+`source_url` plumbing they needed:
+
+- **Source link in place of the host (scraped events).** A scraped event has no
+  creator, so the detail card showed an inert "Hosted by App-created /
+  Auto-discovered" row. New `events.source_url` (migration `00027`) carries the
+  original listing URL: the scraper reads each event's schema.org **`url`** from
+  the JSON-LD, `ingest-scraped` stores it, `transformEventRow` maps it to
+  `SCEvent.sourceUrl`, and `app/event/[id].tsx` renders a **"View original
+  listing →"** row (a `globe`-icon `DetailRow` that opens `Linking.openURL`)
+  whenever `sourceUrl` is set — user-created events still show the host row.
+  `getEventById` selects `*`, so the detail page gets the column; the home/map
+  feed (the `rank_events_query` RPC) doesn't surface it, but it isn't needed
+  there (no link on cards).
+- **Refresh spinner now reads correctly in dark mode.** The native
+  `RefreshControl` used `tintColor={t.ink3}` — a muted grey that washed out in
+  both modes. It now uses the adaptive `t.ink` (`tintColor` for iOS, `colors`
+  for the Android arrow, `progressBackgroundColor={t.card}` for its disc), so
+  the pull spinner is near-black in light mode and near-white in dark. The web
+  refresh button + the "REFRESHING" pill already used `t.ink`, so all refresh
+  affordances are now consistent and mode-correct.
+- **Auto-created interests are bare.** `ingest-scraped` previously stamped a
+  `description` of `Auto-created from "<title>"` on a minted interest; it now
+  inserts just the `name` (the column defaults to `''`), so a new interest reads
+  cleanly with no provenance prefix.
+
+Adds one screen test (a scraped event with `sourceUrl` shows the source link and
+no host row, and tapping it calls `Linking.openURL`); the mock fixture `e4`
+gained a `sourceUrl`. 410/410, `tsc` clean. **Live rollout order matters:** apply
+migration `00027` first (the function writes `source_url`, so deploying before
+the column exists would fail every insert), then redeploy `ingest-scraped`.
+
+---
+
+## 53. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

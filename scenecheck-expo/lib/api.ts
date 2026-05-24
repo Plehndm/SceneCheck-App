@@ -69,6 +69,7 @@ interface EventRow {
   lat: number | null;
   lng: number | null;
   source: string | null;
+  source_url?: string | null;
   creator_id: string | null;
   capacity: number | null;
   subscriber_count: number | null;
@@ -105,6 +106,7 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
     lng: row.lng ?? undefined,
     x: 0.5,
     y: 0.5,
+    sourceUrl: row.source_url ?? undefined,
   };
 }
 

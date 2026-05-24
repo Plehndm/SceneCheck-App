@@ -2,6 +2,7 @@
 // Covers happy-path render, host-only actions, the join/leave toggle,
 // and the "event is gone" fallback when the id is unknown.
 
+import { Linking } from 'react-native';
 import { fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import EventDetailScreen from '@/app/event/[id]';
@@ -74,6 +75,18 @@ describe('EventDetailScreen', () => {
     expect(useStore.getState().pendingLeave.has('e1')).toBe(true);
     expect(useStore.getState().toasts.length).toBe(1);
     expect(useStore.getState().toasts[0].action?.label).toBe('UNDO');
+  });
+
+  test('a scraped event links to its source instead of showing a host row', () => {
+    // e4 is a scraped (kind: recommended) event with a sourceUrl.
+    setRouteParams({ id: 'e4' });
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
+    const { getByText, queryByText } = renderScreen(<EventDetailScreen />);
+    expect(getByText('View original listing →')).toBeTruthy();
+    expect(queryByText(/Hosted by/)).toBeNull();
+    fireEvent.press(getByText('View original listing →'));
+    expect(openURL).toHaveBeenCalledWith(SC_EVENT_BY_ID.e4.sourceUrl);
+    openURL.mockRestore();
   });
 
   test('renders the "event is gone" fallback for unknown ids', () => {

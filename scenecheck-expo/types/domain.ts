@@ -62,6 +62,10 @@ export interface SCEvent {
   // Mock fixtures only carry the friendly `when` string, so this is optional.
   startAt?: string;
   desc?: string;
+  // For scraped (App-created) events: the original listing page the event was
+  // scraped from. The event-detail screen links to it in place of a host.
+  // Absent for user-created events and mock fixtures.
+  sourceUrl?: string;
 }
 
 export interface PastEvent {

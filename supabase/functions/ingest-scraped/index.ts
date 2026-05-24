@@ -71,6 +71,7 @@ serve(async (req: Request) => {
         capacity: body.capacity || null,
         status: "published", // scraped events go live immediately
         source: "scraped",
+        source_url: body.source_url || null, // original listing the scraper pulled from
         min_subscribers: 1,
       })
       .select("id")
@@ -107,7 +108,7 @@ serve(async (req: Request) => {
       // reused instead of failing the whole ingest on a UNIQUE violation.
       const { data: created, error: createErr } = await admin
         .from("interests")
-        .insert({ name: suggested, description: `Auto-created from "${body.title}".` })
+        .insert({ name: suggested })
         .select("id")
         .single();
       if (created) {

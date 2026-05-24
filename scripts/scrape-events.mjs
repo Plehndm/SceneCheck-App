@@ -48,6 +48,7 @@ const FALLBACK_EVENTS = [
   start_at: new Date(Date.now() + (i + 2) * 86_400_000).toISOString(),
   end_at: null,
   capacity: 30,
+  source_url: SOURCE_URL, // no per-event page in fallback; link to the listing
 }));
 
 // Pull every JSON-LD <script> block from the page and collect the events out of
@@ -110,6 +111,9 @@ async function scrapeEvents() {
       location: { lat, lng },
       location_name: it.location?.name || '',
       capacity: null,
+      // The original listing page — ingest-scraped stores it as source_url and
+      // the event-detail screen links to it in place of a host.
+      source_url: it.url ? String(it.url).trim() : null,
     });
   }
   return events.slice(0, MAX_EVENTS);
