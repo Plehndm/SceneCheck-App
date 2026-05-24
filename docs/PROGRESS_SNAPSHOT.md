@@ -3098,11 +3098,12 @@ verified pulling 40 unique real Irvine events.
 (Eventbrite bot-blocks datacenter IPs) and, if the live source still returns
 nothing, **falls back to seed events** (loudly logged) so the ingest path runs
 regardless. It also prints exactly which stage failed (scrape vs every-ingest)
-with the likely cause. The workflow runs a **diagnostics step** first — file
-presence, secret presence (set/length, no values leaked), and an empty-body
-**function auth probe** that isolates auth (`401` = INGEST_TOKEN mismatch / not
-deployed `--no-verify-jwt`; `400` = auth OK so the scrape is the issue; `404` =
-not deployed).
+with the likely cause. The workflow runs a one-line **secrets sanity check**
+first (fails fast with a clear message if `SUPABASE_URL` / `SUPABASE_SECRET_KEY`
+/ `INGEST_TOKEN` is missing). _(During bring-up this step also printed secret
+lengths + an empty-body function auth probe — `401` = INGEST_TOKEN mismatch / not
+deployed `--no-verify-jwt`, `400` = auth OK, `404` = not deployed — handy to
+re-add temporarily if the pipeline ever breaks.)_ Verified green in CI.
 
 **Deploy fix.** `_shared/supabase-client.ts` imported supabase-js from
 `https://esm.sh/@supabase/supabase-js@2`, which intermittently 522'd during
