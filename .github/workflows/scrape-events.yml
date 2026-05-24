@@ -35,7 +35,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
-        run: test -n "$SUPABASE_URL" && test -n "$SUPABASE_SECRET_KEY" && test -n "$INGEST_TOKEN" || { echo "Missing repository secret(s): SUPABASE_URL / SUPABASE_SECRET_KEY / INGEST_TOKEN"; exit 1; }
+        run: |
+          test -n "$SUPABASE_URL" && test -n "$SUPABASE_SECRET_KEY" && test -n "$INGEST_TOKEN" \
+            || { echo "Missing required repository secret(s) - set SUPABASE_URL, SUPABASE_SECRET_KEY, INGEST_TOKEN"; exit 1; }
 
       - name: Scrape + ingest
         env:
