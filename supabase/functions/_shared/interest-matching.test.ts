@@ -24,17 +24,26 @@ Deno.test("matches via a similar_tags alias (cycling → biking)", () => {
   assertEquals(analyzeInterests("Cycling tour downtown", "", CATALOG).matched, ["biking"]);
 });
 
-Deno.test("fuzzy: every inflected form of 'bike' reuses the 'biking' interest", () => {
-  // The whole point of stem matching — none of these mint a near-duplicate.
-  for (const v of ["bike", "bikes", "biked", "biker", "bikers"]) {
+Deno.test("fuzzy: base forms of 'bike' reuse the 'biking' interest", () => {
+  // Plurals / verb forms collapse. (Agentive '-er' forms like "biker" stay
+  // distinct — see the 'career' test for why the -er strip is gated.)
+  for (const v of ["bike", "bikes", "biked"]) {
     assertEquals(analyzeInterests(`Sunday ${v} ride`, "", CATALOG).matched, ["biking"], v);
   }
 });
 
-Deno.test("fuzzy: run / runs / running / runner all reuse 'running'", () => {
-  for (const v of ["run", "runs", "running", "runner", "runners", "jogging"]) {
+Deno.test("fuzzy: run / runs / running / jogging reuse 'running'", () => {
+  for (const v of ["run", "runs", "running", "jogging"]) {
     assertEquals(analyzeInterests(`Morning ${v} by the pier`, "", CATALOG).matched, ["running"], v);
   }
+});
+
+Deno.test("short '-er' words are not over-reduced ('career' ≠ 'care')", () => {
+  const cat: CatalogInterest[] = [{ name: "career", similar_tags: ["careers"] }];
+  assertEquals(analyzeInterests("Orange County Career Fair", "", cat).matched, ["career"]);
+  // "care" / "self-care" must NOT match the "career" interest.
+  assertEquals(analyzeInterests("Self-Care Sunday", "", cat).matched, []);
+  assertEquals(analyzeInterests("Used Car Show", "", cat).matched, []);
 });
 
 Deno.test("fuzzy: 'Spinning class' reuses 'biking' via its 'spin' alias", () => {
@@ -75,8 +84,8 @@ Deno.test("derives MULTIPLE meaningful tags when the text has several topics", (
 Deno.test("deriveTags is capped at MAX_DERIVED_TAGS and deduped by stem", () => {
   const many = deriveTags("Yoga Pottery Knitting Surfing Climbing", "");
   assertEquals(many.length, MAX_DERIVED_TAGS);
-  // "running" + "runners" share a stem → only one tag.
-  assertEquals(deriveTags("Running with runners", ""), ["running"]);
+  // "running" + "runs" share a stem → only one tag.
+  assertEquals(deriveTags("Running and runs", ""), ["running"]);
 });
 
 Deno.test("a derived tag is singularized for a clean catalog label", () => {

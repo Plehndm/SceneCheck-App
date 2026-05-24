@@ -45,7 +45,16 @@ INSERT INTO interests (id, name, description, subscriber_count, similar_tags) VA
   ('10000000-0000-0000-0000-000000000012', 'board-games', 'Board game meetups and tournaments.', 45, ARRAY['catan','strategy','tabletop']),
   ('10000000-0000-0000-0000-000000000013', 'design', 'Design workshops and critiques.', 30, ARRAY['ux','industrial','graphic']),
   ('10000000-0000-0000-0000-000000000014', 'bouldering', 'Indoor bouldering at climbing gyms.', 55, ARRAY['climbing','yoga','fitness']),
-  ('10000000-0000-0000-0000-000000000015', 'yoga', 'Yoga classes and sessions.', 75, ARRAY['meditation','fitness','mindfulness'])
+  ('10000000-0000-0000-0000-000000000015', 'yoga', 'Yoga classes and sessions.', 75, ARRAY['meditation','fitness','mindfulness']),
+  -- Common descriptive event tags — curated so scraped listings match a stable,
+  -- readable interest instead of deriving a noisy one-off word.
+  ('10000000-0000-0000-0000-000000000016', 'career', 'Career fairs, job hunts, and recruiting.', 0, ARRAY['careers','jobs','hiring','recruiting']),
+  ('10000000-0000-0000-0000-000000000017', 'dating', 'Singles mixers, speed dating, and matchmaking.', 0, ARRAY['singles','speed-dating','matchmaking']),
+  ('10000000-0000-0000-0000-000000000018', 'business', 'Business, startup, and entrepreneur meetups.', 0, ARRAY['startup','entrepreneur','networking']),
+  ('10000000-0000-0000-0000-000000000019', 'dentist', 'Dentistry and dental-care events.', 0, ARRAY['dentistry','dental','orthodontist']),
+  ('10000000-0000-0000-0000-000000000020', 'workshop', 'Hands-on workshops, classes, and seminars.', 0, ARRAY['workshops','seminar','class']),
+  ('10000000-0000-0000-0000-000000000021', 'concert', 'Live music concerts and performances.', 0, ARRAY['concerts','gig','live-music']),
+  ('10000000-0000-0000-0000-000000000022', 'conference', 'Conferences, summits, and expos.', 0, ARRAY['conferences','summit','expo','convention'])
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══ EVENTS (with PostGIS points near UCI, Irvine CA) ═══

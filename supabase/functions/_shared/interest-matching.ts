@@ -100,10 +100,17 @@ function words(s: string): string[] {
 }
 
 // Reduce a word to a coarse morphological key so inflected forms of the same
-// root collide: bike / biking / bikes / biker → "bik"; run / running / runner /
-// runs → "run". These keys are for comparison only and need not be real words.
-// Order matters: strip the plural / 3rd-person ending, then a verb/agentive
-// suffix, then a doubled final consonant (runn→run), then a silent trailing e.
+// root collide: bike / biking / bikes → "bik"; run / running / runs → "run".
+// These keys are for comparison only and need not be real words. Order matters:
+// strip the plural / 3rd-person ending, then a verb/agentive suffix, then a
+// doubled final consonant (runn→run), then a silent trailing e.
+//
+// The `-er` strip is gated to longer words (>6 chars) so it collapses
+// derivations like "designer"→"design" / "teacher"→"teach" WITHOUT over-reducing
+// short words: "career" stays "career" (not "car", which would wrongly match
+// "care"/"cars"), and "water" stays "water". The trade-off is that short
+// agentive forms ("biker", "runner") no longer collapse to their verb stem —
+// an acceptable edge case vs. the false matches the aggressive form caused.
 function stemKey(word: string): string {
   let w = word.toLowerCase();
 
@@ -113,7 +120,7 @@ function stemKey(word: string): string {
 
   if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
   else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
-  else if (w.length > 4 && w.endsWith("er")) w = w.slice(0, -2);
+  else if (w.length > 6 && w.endsWith("er")) w = w.slice(0, -2);
 
   if (w.length > 2 && w[w.length - 1] === w[w.length - 2] && !VOWELS.has(w[w.length - 1])) {
     w = w.slice(0, -1);
