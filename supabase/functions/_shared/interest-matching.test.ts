@@ -2,7 +2,7 @@
 // Run with: deno test supabase/functions/_shared/interest-matching.test.ts
 
 import { assertEquals } from "https://deno.land/std@0.177.0/testing/asserts.ts";
-import { analyzeInterests, deriveTag, type CatalogInterest } from "./interest-matching.ts";
+import { analyzeInterests, deriveTag, UNKNOWN_TAG, type CatalogInterest } from "./interest-matching.ts";
 
 const CATALOG: CatalogInterest[] = [
   { name: "biking", similar_tags: ["cycling", "spin"] },
@@ -83,4 +83,18 @@ Deno.test("falls back to description words when the title is all filler", () => 
   const r = analyzeInterests("Weekly meetup", "Bring your astronomy questions, astronomy for all", CATALOG);
   assertEquals(r.matched, []);
   assertEquals(r.suggested, "astronomy"); // repeated → highest stem frequency wins
+});
+
+Deno.test("text with no usable word falls back to the 'unknown' tag", () => {
+  // All listing filler / location / format words — nothing to tag on, so we
+  // use the catch-all rather than minting a junk interest.
+  const r = analyzeInterests("Grand Opening Sale", "Networking mixer in Orange County", CATALOG);
+  assertEquals(r.matched, []);
+  assertEquals(r.suggested, UNKNOWN_TAG);
+  assertEquals(UNKNOWN_TAG, "unknown");
+});
+
+Deno.test("a real topic word still survives the expanded stop list", () => {
+  // "summer" + "sale" are filler; "pottery" is the real topic.
+  assertEquals(analyzeInterests("Summer Pottery Sale", "", CATALOG).suggested, "pottery");
 });

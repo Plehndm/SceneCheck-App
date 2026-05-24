@@ -1419,6 +1419,32 @@ fails until the column exists.
 
 ---
 
+### 2.47 Auto-tag precision: stop-list + `unknown` fallback + trimmed aliases (post-§2.46 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §53._
+
+Tightens the scraped-event auto-tagger after reviewing the first live re-run
+(good dedup, mediocre tag quality). Expanded `STOP_WORDS` (marketing/commercial/
+locale/time filler), an `unknown` catch-all when no real word is found, and
+trimmed the two broadest seed aliases (`live`→`music`, `irvine`→`uci`).
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (expanded stops; `UNKNOWN_TAG`; `analyzeInterests` falls back to it) | `supabase/functions/_shared/interest-matching.test.ts` (+2 Deno cases) | All-filler text (`"Grand Opening Sale"` / `"Networking mixer in Orange County"`) → `suggested === 'unknown'`; a real topic word (`"Summer Pottery Sale"` → `pottery`) still survives the bigger stop-list. Existing match/derive cases unchanged. |
+| `supabase/seed.sql`, `supabase/seed-hosted.sql`, `scenecheck-expo/data/mocks.ts` (trim `live` from `music`, `irvine` from `uci`) | full Jest suite (regression) | Mock-catalog change is color/data-only; 410/410 unchanged (no test asserted the trimmed aliases). |
+
+**Delivered count**: Jest 410/410 (the analyzer + its tests are Deno, off the Jest
+path); `tsc` clean.
+
+**What this section deliberately does NOT do:** use edit-distance fuzziness (still
+morphology-only), or trim every broad alias — `biking`'s `running`/`spin` and
+`group10`'s `team`/`project` are left unless requested. **Live rollout:** because
+matching fires on existing catalog rows, the bare auto-created junk interests must
+be deleted (and the two aliases `UPDATE`d) before re-running the scraper, or the
+old tags persist.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

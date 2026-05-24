@@ -6,7 +6,9 @@
 //   - when the text matches NOTHING in the catalog, a single tag derived from
 //     the text's most salient word, which the caller mints as a new interest
 //     and attaches. So an event about something the catalog doesn't cover yet
-//     is still labeled (and a brand new interest is born from it).
+//     is still labeled (and a brand new interest is born from it). If the text
+//     has no usable word — only stop words / event filler / numbers — we don't
+//     mint a junk interest; we fall back to the catch-all `unknown` tag.
 //
 // Matching is FUZZY: words are compared by a morphological stem, so "bike",
 // "biking", "bikes" and "biker" all collapse to one key — and an event saying
@@ -28,25 +30,48 @@ export interface CatalogInterest {
 export interface InterestAnalysis {
   // Canonical catalog names that match the event text, in catalog order.
   matched: string[];
-  // A new tag derived from the text. Set ONLY when `matched` is empty (nothing
-  // in the catalog matched); null when something matched, or when the text has
-  // no usable word to mint a tag from.
+  // The tag to apply when `matched` is empty: a word derived from the text, or
+  // `UNKNOWN_TAG` when the text has no usable word. null only when something
+  // matched (so the caller already has a tag and shouldn't mint one).
   suggested: string | null;
 }
 
-// Words too generic to match an interest on, or to mint one from: stop words
-// plus event-listing filler ("night", "meetup", "free", …) that would otherwise
-// become a low-signal tag.
+// Catch-all label for an event whose text yields no real interest word — better
+// than coining a junk tag from listing filler ("experience", "orange", …) or
+// leaving the event untagged entirely.
+export const UNKNOWN_TAG = "unknown";
+
+// Words too generic to match an interest on, or to mint one from. Anything here
+// is skipped when picking a tag, so an event built only from these falls back to
+// UNKNOWN_TAG instead of coining a low-signal interest.
 const STOP_WORDS = new Set<string>([
+  // Function words.
   "the", "and", "for", "you", "your", "our", "out", "are", "was", "will",
   "from", "this", "that", "these", "those", "here", "there", "into", "over",
   "what", "when", "where", "who", "how", "why", "come", "join", "lets", "let",
-  "get", "got", "all", "any", "new", "off", "too", "not", "but", "about",
-  "event", "events", "night", "nights", "day", "days", "week", "morning",
-  "evening", "afternoon", "meetup", "meet", "session", "sessions", "group",
-  "groups", "club", "clubs", "hangout", "gathering", "free", "open", "public",
-  "private", "weekly", "monthly", "daily", "everyone", "people", "welcome",
-  "workshop", "workshops", "class", "classes",
+  "get", "got", "all", "any", "new", "off", "too", "not", "but", "about", "with",
+  // Event-format filler.
+  "event", "events", "night", "nights", "day", "days", "week", "weekend",
+  "weekends", "morning", "evening", "afternoon", "meetup", "meet", "session",
+  "sessions", "group", "groups", "club", "clubs", "hangout", "gathering",
+  "free", "open", "public", "private", "weekly", "monthly", "daily", "annual",
+  "everyone", "people", "welcome", "workshop", "workshops", "class", "classes",
+  "seminar", "webinar", "masterclass", "bootcamp", "demo", "popup",
+  // Marketing / commercial / listing filler.
+  "experience", "experiences", "sale", "sales", "drop", "launch", "grand",
+  "opening", "enrolling", "enroll", "briefing", "conference", "summit", "expo",
+  "fair", "fairs", "networking", "mixer", "social", "party", "parties", "bash",
+  "crawl", "tour", "tours", "stroll", "strolls", "scavenger", "hunt", "show",
+  "shows", "showcase", "kickoff", "gala", "fundraiser", "celebration", "deal",
+  "deals", "special", "featuring", "presents", "edition", "series", "official",
+  // Generic / topic-less nouns.
+  "business", "businesses", "professional", "professionals", "lunch", "brunch",
+  "breakfast", "career", "careers", "industry", "leadership", "growth", "market",
+  "markets", "meeting", "talk", "talks", "panel",
+  // Place / time tokens (locale-specific filler for the Irvine/OC scraper).
+  "orange", "county", "irvine", "tustin", "summer", "spring", "fall", "winter",
+  "autumn", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday",
+  "friday", "ages", "age",
 ]);
 
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);
@@ -169,5 +194,7 @@ export function analyzeInterests(
     }
   }
   if (matched.length) return { matched, suggested: null };
-  return { matched, suggested: deriveTag(title, description) };
+  // Nothing matched — derive a tag from the text, or fall back to UNKNOWN_TAG
+  // when the text has no usable (non-stop, non-numeric) word.
+  return { matched, suggested: deriveTag(title, description) ?? UNKNOWN_TAG };
 }

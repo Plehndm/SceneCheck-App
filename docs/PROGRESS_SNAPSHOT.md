@@ -90,6 +90,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-23 | **Scraper auth → new secret key + shared token.** Supabase is deprecating the `service_role` key. The events scraper → `ingest-scraped` pipeline used the `service_role` JWT to pass the function's default JWT gate; the new `sb_secret_…` key isn't a JWT, so it can't. Reworked: deploy `ingest-scraped` with `--no-verify-jwt`, send the new secret key as the `apikey` and authorize via a shared **`INGEST_TOKEN`** (`x-ingest-token` header) the function matches (fail-closed). `scrape-events.mjs` + the workflow now read `SUPABASE_SECRET_KEY` + `INGEST_TOKEN`. The function's own insert still uses its platform-injected key. CI-only (no Jest/tsc surface). See §50. |
 | 2026-05-24 | **Scraped events auto-create interests + fuzzy tag matching.** `ingest-scraped` (FR6) used to scan only the description, match interest names by raw substring, and never create a tag — so a scraped event about an uncovered topic published unlabeled. New pure analyzer `supabase/functions/_shared/interest-matching.ts` now runs over **title + description**: existing interests match on their name OR a `similar_tags` alias, compared by a morphological **stem**, so `bike`/`biking`/`bikes`/`biker` and `spin`/`spinning` reuse one interest instead of minting near-duplicates (the dedup the user asked for); when nothing matches, a singularized tag is derived from the most salient word, created, and attached. Distinct roots never fuse (`hiking` ≠ `biking` — stemming is morphology-only, not edit-distance). Covered by Deno unit tests (`interest-matching.test.ts`, run via `deno test`); no Jest/tsc surface, so 409/409 is unchanged. Requires re-deploying the function. See §51. |
 | 2026-05-24 | **Scraped-event source links, dark-mode refresh spinner, bare auto-created tags.** Three polish items + plumbing. **(1)** Scraped (App-created) events now carry a `source_url` (new `events` column, migration `00027`; the scraper pulls it from each listing's JSON-LD `url`, `ingest-scraped` stores it, `transformEventRow` surfaces it as `SCEvent.sourceUrl`). The event-detail screen renders a **"View original listing →"** link (opens via `Linking.openURL`) **in place of the "Hosted by" row** when a scraped event has one — user events keep the host row. **(2)** The native pull-to-refresh spinner used the washed-out `ink3` grey; it now uses the adaptive `ink` (`tintColor` + Android `colors`/`progressBackgroundColor`), so it's dark in light mode and bright in dark mode — matching the web button + REFRESHING pill, which already used `ink`. **(3)** Auto-created interests are now stored with **just the name** (the `Auto-created from "…"` description is gone). +1 test (410/410); `tsc` clean. Needs migration `00027` applied + `ingest-scraped` redeployed. See §52. |
+| 2026-05-24 | **Auto-tag precision: expanded stop-list, `unknown` fallback, trimmed aliases.** Review of the first live re-run showed mediocre tags (e.g. `experience`, `orange`, `lunch`) — not duplicates, but low-signal. Three fixes in the shared analyzer + seed: **(1)** the stop-word list grew to cover marketing/commercial/format/locale filler (`experience`, `sale`, `networking`, `conference`, `orange`, `county`, `irvine`, day/season names, …) so those words can't become tags; **(2)** when the text yields **no** usable word, the analyzer now returns the catch-all **`unknown`** tag (new exported `UNKNOWN_TAG`) instead of minting a junk interest or leaving the event untagged; **(3)** over-broad seed `similar_tags` were trimmed — `live` off `music` and `irvine` off `uci` (in `seed.sql`, `seed-hosted.sql`, and `data/mocks.ts`) so "live …" / Irvine-anything stop auto-tagging those. +2 Deno tests. Because matching also fires on **existing** catalog rows, the live cleanup also deletes the bare auto-created interests (subs 0) so the new stop-list actually takes effect on re-run; aliases are trimmed with an `UPDATE`. Requires redeploy + a delete/trim SQL + re-run. See §53. |
 
 ### Current layout
 
@@ -3214,7 +3215,43 @@ the column exists would fail every insert), then redeploy `ingest-scraped`.
 
 ---
 
-## 53. How to re-snapshot this file
+## 53. Auto-tag precision: stop-list, `unknown` fallback, trimmed aliases
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+The first live re-run with the fuzzy matcher (§51) produced no duplicate
+interests, but the *quality* of the minted tags was mixed: commercial Eventbrite
+listings with empty descriptions coined generic tags like `experience`, `orange`,
+`lunch`, `show`, `professional`, and broad seed aliases over-matched (`uci` via
+`irvine`, `music` via `live`, `biking` via `spin`/`running`). Three fixes:
+
+- **Expanded stop-list.** `STOP_WORDS` in `interest-matching.ts` grew from ~80 to
+  cover marketing/commercial filler (`experience`, `sale`, `launch`, `networking`,
+  `conference`, `expo`, `mixer`, `showcase`, …), generic nouns (`business`,
+  `professional`, `lunch`, `career`, `market`, …), and locale/time tokens
+  (`orange`, `county`, `irvine`, `tustin`, season + weekday names). None of these
+  can become a tag now.
+- **`unknown` fallback.** Previously a text with no usable word returned `null`
+  (untagged). `analyzeInterests` now returns the exported `UNKNOWN_TAG`
+  (`'unknown'`) in that case, so a junk-only listing gets a single shared catch-all
+  tag rather than a coined interest or no tag at all. `deriveTag` still returns
+  `null` for empty input; the fallback lives in `analyzeInterests`.
+- **Trimmed aliases.** Dropped `live` from `music` and `irvine` from `uci` in
+  `seed.sql`, `seed-hosted.sql`, and `data/mocks.ts`. `music` still matches by its
+  name; an Irvine event no longer auto-tags `uci`.
+
++2 Deno tests (`unknown` fallback; a real topic word surviving the bigger
+stop-list). **Live rollout note:** matching fires against the **existing** catalog,
+so the now-stop-worded junk interests (`experience`, `orange`, …) would keep
+matching unless removed — the cleanup SQL therefore deletes the bare
+(`description=''`, `subscriber_count=0`) auto-created interests and trims the two
+aliases with `UPDATE`, then the scraper is re-run so legit tags are re-derived and
+junk ones fall to `unknown`. (Known remaining broad aliases not trimmed here:
+`biking`'s `running`/`spin`, `group10`'s `team`/`project` — left as-is unless asked.)
+
+---
+
+## 54. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
