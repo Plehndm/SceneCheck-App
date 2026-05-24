@@ -75,19 +75,46 @@ function extractJsonLdEvents(html) {
  * `start_at` / `end_at` are normalized to ISO 8601. Events without a usable
  * title/start/geo are skipped (ingest-scraped requires a valid lat/lng).
  */
+// Real browser User-Agents — Eventbrite serves a bot-check page (or 403/405s)
+// to obviously-automated agents, which from a CI runner's datacenter IP would
+// otherwise yield 0 events. We rotate UA across retries since the block is
+// intermittent (a run can 405 while the next succeeds).
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+];
+
+// Fetch the source HTML with a few retries (rotating UA + backoff). Throws after
+// the last attempt so the caller can fall back to seed events.
+async function fetchSourceHtml() {
+  const attempts = Math.max(1, Number(process.env.SCRAPE_RETRIES || 3));
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(SOURCE_URL, {
+        headers: {
+          'User-Agent': USER_AGENTS[i % USER_AGENTS.length],
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+      if (res.ok) return await res.text();
+      lastErr = new Error(`Source fetch failed: ${res.status} ${SOURCE_URL}`);
+    } catch (err) {
+      lastErr = err;
+    }
+    if (i < attempts - 1) {
+      const delayMs = 2000 * (i + 1);
+      console.warn(`Scrape attempt ${i + 1}/${attempts} failed (${lastErr}); retrying in ${delayMs}ms…`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 async function scrapeEvents() {
-  const res = await fetch(SOURCE_URL, {
-    // A real browser UA — Eventbrite serves a bot-check page (or 403s) to
-    // obviously-automated agents, which from a CI runner's datacenter IP would
-    // otherwise yield 0 events.
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
-  if (!res.ok) throw new Error(`Source fetch failed: ${res.status} ${SOURCE_URL}`);
-  const html = await res.text();
+  const html = await fetchSourceHtml();
 
   const events = [];
   const seen = new Set(); // Eventbrite lists some events twice (featured + regular)
@@ -140,22 +167,26 @@ async function ingest(event) {
 }
 
 async function main() {
-  let events;
+  let events = [];
   try {
     events = await scrapeEvents();
   } catch (err) {
-    console.error(`Scrape failed: ${err}`);
-    console.error('The source likely blocked the CI runner (datacenter IP) or changed its markup. ' +
-      'Set EVENTS_SOURCE_URL to a different source, or run `DRY_RUN=1 node scripts/scrape-events.mjs` locally to inspect.');
-    process.exit(1);
+    // The source blocked the runner (datacenter IP → 403/405) or changed its
+    // markup. Don't hard-fail the whole pipeline — fall through to the seed
+    // fallback below so the ingest path still runs (loudly logged). To get the
+    // real listings, re-run (the block is intermittent) or run from a
+    // non-datacenter IP. `DRY_RUN=1 node scripts/scrape-events.mjs` inspects locally.
+    console.error(`Scrape failed after retries: ${err}`);
+    console.error('Source likely blocked the CI runner (datacenter IP) or changed markup; falling back to seed events.');
+    events = [];
   }
 
   console.log(`Scraped ${events.length} event(s) from ${SOURCE_URL}`);
   if (events.length === 0) {
-    // Live source returned nothing (likely a bot-check page from the CI IP, or
+    // Live source returned nothing / errored (bot-check page from the CI IP, or
     // changed markup). Fall back to seed events so the ingest path still runs —
     // loudly, so it's clear in the log this isn't live data.
-    console.warn('Live source returned no parseable events (possible bot-check / markup change). ' +
+    console.warn('No parseable events from the live source (bot-check / markup change / fetch error). ' +
       'Falling back to seed events so the ingest path still runs.');
     events = FALLBACK_EVENTS;
   }
