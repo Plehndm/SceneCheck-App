@@ -3,12 +3,17 @@
 //
 //   - existing catalog interests whose name — or one of its `similar_tags`
 //     aliases — appears in the text, OR
-//   - when the text matches NOTHING in the catalog, a single tag derived from
-//     the text's most salient word, which the caller mints as a new interest
-//     and attaches. So an event about something the catalog doesn't cover yet
-//     is still labeled (and a brand new interest is born from it). If the text
-//     has no usable word — only stop words / event filler / numbers — we don't
-//     mint a junk interest; we fall back to the catch-all `unknown` tag.
+//   - when the text matches NOTHING in the catalog, up to MAX_DERIVED_TAGS
+//     tags derived from the text's most salient words, which the caller mints
+//     as new interests and attaches. So an event about something the catalog
+//     doesn't cover yet is still labeled (and one or more brand new interests
+//     are born from it). If the text has no usable word — only stop words /
+//     event filler / numbers — we don't mint a junk interest; we fall back to
+//     the catch-all `unknown` tag.
+//
+// Note: an event matching several CATALOG interests already carries all of them
+// (the matched path is uncapped); the cap only limits how many brand-new
+// interests one event can coin.
 //
 // Matching is FUZZY: words are compared by a morphological stem, so "bike",
 // "biking", "bikes" and "biker" all collapse to one key — and an event saying
@@ -30,11 +35,18 @@ export interface CatalogInterest {
 export interface InterestAnalysis {
   // Canonical catalog names that match the event text, in catalog order.
   matched: string[];
-  // The tag to apply when `matched` is empty: a word derived from the text, or
-  // `UNKNOWN_TAG` when the text has no usable word. null only when something
-  // matched (so the caller already has a tag and shouldn't mint one).
-  suggested: string | null;
+  // The NEW tags to mint + apply when `matched` is empty: up to
+  // MAX_DERIVED_TAGS meaningful words derived from the text (so a rich title
+  // like "Yoga & Meditation Retreat" yields several), or `[UNKNOWN_TAG]` when
+  // the text has no usable word. Empty when something matched (the event
+  // already has tags from the catalog, so nothing new is minted).
+  suggested: string[];
 }
+
+// Cap on how many new tags one event can mint, so a wordy title can't flood the
+// catalog. The matched-catalog path is uncapped (an event can carry as many
+// existing interests as it genuinely matches).
+export const MAX_DERIVED_TAGS = 3;
 
 // Catch-all label for an event whose text yields no real interest word — better
 // than coining a junk tag from listing filler ("experience", "orange", …) or
@@ -146,33 +158,44 @@ function singularize(w: string): string {
   return w;
 }
 
-// Mint a candidate tag from free text when the catalog has nothing for it.
-// Title words win over description words (the title is the strongest signal);
-// among the candidates the most frequent across the whole text wins, breaking
-// ties toward the longer (more specific) word and then the earliest. The chosen
-// word is singularized for a clean label. Returns null when the text has no
-// usable word (empty, or all stop words / digits).
-export function deriveTag(title: string, description: string): string | null {
+// Mint up to `max` candidate tags from free text when the catalog has nothing
+// for it. Title words win over description words (the title is the strongest
+// signal); candidates are ranked by stem frequency across the whole text (so
+// inflected repeats like "taco" + "tacos" reinforce one topic), then by length
+// (more specific), then first-seen order. Deduped by stem and singularized for
+// clean labels. Returns [] when the text has no usable word (empty, or all stop
+// words / digits).
+export function deriveTags(title: string, description: string, max = MAX_DERIVED_TAGS): string[] {
   const titleWords = words(title).filter(isCandidate);
   const descWords = words(description).filter(isCandidate);
   const pool = titleWords.length ? titleWords : descWords;
-  if (!pool.length) return null;
+  if (!pool.length) return [];
 
-  // Count by stem so inflected repeats reinforce each other ("taco" + "tacos"
-  // both lift the "taco" topic), consistent with how matching compares words.
   const freq = new Map<string, number>();
   for (const w of [...titleWords, ...descWords]) {
     const k = stemKey(w);
     freq.set(k, (freq.get(k) ?? 0) + 1);
   }
 
-  let best = pool[0];
-  for (const w of pool) {
-    const fw = freq.get(stemKey(w))!;
-    const fb = freq.get(stemKey(best))!;
-    if (fw > fb || (fw === fb && w.length > best.length)) best = w;
+  const ranked = pool
+    .map((w, i) => ({ w, i, k: stemKey(w), f: freq.get(stemKey(w))! }))
+    .sort((a, b) => b.f - a.f || b.w.length - a.w.length || a.i - b.i);
+
+  const out: string[] = [];
+  const usedStems = new Set<string>();
+  for (const r of ranked) {
+    if (usedStems.has(r.k)) continue; // dedupe by stem (one tag per topic)
+    usedStems.add(r.k);
+    out.push(singularize(r.w));
+    if (out.length >= max) break;
   }
-  return singularize(best);
+  return out;
+}
+
+// Single best derived tag, or null. Thin wrapper over deriveTags for callers
+// (and tests) that only want one.
+export function deriveTag(title: string, description: string): string | null {
+  return deriveTags(title, description, 1)[0] ?? null;
 }
 
 // Analyze an event's title + description against the interest catalog. See
@@ -193,8 +216,9 @@ export function analyzeInterests(
       matched.push(interest.name);
     }
   }
-  if (matched.length) return { matched, suggested: null };
-  // Nothing matched — derive a tag from the text, or fall back to UNKNOWN_TAG
-  // when the text has no usable (non-stop, non-numeric) word.
-  return { matched, suggested: deriveTag(title, description) ?? UNKNOWN_TAG };
+  if (matched.length) return { matched, suggested: [] };
+  // Nothing matched — derive up to MAX_DERIVED_TAGS meaningful tags from the
+  // text, or fall back to [UNKNOWN_TAG] when it has no usable word.
+  const derived = deriveTags(title, description);
+  return { matched, suggested: derived.length ? derived : [UNKNOWN_TAG] };
 }

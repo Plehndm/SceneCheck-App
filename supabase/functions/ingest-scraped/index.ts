@@ -102,25 +102,30 @@ serve(async (req: Request) => {
       .map((name) => idByName.get(name))
       .filter((id): id is string => Boolean(id));
 
-    if (interestIds.length === 0 && suggested) {
-      // No catalog interest matched — mint one from the text. Re-select on
-      // conflict so a concurrent insert (or a tag added since the SELECT) is
-      // reused instead of failing the whole ingest on a UNIQUE violation.
-      const { data: created, error: createErr } = await admin
-        .from("interests")
-        .insert({ name: suggested })
-        .select("id")
-        .single();
-      if (created) {
-        interestIds = [created.id];
-      } else {
-        const { data: existing } = await admin
-          .from("interests").select("id").eq("name", suggested).maybeSingle();
-        if (existing) interestIds = [existing.id];
-        else console.error("Failed to create interest:", createErr);
+    if (interestIds.length === 0 && suggested.length) {
+      // No catalog interest matched — mint each derived tag (the analyzer
+      // returns up to MAX_DERIVED_TAGS meaningful ones) and attach them all.
+      // Re-select on conflict so a concurrent insert (or a tag added since the
+      // SELECT) is reused instead of failing the ingest on a UNIQUE violation.
+      for (const name of suggested) {
+        let id = idByName.get(name);
+        if (!id) {
+          const { data: created, error: createErr } = await admin
+            .from("interests").insert({ name }).select("id").single();
+          if (created) id = created.id;
+          else {
+            const { data: existing } = await admin
+              .from("interests").select("id").eq("name", name).maybeSingle();
+            if (existing) id = existing.id;
+            else console.error(`Failed to create interest "${name}":`, createErr);
+          }
+        }
+        if (id) interestIds.push(id);
       }
     }
 
+    // Dedupe ids so a coincidental overlap can't violate the event_interests PK.
+    interestIds = [...new Set(interestIds)];
     if (interestIds.length) {
       const tagRows = interestIds.map((interest_id) => ({ event_id: event.id, interest_id }));
       const { error: tagErr } = await admin.from("event_interests").insert(tagRows);
