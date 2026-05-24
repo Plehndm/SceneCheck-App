@@ -1497,6 +1497,30 @@ feature 2 is client-side.
 
 ---
 
+### 2.50 Curated interests + safer `-er` stemming + true-contrast refresh (post-§2.49 delta)
+
+_Captured 2026-05-24 alongside `docs/PROGRESS_SNAPSHOT.md` §56._
+
+Quality follow-up: seed 7 common descriptive interests so scraped events match
+stable readable tags, fix the `career`→`car` stemmer over-reduction it exposed,
+and make the refresh icon pure black/white by mode.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (`-er` strip gated to >6 chars) + `interest-matching.test.ts` | Deno (updated + 1 new) | `career` matches "Career Fair" but **not** "Self-Care" / "Used Car" (no over-reduction to `car`); base bike/run forms still collapse; `biker`/`runner` agentive forms intentionally no longer collapse; dedup demo retargeted to a still-colliding pair. |
+| `supabase/seed.sql`, `supabase/seed-hosted.sql` (7 curated interests) | n/a (seed data) | `career`/`dating`/`business`/`dentist`/`workshop`/`concert`/`conference` with aliases; applied to the hosted catalog by INSERT. |
+| `scenecheck-expo/components/Screen.tsx` (`refreshColorFor(mode)` → `#000`/`#fff`) | `tests/components/Screen.test.tsx` (existing) | Color-only; the web-button / RefreshControl wiring tests still pass. |
+
+**Delivered count**: Jest 411/411 (analyzer is Deno, off the Jest path); `tsc` clean.
+
+**What this section deliberately does NOT do:** chase the `dating`→`dat` /
+`date` stem collision (no `date`-only events in the source; speed-dating matches
+`dating` correctly), or add the curated tags to the offline `data/mocks.ts`
+catalog (they're live-scraper tags). Applying the interests to the existing 40
+events needs a hosted INSERT + delete/re-scrape.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

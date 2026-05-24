@@ -12,15 +12,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useTokens } from '@/theme/ThemeProvider';
+import { useTheme } from '@/theme/ThemeProvider';
 import { SCIcon } from '@/components/SCIcon';
 import { SCText } from '@/components/SCText';
+
+// The refresh affordance reads pure black in light mode / pure white in dark —
+// maximum contrast regardless of palette (the palette `ink` is only near-black/
+// near-white and tinted).
+const refreshColorFor = (mode: 'light' | 'dark') => (mode === 'dark' ? '#FFFFFF' : '#000000');
 
 // A small "REFRESHING" pill with a spinning icon, shown (on every platform)
 // while a refresh is in flight so the user always gets explicit feedback — the
 // native RefreshControl spinner alone is easy to miss, and web has none.
 function RefreshIndicator() {
-  const t = useTokens();
+  const { tokens: t, mode } = useTheme();
+  const refreshColor = refreshColorFor(mode);
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -38,9 +44,9 @@ function RefreshIndicator() {
         paddingHorizontal: 12, paddingVertical: 6,
       }}>
         <Animated.View style={{ transform: [{ rotate }] }}>
-          <SCIcon name="rotate-ccw" size={14} color={t.ink} />
+          <SCIcon name="rotate-ccw" size={14} color={refreshColor} />
         </Animated.View>
-        <SCText variant="mono" size={10} weight="600" color={t.ink}>REFRESHING</SCText>
+        <SCText variant="mono" size={10} weight="600" color={refreshColor}>REFRESHING</SCText>
       </View>
     </View>
   );
@@ -57,7 +63,8 @@ interface Props {
 }
 
 export function Screen({ children, scroll = true, contentContainerStyle, scrollProps, onRefresh }: Props) {
-  const t = useTokens();
+  const { tokens: t, mode } = useTheme();
+  const refreshColor = refreshColorFor(mode);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
@@ -85,7 +92,7 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
         opacity: refreshing ? 0.5 : 1,
       }, pressed && { opacity: 0.7 }]}
     >
-      <SCIcon name="rotate-ccw" size={18} color={t.ink} />
+      <SCIcon name="rotate-ccw" size={18} color={refreshColor} />
     </Pressable>
   ) : null;
 
@@ -110,15 +117,14 @@ export function Screen({ children, scroll = true, contentContainerStyle, scrollP
             keyboardShouldPersistTaps="handled"
             refreshControl={
               onRefresh && Platform.OS !== 'web'
-                // Use the adaptive `ink` (near-black in light mode, near-white
-                // in dark) so the pull spinner is dark + legible instead of the
-                // washed-out `ink3` grey. `colors` tints the Android arrow,
+                // Pure black (light) / white (dark) so the pull spinner reads at
+                // max contrast. `colors` tints the Android arrow,
                 // `progressBackgroundColor` its disc; `tintColor` is the iOS spinner.
                 ? <RefreshControl
                     refreshing={refreshing}
                     onRefresh={handleRefresh}
-                    tintColor={t.ink}
-                    colors={[t.ink]}
+                    tintColor={refreshColor}
+                    colors={[refreshColor]}
                     progressBackgroundColor={t.card}
                   />
                 : undefined

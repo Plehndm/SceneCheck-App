@@ -93,6 +93,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Auto-tag precision: expanded stop-list, `unknown` fallback, trimmed aliases.** Review of the first live re-run showed mediocre tags (e.g. `experience`, `orange`, `lunch`) — not duplicates, but low-signal. Three fixes in the shared analyzer + seed: **(1)** the stop-word list grew to cover marketing/commercial/format/locale filler (`experience`, `sale`, `networking`, `conference`, `orange`, `county`, `irvine`, day/season names, …) so those words can't become tags; **(2)** when the text yields **no** usable word, the analyzer now returns the catch-all **`unknown`** tag (new exported `UNKNOWN_TAG`) instead of minting a junk interest or leaving the event untagged; **(3)** over-broad seed `similar_tags` were trimmed — `live` off `music` and `irvine` off `uci` (in `seed.sql`, `seed-hosted.sql`, and `data/mocks.ts`) so "live …" / Irvine-anything stop auto-tagging those. +2 Deno tests. Because matching also fires on **existing** catalog rows, the live cleanup also deletes the bare auto-created interests (subs 0) so the new stop-list actually takes effect on re-run; aliases are trimmed with an `UPDATE`. Requires redeploy + a delete/trim SQL + re-run. See §53. |
 | 2026-05-24 | **Scraper CI resilience + verified live re-tag.** The scraper threw and `exit(1)` on a non-OK source response, so when Eventbrite served the GitHub runner's datacenter IP a `405` (intermittent bot defense) the whole workflow hard-failed. It now retries the fetch (rotating User-Agent + backoff, `SCRAPE_RETRIES` cfg) and, on total failure, falls back to seed events instead of exiting — the ingest path always runs. Verified the full FR6 pipeline end-to-end against the hosted project: migration `00027` applied, `ingest-scraped` redeployed with the tightened tagger, the catalog cleaned (scraped events + bare auto-created interests deleted, `live`/`irvine` aliases `UPDATE`-trimmed), then the scraper re-run from a non-datacenter IP → **40/40 events ingested with a real per-event `source_url` and ≥1 tag**; `uci`/`music` no longer over-match, junk tags (`experience`/`orange`/`lunch`/…) are gone, the 7 speed-dating events share one `dating` tag, and no duplicate same-meaning interests. Known precision gaps left for later user testing: a few proper-noun/brand/filler tags (`actually`, `jason`, `thermomix`, `spectrum`, …) and `biking` still over-matching via its own `running`/`spin` aliases (only `live`/`irvine` were trimmed). See §54. |
 | 2026-05-24 | **Multiple derived tags per scraped event + share-event-to-friends.** Two features. **(1)** A scraped event can now mint **multiple** new interest tags, not just one: the matched-catalog path was already uncapped (e.g. Yoga Day → `yoga, bouldering, climbing`), but the *derive* path (no catalog match) coined a single word. New `deriveTags()` returns up to `MAX_DERIVED_TAGS` (3) meaningful words — ranked by stem frequency then length, deduped by stem, singularized — so "Pottery & Knitting" mints both. `InterestAnalysis.suggested` is now `string[]` (`[UNKNOWN_TAG]` when no usable word); `ingest-scraped` creates + attaches them all (deduped against the PK). `deriveTag()` kept as a single-tag wrapper. **(2)** New **`ShareEventSheet`** + a `share` hero button on the event detail: pick one or more friends (`useFriends`), add an optional note, and the event is sent into each friend's DM via `api.createChat` + `api.sendMessage` (dedupes to an existing DM) — no backend change. New `share` SCIcon. +2 tests (411/411); `tsc` clean. Feature (1) needs `ingest-scraped` redeploy + a re-run to apply to existing events; (2) ships with the app build. See §55. |
+| 2026-05-24 | **Curated common-word interests + safer `-er` stemming + true-black/white refresh icon.** **(1)** Added 7 seed interests — `career`, `dating`, `business`, `dentist`, `workshop`, `concert`, `conference` (with aliases, e.g. `dentist`←`dentistry`/`dental`) — so scraped listings *match* a stable, readable tag (e.g. "Career Fair" → `career`) instead of deriving a noisy one-off, restoring good labels and cutting derive-noise (matching short-circuits derivation). In `seed.sql` + `seed-hosted.sql`. **(2)** Gated the `stemKey` `-er` strip to words >6 chars so it no longer over-reduces short words: `career` stays `career` (was `car`, which wrongly matched `care`/`cars` — e.g. "Self-Care…" → career), and `water` stays `water`; the cost is that short agentive forms (`biker`/`runner`) no longer collapse to `biking`/`running` (base forms still do). Deno tests updated. **(3)** The refresh affordance (web button, REFRESHING pill, native pull-spinner) now uses **pure `#000` in light / `#FFF` in dark** (via `useTheme().mode`) instead of the palette's tinted near-black/white `ink`. 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §56. |
 
 ### Current layout
 
@@ -3339,7 +3340,44 @@ feature (2) is client-side and ships with the next app build.
 
 ---
 
-## 56. How to re-snapshot this file
+## 56. Curated common-word interests + safer `-er` stemming + true-contrast refresh
+
+_Last updated: 2026-05-24 (shipped to main 2026-05-24)_
+
+Three changes after a quality review of the multi-tag re-run:
+
+- **Curated interests.** Added 7 common, descriptive interests to the seed —
+  `career`, `dating`, `business`, `dentist`, `workshop`, `concert`, `conference`
+  — each with aliases (`dentist`←`dentistry`/`dental`/`orthodontist`,
+  `conference`←`summit`/`expo`/`convention`, …). Because the matcher
+  short-circuits derivation when something matches, seeding these means a
+  scraped "Career Fair" / "Speed Dating" / "Choir Concert" lands a stable,
+  readable tag instead of a noisy derived word (`employer`, `speed`, `choir`)
+  or `unknown`. This both restores good labels and reduces derive-noise. In
+  `seed.sql` + `seed-hosted.sql` (mocks left as-is — these are live-catalog
+  tags for the scraper, not offline fixtures).
+- **Safer `-er` stemming.** Seeding `career` exposed a stemmer flaw: the `-er`
+  strip + trailing-`e` drop reduced `career` → `car`, which then matched
+  `care` / `cars` (so "Self-Care City Scavenger Hunt" wrongly tagged `career`).
+  The `-er` strip is now gated to words **>6 chars**, so `career` stays
+  `career` and `water` stays `water`, while longer derivations still collapse
+  (`designer`→`design`, `teacher`→`teach`). Trade-off: short agentive forms
+  (`biker`, `runner`) no longer fold into `biking`/`running` — the base forms
+  still do, and this is a rarer case than the false matches it removes. (One
+  residual: `dating`→`dat` still collides with `date`/`dates`; none of those
+  appear in the current source set, and speed-dating events match `dating`
+  correctly, so it's left as a known edge.)
+- **True-contrast refresh icon.** `Screen.tsx` now colors the refresh button,
+  the REFRESHING pill, and the native `RefreshControl` spinner **pure `#000` in
+  light mode / `#FFF` in dark** (read from `useTheme().mode`) rather than the
+  palette's tinted near-black/near-white `ink`.
+
+411/411, `tsc` clean. The new interests require a hosted `INSERT` (idempotent on
+the fixed UUIDs) + a delete/re-scrape to apply them to the already-ingested 40.
+
+---
+
+## 57. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
