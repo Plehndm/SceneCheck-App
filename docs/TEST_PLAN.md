@@ -1606,6 +1606,25 @@ the next re-scrape; the `/unk` UI ships with the app build.
 
 ---
 
+### 2.55 Tag-quality pass: month/filler stop words + group10 aliases (post-§2.54 delta)
+
+_Captured 2026-05-26 alongside `docs/PROGRESS_SNAPSHOT.md` §61._
+
+Stop-word + alias tuning to cut derive-noise observed in the multi-city run.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/functions/_shared/interest-matching.ts` (month names + abbrevs, `one`/`two`/`three`, `now`/`actually`/`learn` added to `STOP_WORDS`) | _Deno suite; verified via a Node 24 type-strip driver_ | `deriveTags` returns no `may`/`june`/`one`/`now`/`learn`; a real topic word (`pottery`) still derives. |
+| `seed.sql` / `seed-hosted.sql` / `data/mocks.ts` (`group10` `similar_tags` → `['in4matx-43']`) | Jest 412/412 (unchanged) | `analyzeInterests` no longer matches `group10` on a generic "side project"; still matches on "IN4MATX-43". |
+
+**Delivered count**: 412 / 412 (no change — the analyzer has no Jest surface); `tsc` clean.
+
+**What this section deliberately does NOT do:** change the ingest function logic
+or the DB schema — it tunes stop-word + alias *data*. Applying it live needs an
+`ingest-scraped` redeploy + a hosted `group10` alias `UPDATE` + re-scrape.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

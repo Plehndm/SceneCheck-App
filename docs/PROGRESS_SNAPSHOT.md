@@ -98,6 +98,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **More stop words + 17 curated interests + 2-word compound tags.** **(1)** Added `is`, `no`, `longer`, `optional` to `STOP_WORDS` (`for`/`into` were already there). **(2)** Seeded 17 more common descriptive interests — `cafe`, `choir`, `church`, `fair`, `solar`, `free`, `digital`, `virtual`, `networking`, `wine`, `games`, `india`, `irvine`, `executives`, `health`, `medicine`, `acupuncture` (with aliases, e.g. `health`←`wellness`, `church`←`worship`, `medicine`←`medical`) — so many more listings *match* a stable readable tag and skip noisy derivation. In `seed.sql` + `seed-hosted.sql`. **(3)** Derivation can now coin a **2-word compound** interest: within a title run, the first two adjacent candidate words combine into one ≤2-word tag (`cold brew`, `natural medicine`), while a stop word / comma / dash / "and" breaks the run so genuine lists ("Pottery and Sculpture") stay separate tags. +3 Deno tests (compound, stops, title-emphasis re-pointed to a comma list); Jest 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §58. |
 | 2026-05-24 | **Unknown-capacity scraped events: unlimited join + listing warning.** Scraped events have no listed capacity (DB `capacity` is null → `SCEvent.cap` 0). The event-detail screen now treats `cap <= 0` as **unknown / no limit**: the detail row shows "N going · capacity unknown" (not "N/0 · waitlist"), the CTA stays **JOIN EVENT** (never JOIN WAITLIST), and joining pops an info toast — *"No listed capacity — check the original listing for details"* — with a **VIEW LISTING** action opening `sourceUrl`. The server already allowed unlimited joins for null capacity (the `subscribe_to_event_atomic` RPC only waitlists when `capacity IS NOT NULL AND count >= capacity`), so this is client-only — no migration/redeploy. +1 test (412/412); `tsc` clean. Ships with the app build. See §59. |
 | 2026-05-26 | **Multi-city scraping + listing capacity + "/unk" display.** **(1)** The scraper scanned only Eventbrite's Irvine listing; it now scans **6 Orange County cities** (Irvine, Santa Ana, Costa Mesa, Newport Beach, Anaheim, Huntington Beach) via a `DEFAULT_SOURCES` list overridable as a whole by a comma-separated **`EVENTS_SOURCE_URLS`** (legacy single `EVENTS_SOURCE_URL` still works). A per-city cap (`MAX_PER_SOURCE`, default `ceil(MAX_EVENTS/sources)` = 7) + a **round-robin merge** mix the cities instead of filling from the first; a bot-blocked/changed source is skipped while the rest contribute, cross-listed dupes collapse, and the global `MAX_EVENTS` (40) still applies. **(2)** Each listing's schema.org **`maximumAttendeeCapacity`** is now parsed → a real `capacity` when present + positive (else `null`); `ingest-scraped` already passes it through, so no redeploy. **(3)** Capacity-unknown events render **"/unk"** instead of "/0": the events feed shows `N/unk` (`app/events.tsx`) and the detail row `N/unk going` (`app/event/[id].tsx`), superseding §59's "capacity unknown" wording; the §59 test was re-pointed. 412/412; `tsc` clean. Scraper changes apply on re-scrape; UI ships with the app build. See §60. |
+| 2026-05-26 | **Tag-quality pass: month/filler stop words + trimmed group10 aliases.** The first multi-city live run re-surfaced derive-noise: `may` tagged 4 events (dates in titles), plus `one`/filler. Added all 12 month names (+ `jan`…`dec` abbrevs), number words (`one`/`two`/`three`), and `now`/`actually`/`learn` to the analyzer's `STOP_WORDS` (derivation-only; catalog matching unaffected). Also trimmed `group10`'s `similar_tags` from `['in4matx-43','team','project']` to `['in4matx-43']` (`seed.sql`, `seed-hosted.sql`, `data/mocks.ts`) — the generic `project` alias was matching an unrelated band's "side project". Verified via a Node 24 type-strip driver; Jest 412/412, `tsc` clean. Live effect needs `ingest-scraped` redeploy + a hosted `group10` alias `UPDATE` + re-tag. See §61. |
 
 ### Current layout
 
@@ -3510,7 +3511,37 @@ the UI ships with the app build.
 
 ---
 
-## 61. How to re-snapshot this file
+## 61. Tag-quality pass: month/filler stop words + trimmed group10 aliases
+
+_Last updated: 2026-05-26 (shipped to main 2026-05-26)_
+
+The first multi-city live run (§60) re-surfaced the known derive-noise: `may`
+appeared as a tag on 4 events (month names in titles like "May 29"), plus `one`
+("turns One") and a few filler words. Separately, `group10`'s catalog alias
+`project` matched an unrelated event ("The Alain Whyte Band" — its description
+called the act a "side project").
+
+Two fixes:
+
+- **`STOP_WORDS` (analyzer).** Added all 12 month names + common abbreviations
+  (`jan`…`dec`), number words (`one`/`two`/`three`), and the flagged filler
+  `now`/`actually`/`learn`(`s`). These block **derivation only** — catalog
+  **matching** (by name/alias stem) is a separate path and is unaffected, so the
+  curated `fair`/`career`/`concert` matches still fire.
+- **`group10` aliases.** Trimmed `similar_tags` from
+  `['in4matx-43','team','project']` to `['in4matx-43']` in `seed.sql`,
+  `seed-hosted.sql`, and `data/mocks.ts`. The generic `team`/`project` words
+  matched unrelated listings; the specific `in4matx-43` tag still matches.
+
+Verified with a Node 24 type-strip driver (months/`one`/`now`/`learn` no longer
+derive; `side project` no longer matches `group10` while `IN4MATX-43` still
+does). Jest 412/412, `tsc` clean. **Live effect needs**: `ingest-scraped`
+redeploy (the analyzer is bundled into the function) + a hosted `UPDATE` on
+`group10.similar_tags` + delete-junk-interests + re-scrape.
+
+---
+
+## 62. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
