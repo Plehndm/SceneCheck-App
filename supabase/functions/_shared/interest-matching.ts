@@ -87,6 +87,14 @@ const STOP_WORDS = new Set<string>([
   "orange", "county", "irvine", "tustin", "summer", "spring", "fall", "winter",
   "autumn", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday",
   "friday", "ages", "age",
+  // Month names + abbreviations — scraped titles are full of dates ("May 29",
+  // "June Concert"), and a month is never a meaningful interest.
+  "january", "february", "march", "april", "may", "june", "july", "august",
+  "september", "october", "november", "december",
+  "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+  // Number words + low-signal title filler ("turns One", "Now Enrolling",
+  // "Lunch and Learn") — clear noise observed in live scraped listings.
+  "one", "two", "three", "now", "actually", "learn", "learns",
 ]);
 
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);

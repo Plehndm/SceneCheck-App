@@ -76,7 +76,7 @@ export const SC_INTERESTS_DETAILS: Record<string, Interest> = Object.fromEntries
 );
 SC_INTERESTS_DETAILS['uci'] = { tag: 'uci', others: 18403, desc: "University of California, Irvine. The campus tag covers anything happening at or organized through UCI — clubs, classes, study groups, intramural sports.", similar: ['anteaters', 'uci-clubs'] };
 SC_INTERESTS_DETAILS['informatics'] = { tag: 'informatics', others: 612, desc: "The study of how people interact with information and technology. UCI's Informatics program runs project nights, capstone showcases, and a weekly board game session.", similar: ['hci', 'ux', 'cs'] };
-SC_INTERESTS_DETAILS['group10'] = { tag: 'group10', others: 5, desc: "Private tag for IN4MATX 43 Group 10. SceneCheck team meetups, working sessions, and the occasional boba run.", similar: ['in4matx-43', 'team', 'project'] };
+SC_INTERESTS_DETAILS['group10'] = { tag: 'group10', others: 5, desc: "Private tag for IN4MATX 43 Group 10. SceneCheck team meetups, working sessions, and the occasional boba run.", similar: ['in4matx-43'] };
 SC_INTERESTS_DETAILS['running'] = { tag: 'running', others: 198, desc: "Running covers everything from couch-to-5K to ultras. Weekly group runs leave from the Aldrich Park flagpole on Tuesdays at 6pm.", similar: ['jogging', '5k', 'trail-running'] };
 SC_INTERESTS_DETAILS['cycling'] = SC_INTERESTS_DETAILS['biking'];
 

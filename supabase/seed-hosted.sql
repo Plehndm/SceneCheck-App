@@ -39,7 +39,7 @@ INSERT INTO interests (id, name, description, subscriber_count, similar_tags) VA
   ('10000000-0000-0000-0000-000000000006', 'coffee', 'Coffee meetups are short, low-stakes gatherings at a cafe.', 256, ARRAY['tea','breakfast','study']),
   ('10000000-0000-0000-0000-000000000007', 'uci', 'University of California, Irvine.', 18403, ARRAY['anteaters','uci-clubs']),
   ('10000000-0000-0000-0000-000000000008', 'informatics', 'The study of how people interact with information and technology.', 612, ARRAY['hci','ux','cs']),
-  ('10000000-0000-0000-0000-000000000009', 'group10', 'Private tag for IN4MATX 43 Group 10.', 5, ARRAY['in4matx-43','team','project']),
+  ('10000000-0000-0000-0000-000000000009', 'group10', 'Private tag for IN4MATX 43 Group 10.', 5, ARRAY['in4matx-43']),
   ('10000000-0000-0000-0000-000000000010', 'running', 'Running covers everything from couch-to-5K to ultras.', 198, ARRAY['jogging','5k','trail-running']),
   ('10000000-0000-0000-0000-000000000011', 'music', 'Music events and performances.', 100, ARRAY['acoustic','open-mic']),
   ('10000000-0000-0000-0000-000000000012', 'board-games', 'Board game meetups and tournaments.', 45, ARRAY['catan','strategy','tabletop']),
