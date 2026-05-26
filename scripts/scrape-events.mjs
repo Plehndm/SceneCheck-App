@@ -9,11 +9,12 @@
 // names, so a description with interest keywords ("climbing", "coffee",
 // "running"…) is what later lets a scraped event light up for matching users.
 //
-// Source: Eventbrite's public "events in Irvine" listing, which embeds a
-// schema.org `ItemList` of events as JSON-LD (<script type="application/ld+json">).
-// Parsing that structured blob is far more stable than scraping the DOM and needs
-// no dependencies. Point EVENTS_SOURCE_URL at a different Eventbrite location (or
-// any page that publishes event JSON-LD) to change the source.
+// Sources: several public Eventbrite city listings (Irvine + nearby Orange County
+// cities), each of which embeds a schema.org `ItemList` of events as JSON-LD
+// (<script type="application/ld+json">). Parsing that structured blob is far more
+// stable than scraping the DOM and needs no dependencies. Override the set with a
+// comma-separated EVENTS_SOURCE_URLS (or the legacy single EVENTS_SOURCE_URL)
+// pointing at any Eventbrite location(s) — or any page that publishes event JSON-LD.
 //
 // Node 20+ only (uses global fetch).
 //
@@ -32,8 +33,23 @@ if (!DRY_RUN && (!SUPABASE_URL || !SECRET_KEY || !INGEST_TOKEN)) {
 }
 
 const ENDPOINT = `${SUPABASE_URL}/functions/v1/ingest-scraped`;
-const SOURCE_URL = process.env.EVENTS_SOURCE_URL || 'https://www.eventbrite.com/d/ca--irvine/events/';
-const MAX_EVENTS = Number(process.env.MAX_EVENTS || 40); // cap so one run can't flood the table
+
+// Scan several nearby cities so the feed isn't all one place. Override the whole
+// set with a comma-separated EVENTS_SOURCE_URLS, or the legacy single
+// EVENTS_SOURCE_URL. Any Eventbrite "/d/<state>--<city>/events/" page works.
+const DEFAULT_SOURCES = [
+  'https://www.eventbrite.com/d/ca--irvine/events/',
+  'https://www.eventbrite.com/d/ca--santa-ana/events/',
+  'https://www.eventbrite.com/d/ca--costa-mesa/events/',
+  'https://www.eventbrite.com/d/ca--newport-beach/events/',
+  'https://www.eventbrite.com/d/ca--anaheim/events/',
+  'https://www.eventbrite.com/d/ca--huntington-beach/events/',
+];
+const SOURCE_URLS = (process.env.EVENTS_SOURCE_URLS || process.env.EVENTS_SOURCE_URL || DEFAULT_SOURCES.join(','))
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const MAX_EVENTS = Number(process.env.MAX_EVENTS || 40);   // cap so one run can't flood the table
+// Per-city cap so one busy city can't crowd the rest out before the global cap.
+const MAX_PER_SOURCE = Math.max(1, Number(process.env.MAX_PER_SOURCE || Math.ceil(MAX_EVENTS / SOURCE_URLS.length)));
 
 // Used ONLY when the live source returns nothing — e.g. Eventbrite served a
 // bot-check page to the CI runner's datacenter IP. Real Irvine coordinates +
@@ -48,7 +64,7 @@ const FALLBACK_EVENTS = [
   start_at: new Date(Date.now() + (i + 2) * 86_400_000).toISOString(),
   end_at: null,
   capacity: 30,
-  source_url: SOURCE_URL, // no per-event page in fallback; link to the listing
+  source_url: SOURCE_URLS[0], // no per-event page in fallback; link to the first listing
 }));
 
 // Pull every JSON-LD <script> block from the page and collect the events out of
@@ -85,14 +101,14 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
 ];
 
-// Fetch the source HTML with a few retries (rotating UA + backoff). Throws after
-// the last attempt so the caller can fall back to seed events.
-async function fetchSourceHtml() {
+// Fetch one listing URL with a few retries (rotating UA + backoff). Throws after
+// the last attempt so the caller can skip that source and continue with the rest.
+async function fetchSourceHtml(url) {
   const attempts = Math.max(1, Number(process.env.SCRAPE_RETRIES || 3));
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
-      const res = await fetch(SOURCE_URL, {
+      const res = await fetch(url, {
         headers: {
           'User-Agent': USER_AGENTS[i % USER_AGENTS.length],
           'Accept': 'text/html,application/xhtml+xml',
@@ -100,7 +116,7 @@ async function fetchSourceHtml() {
         },
       });
       if (res.ok) return await res.text();
-      lastErr = new Error(`Source fetch failed: ${res.status} ${SOURCE_URL}`);
+      lastErr = new Error(`Source fetch failed: ${res.status} ${url}`);
     } catch (err) {
       lastErr = err;
     }
@@ -113,8 +129,9 @@ async function fetchSourceHtml() {
   throw lastErr;
 }
 
-async function scrapeEvents() {
-  const html = await fetchSourceHtml();
+// Scrape one listing URL into payload-shaped events (capped at MAX_PER_SOURCE).
+async function scrapeOneSource(url) {
+  const html = await fetchSourceHtml(url);
 
   const events = [];
   const seen = new Set(); // Eventbrite lists some events twice (featured + regular)
@@ -130,6 +147,12 @@ async function scrapeEvents() {
     const key = `${it.name}|${start.toISOString()}|${lat},${lng}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    // Capacity isn't always published. schema.org Event exposes it as
+    // `maximumAttendeeCapacity` — use it when present + positive, otherwise leave
+    // null so the app shows "/unk" and lets anyone join. (We only trust the
+    // explicit max; `remainingAttendeeCapacity` is seats-left, not the total.)
+    const maxCap = Number(it.maximumAttendeeCapacity);
+    const capacity = Number.isFinite(maxCap) && maxCap > 0 ? Math.floor(maxCap) : null;
     events.push({
       title: String(it.name).trim(),
       description: (it.description || '').toString().trim(),
@@ -137,13 +160,48 @@ async function scrapeEvents() {
       end_at: end && !Number.isNaN(+end) ? end.toISOString() : null,
       location: { lat, lng },
       location_name: it.location?.name || '',
-      capacity: null,
+      capacity,
       // The original listing page — ingest-scraped stores it as source_url and
       // the event-detail screen links to it in place of a host.
       source_url: it.url ? String(it.url).trim() : null,
     });
+    if (events.length >= MAX_PER_SOURCE) break;
   }
-  return events.slice(0, MAX_EVENTS);
+  return events;
+}
+
+// Scrape every source, then round-robin merge so the feed mixes cities rather
+// than filling up from whichever one is listed first. A source that fails
+// (bot-check / markup change) is logged and skipped — the others still
+// contribute. Returns up to MAX_EVENTS events, de-duped across cities
+// (Eventbrite cross-lists some events under neighboring cities).
+async function scrapeEvents() {
+  const lists = [];
+  for (const url of SOURCE_URLS) {
+    try {
+      const evs = await scrapeOneSource(url);
+      console.log(`  ${url} → ${evs.length} event(s)`);
+      if (evs.length) lists.push(evs);
+    } catch (err) {
+      console.warn(`  ${url} → skipped (${err})`);
+    }
+  }
+
+  const merged = [];
+  const seen = new Set();
+  const depth = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < depth && merged.length < MAX_EVENTS; i++) {
+    for (const list of lists) {
+      if (i >= list.length) continue;
+      const e = list[i];
+      const key = `${e.title}|${e.start_at}|${e.location.lat},${e.location.lng}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(e);
+      if (merged.length >= MAX_EVENTS) break;
+    }
+  }
+  return merged;
 }
 
 async function ingest(event) {
@@ -181,7 +239,7 @@ async function main() {
     events = [];
   }
 
-  console.log(`Scraped ${events.length} event(s) from ${SOURCE_URL}`);
+  console.log(`Scraped ${events.length} event(s) across ${SOURCE_URLS.length} source(s).`);
   if (events.length === 0) {
     // Live source returned nothing / errored (bot-check page from the CI IP, or
     // changed markup). Fall back to seed events so the ingest path still runs —
