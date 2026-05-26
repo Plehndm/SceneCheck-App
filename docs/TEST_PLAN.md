@@ -1573,7 +1573,7 @@ EVENT, and warns the joiner to check the source listing.
 
 | File changed | Tests | What they assert |
 |---|---|---|
-| `app/event/[id].tsx` (`capUnknown = e.cap <= 0`: capacity label, JOIN-not-WAITLIST, join warning toast) | `tests/screens/event-detail.test.tsx` (+1) | With `e4.cap` overridden to 0: the detail row reads "capacity unknown", the CTA is **JOIN EVENT** (not WAITLIST), pressing it joins, and a toast mentioning the **original listing** appears. |
+| `app/event/[id].tsx` (`capUnknown = e.cap <= 0`: capacity label, JOIN-not-WAITLIST, join warning toast) | `tests/screens/event-detail.test.tsx` (+1) | With `e4.cap` overridden to 0: the detail row reads **`N/unk going`** (re-pointed in §2.54), the CTA is **JOIN EVENT** (not WAITLIST), pressing it joins, and a toast mentioning the **original listing** appears. |
 
 **Delivered count**: 412 / 412 (+1); `tsc` clean.
 
@@ -1581,6 +1581,28 @@ EVENT, and warns the joiner to check the source listing.
 subscribe RPC — `subscribe_to_event_atomic` already confirms every join when
 `capacity IS NULL`, so unlimited joining works server-side unchanged. Purely
 client-side; ships with the app build.
+
+---
+
+### 2.54 Multi-city scraping + listing capacity + "/unk" display (post-§2.53 delta)
+
+_Captured 2026-05-26 alongside `docs/PROGRESS_SNAPSHOT.md` §60._
+
+The scraper now scans 6 OC cities (round-robin merged, per-city + global caps),
+parses schema.org `maximumAttendeeCapacity` when present, and capacity-unknown
+events render "/unk" instead of "/0".
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scripts/scrape-events.mjs` (multi-source `DEFAULT_SOURCES` / `EVENTS_SOURCE_URLS`, `MAX_PER_SOURCE`, round-robin merge, `maximumAttendeeCapacity` parse) | _CI-only, no Jest surface_ | Manual: `DRY_RUN=1 node scripts/scrape-events.mjs` prints ~7 events from each of the 6 cities, 40 total, interleaved — verified. |
+| `app/events.tsx` + `app/event/[id].tsx` (`/unk` when `cap <= 0`) | `tests/screens/event-detail.test.tsx` (re-pointed) | The §2.53 capacity test now asserts the detail row reads **`N/unk going`** (was "capacity unknown"); JOIN-not-WAITLIST + listing-warning toast unchanged. |
+
+**Delivered count**: 412 / 412 (no net change — the §2.53 test was re-pointed, not added); `tsc` clean.
+
+**What this section deliberately does NOT do:** change the ingest function or add
+a migration — `ingest-scraped` already passes `body.capacity` through, so a real
+max from the listing reaches the DB with no redeploy. Scraper changes apply on
+the next re-scrape; the `/unk` UI ships with the app build.
 
 ---
 

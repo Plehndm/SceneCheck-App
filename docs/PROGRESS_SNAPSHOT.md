@@ -97,6 +97,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Title-first tag derivation.** When a scraped event matches no catalog interest, `deriveTags` now takes the new tags straight from the **title in reading order** (its lead words are the keywords people care about) instead of ranking title+description by combined stem frequency — so a word the description merely repeats can no longer displace the title's lead words (e.g. a desc hammering "drumming" no longer pushes out "pottery/sculpture/painting" from the title). The description is used **only as a fallback** when the title has no usable word, and there it's still ranked by stem frequency (so a repeated topic like "astronomy" wins). Curated-interest *matching* (§56) is unchanged and still takes priority over derivation. +1 Deno test (411/411 Jest unchanged; `tsc` clean). Live effect needs `ingest-scraped` redeploy + re-scrape. See §57. |
 | 2026-05-24 | **More stop words + 17 curated interests + 2-word compound tags.** **(1)** Added `is`, `no`, `longer`, `optional` to `STOP_WORDS` (`for`/`into` were already there). **(2)** Seeded 17 more common descriptive interests — `cafe`, `choir`, `church`, `fair`, `solar`, `free`, `digital`, `virtual`, `networking`, `wine`, `games`, `india`, `irvine`, `executives`, `health`, `medicine`, `acupuncture` (with aliases, e.g. `health`←`wellness`, `church`←`worship`, `medicine`←`medical`) — so many more listings *match* a stable readable tag and skip noisy derivation. In `seed.sql` + `seed-hosted.sql`. **(3)** Derivation can now coin a **2-word compound** interest: within a title run, the first two adjacent candidate words combine into one ≤2-word tag (`cold brew`, `natural medicine`), while a stop word / comma / dash / "and" breaks the run so genuine lists ("Pottery and Sculpture") stay separate tags. +3 Deno tests (compound, stops, title-emphasis re-pointed to a comma list); Jest 411/411; `tsc` clean. Interests need a hosted INSERT + re-tag to apply to existing events. See §58. |
 | 2026-05-24 | **Unknown-capacity scraped events: unlimited join + listing warning.** Scraped events have no listed capacity (DB `capacity` is null → `SCEvent.cap` 0). The event-detail screen now treats `cap <= 0` as **unknown / no limit**: the detail row shows "N going · capacity unknown" (not "N/0 · waitlist"), the CTA stays **JOIN EVENT** (never JOIN WAITLIST), and joining pops an info toast — *"No listed capacity — check the original listing for details"* — with a **VIEW LISTING** action opening `sourceUrl`. The server already allowed unlimited joins for null capacity (the `subscribe_to_event_atomic` RPC only waitlists when `capacity IS NOT NULL AND count >= capacity`), so this is client-only — no migration/redeploy. +1 test (412/412); `tsc` clean. Ships with the app build. See §59. |
+| 2026-05-26 | **Multi-city scraping + listing capacity + "/unk" display.** **(1)** The scraper scanned only Eventbrite's Irvine listing; it now scans **6 Orange County cities** (Irvine, Santa Ana, Costa Mesa, Newport Beach, Anaheim, Huntington Beach) via a `DEFAULT_SOURCES` list overridable as a whole by a comma-separated **`EVENTS_SOURCE_URLS`** (legacy single `EVENTS_SOURCE_URL` still works). A per-city cap (`MAX_PER_SOURCE`, default `ceil(MAX_EVENTS/sources)` = 7) + a **round-robin merge** mix the cities instead of filling from the first; a bot-blocked/changed source is skipped while the rest contribute, cross-listed dupes collapse, and the global `MAX_EVENTS` (40) still applies. **(2)** Each listing's schema.org **`maximumAttendeeCapacity`** is now parsed → a real `capacity` when present + positive (else `null`); `ingest-scraped` already passes it through, so no redeploy. **(3)** Capacity-unknown events render **"/unk"** instead of "/0": the events feed shows `N/unk` (`app/events.tsx`) and the detail row `N/unk going` (`app/event/[id].tsx`), superseding §59's "capacity unknown" wording; the §59 test was re-pointed. 412/412; `tsc` clean. Scraper changes apply on re-scrape; UI ships with the app build. See §60. |
 
 ### Current layout
 
@@ -3472,7 +3473,44 @@ listing-warning toast on join). 412/412, `tsc` clean.
 
 ---
 
-## 60. How to re-snapshot this file
+## 60. Multi-city scraping, listing capacity, and "/unk" display
+
+_Last updated: 2026-05-26 (shipped to main 2026-05-26)_
+
+**Multiple sources.** `scripts/scrape-events.mjs` scanned only Eventbrite's
+Irvine listing. It now scans a `DEFAULT_SOURCES` list of **6 Orange County
+cities** — Irvine, Santa Ana, Costa Mesa, Newport Beach, Anaheim, Huntington
+Beach — overridable as a whole by a comma-separated **`EVENTS_SOURCE_URLS`** (the
+legacy single `EVENTS_SOURCE_URL` still works). `scrapeOneSource(url)` scrapes
+one listing (capped at `MAX_PER_SOURCE`, default `ceil(MAX_EVENTS / sources)` =
+7), and `scrapeEvents()` **round-robin merges** across cities so the feed mixes
+places instead of filling from whichever is listed first — de-duping cross-listed
+events and capping at `MAX_EVENTS` (40). A source that bot-blocks (405) or changes
+markup is logged and **skipped**; the others still contribute, and only an
+all-sources failure falls through to the seed events. (Note: `EVENTS_SOURCE_URLS`
+is read by the **Node scraper**, not the Expo app — an `EXPO_PUBLIC_*` var in
+`scenecheck-expo/.env` has no effect on it, and the name is plural
+`EVENTS_SOURCE_URLS`, not `EVENT_SOURCE_URLS`.)
+
+**Listing capacity.** Each Event's schema.org **`maximumAttendeeCapacity`** is
+now parsed; present + positive → the event's real `capacity`, else `null`.
+Eventbrite usually omits it, so most scraped events stay capacity-unknown — but
+any listing that publishes a max now gets a real cap that drives the normal
+going/cap + waitlist behavior. `ingest-scraped` already forwards `body.capacity`,
+so this needed **no function redeploy**.
+
+**"/unk" display.** A capacity-unknown event (DB `capacity` null → `SCEvent.cap`
+0) now renders **"/unk"** rather than "/0": the events feed shows `N/unk`
+(`app/events.tsx`) and the event-detail capacity row shows `N/unk going`
+(`app/event/[id].tsx`) — superseding §59's "N going · capacity unknown" label.
+Joining stays unlimited and the original-listing warning toast (§59) is
+unchanged. The §59 screen test was re-pointed from `capacity unknown` to
+`/unk going`. 412/412; `tsc` clean. Scraper changes apply on the next re-scrape;
+the UI ships with the app build.
+
+---
+
+## 61. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
