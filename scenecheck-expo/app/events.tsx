@@ -176,7 +176,7 @@ export default function EventsListScreen() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
                     <SCText variant="mono" size={11} weight="600">
                       {e.attendees}
-                      <SCText variant="mono" size={11} color={t.ink3}>/{e.cap}</SCText>
+                      <SCText variant="mono" size={11} color={t.ink3}>/{e.cap > 0 ? e.cap : 'unk'}</SCText>
                     </SCText>
                     {e.interests.slice(0, 2).map(tag => (
                       <SCTag key={tag} tag={tag} size="sm" tone="soft" />

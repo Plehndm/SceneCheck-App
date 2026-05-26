@@ -316,7 +316,7 @@ export default function EventDetailScreen() {
             icon="calendar"
             k={whenRange(e)}
             v={capUnknown
-              ? `${goingCount} going · capacity unknown`
+              ? `${goingCount}/unk going`
               : `${goingCount}/${e.cap} going${goingCount >= e.cap ? ' · waitlist' : ''}`}
           />
           <DetailRow
