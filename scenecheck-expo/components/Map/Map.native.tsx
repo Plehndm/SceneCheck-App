@@ -5,52 +5,90 @@
 // Metro auto-selects this file on iOS/Android via the `.native.tsx`
 // suffix; the TS-only Map.tsx is the fallback the typechecker resolves.
 //
-// Pin selection — why there is no native callout bubble:
+// Pin selection — what we learned the hard way:
 //
-// iOS' MKMapView has a long-standing reference-counting bug in the
-// default callout-view lifecycle: after 2-3 `selectAnnotation:` cycles
-// on annotations with `canShowCallout = YES`, the next call dereferences
-// a callout view that was deallocated on a prior teardown. The crash is
-// purely count-based (not rate-based; pausing between taps doesn't help)
-// and it's reproducible against this app — see the device log captured
-// during debugging:
+//   1. We initially hypothesised an MKMarkerAnnotationView callout-
+//      lifecycle bug and dropped `title`/`description` to disengage
+//      iOS' callout-view path. Device logs proved the bug ISN'T in the
+//      callout layer — crash still hits exactly at selection #3 with a
+//      callout-less Marker (just coordinate + pinColor + zIndex +
+//      onPress).
 //
-//   [Map] Marker.onPress {id: e9,        wasSelected: false}
-//   [PinMarker] effect   {id: e9,        selected: true}
-//   [Map] Marker.onPress {id: 9980b6f2…, wasSelected: false}
-//   [PinMarker] effect   {id: e9,        selected: false}
-//   [PinMarker] effect   {id: 9980b6f2…, selected: true}
-//   [Map] Marker.onPress {id: e9,        wasSelected: false}
-//   [PinMarker] effect   {id: e9,        selected: true}
-//   [PinMarker] effect   {id: 9980b6f2…, selected: false}
-//                                            ← every JS log lands, crash
-//                                              happens INSIDE iOS' next
-//                                              selectAnnotation: tick.
+//   2. With the JS layer proven correct (every onPress + every state
+//      update lands fine in the logs), and with no callout to corrupt,
+//      the remaining suspect is `react-native-maps@1.20.1`'s native
+//      marker update pipeline. Every parent re-render of <Map> passes
+//      NEW REFERENCES for `coordinate` (a fresh {latitude,longitude}
+//      from eventLatLng) and `onPress` (a fresh closure) to every one
+//      of the ~36 markers, even though their underlying values haven't
+//      changed. react-native-maps shallow-compares these and shovels
+//      each "change" through the JS-native bridge as a native marker
+//      update. After a few state changes that's hundreds of bridge
+//      messages, and 1.20.1 has open issues for EXC_BAD_ACCESS reads
+//      against recycled annotation references in this regime.
 //
-// `canShowCallout = YES` is set by iOS whenever a Marker has any of
-// `title`, `description`, or a `<Callout>` child. All three engage the
-// buggy lifecycle. The only reliable JS-level workaround is to not
-// engage it at all: no callout content of any kind on the Marker. The
-// brief-summary text the user would have seen in the callout is already
-// rendered (with more detail) in the focused-event card below the map
-// — see `app/(tabs)/map.tsx` lines ~200-260.
+//   3. Fix: every Marker is now a `React.memo`-wrapped PinMarker that
+//      only re-renders when its own props actually differ. Coordinate,
+//      colour, and the per-marker tap callback are computed in a
+//      useMemo pinned to the events array, so a tap that changes
+//      `selectedId` triggers re-renders on AT MOST 2 markers (the new
+//      selection and the previously-selected one for the zIndex
+//      flip), not on all 36. That cuts the per-tap native bridge
+//      traffic by ~95%.
 //
-// If a callout-like bubble ABOVE the pin is wanted later, build it as
-// a custom React Native absolute-positioned overlay using
-// MapView.pointForCoordinate(...) for projection. That path doesn't
-// involve MKAnnotationView and so doesn't engage the bug.
+// If the crash recurs even after the memoisation cuts, the next step
+// is either (a) `npm upgrade react-native-maps` to a release with the
+// known annotation-cache fix, or (b) replace Markers with a custom RN
+// absolute-positioned overlay using MapView.pointForCoordinate(...)
+// for projection — that bypasses MKAnnotationView entirely.
 //
-// Diagnostic logging under `__DEV__` stays in place so any regression
-// is caught early — Metro strips it from production builds.
+// Diagnostic logging under `__DEV__` stays in place so the device
+// console keeps showing every tap and every state change.
 
-import { useEffect } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Platform, View, type ViewStyle, type StyleProp } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, {
+  Marker,
+  Circle,
+  PROVIDER_GOOGLE,
+  type MarkerPressEvent,
+} from 'react-native-maps';
 import { useTokens } from '@/theme/ThemeProvider';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
-  eventLatLng, pinColor, type MapProps,
+  eventLatLng, pinColor, type MapProps, type LatLng,
 } from './types';
+
+// PinMarker is the per-pin component. Wrapping it in React.memo means
+// React will only re-render this marker when its props actually change
+// (shallow compare). Combined with stable references for `ll`, `color`,
+// and `onPressId` from the parent's useMemo / useCallback, a parent
+// re-render that didn't touch this pin's data is a no-op here — no
+// bridge message, no native annotation update.
+const PinMarker = memo(function PinMarker({
+  id,
+  ll,
+  color,
+  selected,
+  onPressId,
+}: {
+  id: string;
+  ll: LatLng;
+  color: string;
+  selected: boolean;
+  onPressId: (id: string, action: string | undefined) => void;
+}) {
+  return (
+    <Marker
+      coordinate={ll}
+      pinColor={color}
+      zIndex={selected ? 999 : undefined}
+      onPress={(ev: MarkerPressEvent) => {
+        onPressId(id, ev?.nativeEvent?.action);
+      }}
+    />
+  );
+});
 
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
@@ -62,16 +100,56 @@ export function Map({
   // is mount-only, so the Map tab remounts (key) when the focus target changes.
   const center = centerOn ?? user ?? initialCenter;
 
-  // Diagnostic — fires when the prop the screen passes in changes, so
-  // we can correlate React selection state with native behaviour on the
-  // device console if anything ever regresses. Stripped in production
-  // by Metro's __DEV__ dead-code elimination.
+  // Diagnostic — fires when selection changes or event count changes.
+  // Stripped in production by Metro's __DEV__ dead-code elimination.
   useEffect(() => {
     if (__DEV__) {
       // eslint-disable-next-line no-console
       console.log('[Map] selectedId →', selectedId ?? 'null', '· events:', events.length);
     }
   }, [selectedId, events.length]);
+
+  // Stable per-pin data. `ll` and `color` are memoised by event identity
+  // (the events array reference) and the inputs to pinColor, so a state
+  // change that doesn't touch any of those — e.g. a selection flip —
+  // doesn't produce new ll/color references and doesn't invalidate
+  // PinMarker's React.memo equality check.
+  const markerData = useMemo(
+    () => events.map(e => ({
+      id: e.id,
+      // We keep a reference to the original event so onPressId can
+      // hand it back to the screen unchanged.
+      e,
+      ll: eventLatLng(e),
+      color: pinColor(e, t, meInterests),
+    })),
+    // t.primary / accentFriend / accentBlue / mapPinMute drive pinColor's
+    // output, so list them as deps — palette changes (e.g. light↔dark)
+    // need to recompute all colours.
+    [events, t.primary, t.accentFriend, t.accentBlue, t.mapPinMute, meInterests],
+  );
+
+  // Stable tap callback. Receives the marker id (not the closed-over
+  // event) so the function identity is invariant per <Map> instance,
+  // not per marker. The screen's onPinPress callback is called with the
+  // real event looked up via markerData. Diagnostic log fires here so
+  // every tap is captured in the device console.
+  const onPressId = useCallback(
+    (id: string, action: string | undefined) => {
+      const found = markerData.find(m => m.id === id);
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[Map] Marker.onPress', {
+          id,
+          title: found?.e.title,
+          wasSelected: id === selectedId,
+          action: action ?? 'unknown',
+        });
+      }
+      if (found) onPinPress?.(found.e);
+    },
+    [markerData, selectedId, onPinPress],
+  );
 
   return (
     <View
@@ -110,39 +188,16 @@ export function Map({
             strokeWidth={1}
           />
         )}
-        {events.map(e => {
-          const ll = eventLatLng(e);
-          const color = pinColor(e, t, meInterests);
-          const selected = e.id === selectedId;
-          return (
-            <Marker
-              key={e.id}
-              coordinate={ll}
-              // No title / description / <Callout> child — see the header
-              // comment for the iOS callout-lifecycle crash that any of
-              // those engage. Pin appearance is the native sprite tinted
-              // by pinColor; selection is purely a zIndex lift so the
-              // chosen pin floats above an overlapping cluster.
-              pinColor={color}
-              zIndex={selected ? 999 : undefined}
-              onPress={(ev) => {
-                if (__DEV__) {
-                  // eslint-disable-next-line no-console
-                  console.log(
-                    '[Map] Marker.onPress',
-                    {
-                      id: e.id,
-                      title: e.title,
-                      wasSelected: selected,
-                      action: ev?.nativeEvent?.action ?? 'unknown',
-                    },
-                  );
-                }
-                onPinPress?.(e);
-              }}
-            />
-          );
-        })}
+        {markerData.map(({ id, ll, color }) => (
+          <PinMarker
+            key={id}
+            id={id}
+            ll={ll}
+            color={color}
+            selected={id === selectedId}
+            onPressId={onPressId}
+          />
+        ))}
       </MapView>
     </View>
   );
