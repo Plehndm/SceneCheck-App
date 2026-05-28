@@ -16,6 +16,7 @@ import { useChatMessages } from '@/hooks/useChatMessages';
 import { useChats } from '@/hooks/useChats';
 import { useEvent } from '@/hooks/useEvent';
 import { api } from '@/lib/api';
+import type { MessageType } from '@/types/domain';
 import { SC_VISIBLE_PERSON_BY_ID } from '@/data/mocks';
 import { whenRange } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
@@ -54,6 +55,26 @@ export default function ChatThreadScreen() {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
+  // FR9.5 — announcement composer state. The toggle is only rendered for
+  // event group chats where api.canPostAnnouncement returns true (the
+  // viewer is the event's creator). It auto-deactivates after a send so
+  // the next message defaults to normal.
+  const [canAnnounce, setCanAnnounce] = useState(false);
+  const [announceNext, setAnnounceNext] = useState(false);
+  useEffect(() => {
+    // Reset on chat change, then fetch the capability. The api.canPost
+    // Announcement helper returns false for DMs and for non-creators,
+    // so we don't need to gate on chat.kind here — the helper does it.
+    let cancelled = false;
+    setCanAnnounce(false);
+    setAnnounceNext(false);
+    if (!id) return;
+    api.canPostAnnouncement(id)
+      .then(ok => { if (!cancelled) setCanAnnounce(ok); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [id]);
+
   useEffect(() => {
     // Auto-scroll to bottom when messages change. Clean up the pending timer
     // on unmount / re-run so it can't fire against a stale ref (M7). Depend
@@ -90,8 +111,14 @@ export default function ChatThreadScreen() {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
+    // FR9.5 — if the announcement toggle is on, mark the outgoing message
+    // as 'announcement' and reset the toggle so the next message defaults
+    // back to normal. The hook + api both forward this through; backend
+    // RLS verifies the sender is the event's creator.
+    const messageType: MessageType = announceNext ? 'announcement' : 'normal';
+    setAnnounceNext(false);
     try {
-      await send(text);
+      await send(text, messageType);
     } catch (e) {
       showToast({
         message: e instanceof Error ? `Couldn't send: ${e.message}` : "Couldn't send.",
@@ -163,13 +190,49 @@ export default function ChatThreadScreen() {
           {msgs.map((m, i) => {
             const showWho = m.from === 'them' && (i === 0 || msgs[i - 1].who !== m.who);
             const isHost = m.from === 'host';
+            // FR9.5 — announcements get a tinted card + "ANNOUNCEMENT"
+            // caption + bell icon so they stand out from chatter. The
+            // bubble takes the full available width (90%) and is colored
+            // with the warn token (yellow) regardless of sender, so a fast-
+            // scrolling user can't miss it. Normal messages render exactly
+            // as before.
+            const isAnnouncement = m.messageType === 'announcement';
             return (
-              <View key={m.id} style={{ alignSelf: isHost ? 'flex-end' : 'flex-start', maxWidth: '78%' }}>
-                {showWho && (
+              <View
+                key={m.id}
+                style={{
+                  alignSelf: isAnnouncement ? 'stretch' : (isHost ? 'flex-end' : 'flex-start'),
+                  maxWidth: isAnnouncement ? '100%' : '78%',
+                }}
+              >
+                {showWho && !isAnnouncement && (
                   <SCText variant="mono" size={10} color={t.ink3} style={{ marginLeft: 12, marginBottom: 2 }}>
                     {m.who} · {m.time}
                   </SCText>
                 )}
+                {isAnnouncement ? (
+                  <View style={{
+                    paddingVertical: 12, paddingHorizontal: 14, borderRadius: RADIUS.lg,
+                    backgroundColor: t.warn + '26',
+                    borderWidth: 1.5, borderColor: t.warn,
+                    opacity: m.status === 'sending' ? 0.7 : 1,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <SCIcon name="bell" size={14} color={t.warnInk} />
+                      <SCText variant="mono" size={10} weight="700" color={t.warnInk}>
+                        ANNOUNCEMENT{m.who && m.from === 'them' ? ` · ${m.who}` : ''} · {m.time}
+                      </SCText>
+                    </View>
+                    <SCText size={15} weight="600" color={t.ink} style={{ lineHeight: 21 }}>
+                      {m.text}
+                      {m.edited && (
+                        <SCText variant="mono" size={9} weight="600" color={t.ink3}>
+                          {'  '}(EDITED)
+                        </SCText>
+                      )}
+                    </SCText>
+                  </View>
+                ) : (
                 <View style={{
                   paddingVertical: 10, paddingHorizontal: 14, borderRadius: RADIUS.lg,
                   backgroundColor: isHost
@@ -192,6 +255,7 @@ export default function ChatThreadScreen() {
                     )}
                   </SCText>
                 </View>
+                )}
                 {isHost && m.status && (
                   <View style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4,
@@ -224,33 +288,59 @@ export default function ChatThreadScreen() {
         </ScrollView>
 
         {/* Composer — lift it off the bottom edge (+ the home-indicator inset
-            on devices that have one) so it isn't cramped against the screen. */}
-        <View style={{
-          paddingHorizontal: 14, paddingTop: 8, paddingBottom: insets.bottom + 24,
-          flexDirection: 'row', gap: 8, alignItems: 'center',
-        }}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={handleSend}
-            placeholder="Message…"
-            placeholderTextColor={t.ink3}
-            style={{
-              flex: 1, height: 44, borderRadius: RADIUS.lg,
-              backgroundColor: t.card, borderWidth: 1, borderColor: t.line,
-              paddingHorizontal: 14, color: t.ink, fontSize: 14,
-            }}
-          />
-          <Pressable
-            onPress={handleSend}
-            style={({ pressed }) => [{
-              width: 44, height: 44, borderRadius: RADIUS.lg,
-              backgroundColor: t.primary,
-              alignItems: 'center', justifyContent: 'center',
-            }, pressed && { opacity: 0.85 }]}
-          >
-            <SCIcon name="send" size={16} color={t.primaryInk} />
-          </Pressable>
+            on devices that have one) so it isn't cramped against the screen.
+            FR9.5: when the viewer can post announcements, a small chip above
+            the input row toggles the next message into "announcement" mode. */}
+        <View style={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: insets.bottom + 24 }}>
+          {canAnnounce && (
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Pressable
+                onPress={() => setAnnounceNext(v => !v)}
+                accessibilityLabel="Toggle announcement"
+                style={({ pressed }) => [{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+                  borderWidth: 1.5,
+                  borderColor: announceNext ? t.warn : t.line,
+                  backgroundColor: announceNext ? t.warn + '33' : t.card,
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCIcon name="bell" size={12} color={announceNext ? t.warnInk : t.ink2} />
+                <SCText
+                  variant="mono" size={10} weight="700"
+                  color={announceNext ? t.warnInk : t.ink2}
+                >
+                  {announceNext ? 'ANNOUNCEMENT · ON' : 'ANNOUNCEMENT'}
+                </SCText>
+              </Pressable>
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              onSubmitEditing={handleSend}
+              placeholder={announceNext ? 'Send an announcement…' : 'Message…'}
+              placeholderTextColor={t.ink3}
+              style={{
+                flex: 1, height: 44, borderRadius: RADIUS.lg,
+                backgroundColor: t.card,
+                borderWidth: 1,
+                borderColor: announceNext ? t.warn : t.line,
+                paddingHorizontal: 14, color: t.ink, fontSize: 14,
+              }}
+            />
+            <Pressable
+              onPress={handleSend}
+              style={({ pressed }) => [{
+                width: 44, height: 44, borderRadius: RADIUS.lg,
+                backgroundColor: announceNext ? t.warn : t.primary,
+                alignItems: 'center', justifyContent: 'center',
+              }, pressed && { opacity: 0.85 }]}
+            >
+              <SCIcon name="send" size={16} color={announceNext ? t.warnInk : t.primaryInk} />
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
