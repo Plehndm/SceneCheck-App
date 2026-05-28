@@ -7,64 +7,74 @@
 //
 // Why this file does NOT render react-native-maps <Marker>s:
 // ──────────────────────────────────────────────────────────────────────
-// Several iterations of marker-based pin rendering all crashed the app
-// after 2–3 pin selections in a row. Captured device logs proved every
-// JS-side call landed correctly (onPress, state updates, every effect)
-// before the crash silence — so the bug lives entirely on the native
-// side. Specifically: react-native-maps@1.20.x (the version bundled
-// inside Expo Go for SDK 54) has known issues in its marker / annotation
-// update pipeline that we can't reach from JS:
-//   - Dropping title / description (no callout) didn't help.
-//   - Imperative showCallout via Marker ref didn't help.
-//   - Memoizing markers + stable refs didn't help (and was buggy too:
-//     the per-pin onPress depended on selectedId, so the React.memo
-//     equality check was invalidated on every selection anyway).
-//   - Upgrading react-native-maps in package.json was a no-op because
-//     Expo Go bundles a fixed native version.
+// Several iterations of marker-based pin rendering crashed the app
+// after 2-3 selections in Expo Go. Captured device logs proved every
+// JS-side call landed correctly before each crash, so the bug lives
+// entirely in react-native-maps@1.20.x's native marker / annotation
+// update pipeline — a path we can't reach from JS, and one we can't
+// swap out because Expo Go bundles the native version regardless of
+// what package.json says. Custom React Native overlay sidesteps it.
 //
-// The custom-overlay approach below sidesteps the entire marker system.
-// MapView renders ONLY the user-location indicator and the discovery-
-// radius circle. Event "pins" are absolute-positioned React Native
-// <Pressable> Views laid on top of the map, anchored at the screen
-// coordinates we compute by projecting each event's lat/lng through
-// MapView.pointForCoordinate(...). There are no native annotations
-// involved, so there's no annotation cache to poison, no select/
-// deselect lifecycle to corrupt, no count-based crash threshold.
+// How the overlay works:
+//   1. <MapView> renders tiles + the user-location indicator + the
+//      discovery-radius Circle. NO <Marker> children of any kind.
+//   2. We track the visible Region in state, updated CONTINUOUSLY by
+//      onRegionChange (fires on every frame the map moves). Each
+//      update is a setState; React 19's automatic batching keeps the
+//      re-render rate sane.
+//   3. We project each event's lat/lng to a screen {x, y} synchronously
+//      in JS via a Mercator-projection useMemo. Same projection Apple
+//      Maps / Google Maps use, so the pins land exactly where native
+//      annotations would have. ~39 pins × constant-time arithmetic is
+//      sub-millisecond per render.
+//   4. Pins are absolute-positioned <Pressable> Views in an overlay
+//      sibling of the MapView, anchored at the projected coordinates.
+//      The overlay container has pointerEvents='box-none' so taps that
+//      miss a pin fall through to the map for pan / zoom; each
+//      Pressable explicitly captures its own hits with hitSlop=8 for
+//      the same effective 36 px tap target the native markers had.
 //
-// Trade-offs we accept:
-//   - Pin positions update when the map region settles (we recompute on
-//     onRegionChangeComplete + on map ready + when the events list
-//     changes). During an active pan / zoom the pins lag the tiles
-//     until the gesture ends. This is the standard cost of an overlay
-//     versus a native annotation, and is acceptable here because the
-//     map is mainly used at rest for tapping a pin and reading the
-//     focused card below.
-//   - We lose react-native-maps' built-in tap-target sizing magic.
-//     Mitigated with hitSlop={8} on each Pressable so the effective
-//     touch area is ~36 px even though the visible dot is 20 px.
+// Trade-offs accepted:
+//   - The projection ignores map rotation (we read `region.{lat,lng,
+//     deltas}` but not `camera.heading`). If the user rotates the map
+//     pins won't follow the rotation. rotateEnabled is true so users
+//     CAN rotate, but typical map UX doesn't, and Apple Maps north-
+//     locks by default anyway. Easy to add later if needed.
+//   - Mercator projection deviates from native rendering at the poles;
+//     irrelevant for any region this app shows.
 //
-// Diagnostic __DEV__ logs are preserved so a future regression — or any
-// unexpected behaviour the user hits during normal use — can be debugged
-// from the device console the same way the marker crash was.
+// Diagnostic __DEV__ logs preserved so future regressions surface in
+// the device console the same way the marker crash did.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   Pressable,
   View,
+  type LayoutChangeEvent,
   type ViewStyle,
   type StyleProp,
 } from 'react-native';
-import MapView, { Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Circle, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 import { useTokens } from '@/theme/ThemeProvider';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
   eventLatLng, pinColor, type MapProps,
 } from './types';
 
-interface PinPosition {
-  x: number;
-  y: number;
+interface PinPosition { x: number; y: number; }
+
+// Mercator y-projection of a latitude in degrees. This is the projection
+// Apple Maps and Google Maps both use for map tiles, so pins computed
+// against the visible region land at the exact same screen position
+// where a native annotation would have rendered.
+//
+// The clamp avoids the asymptote at ±90° (tan(π/2) → ∞). Anywhere this
+// app actually shows on a map is far from the clamp limits.
+function mercatorY(latDeg: number): number {
+  const latRad = (latDeg * Math.PI) / 180;
+  const clamped = Math.max(-1.4835, Math.min(1.4835, latRad));
+  return Math.log(Math.tan(Math.PI / 4 + clamped / 2));
 }
 
 export function Map({
@@ -73,21 +83,28 @@ export function Map({
   onPinPress, onRegionChange, interactive = true, style, selectedId,
 }: MapProps) {
   const t = useTokens();
-  // centerOn (a focused event) wins over the you-are-here center. initialRegion
-  // is mount-only, so the Map tab remounts (key) when the focus target changes.
+  // centerOn (a focused event) wins over the you-are-here center. The
+  // initialRegion derived from this is used by MapView only at mount;
+  // after that, the region tracked in state below is the source of
+  // truth for pin projection.
   const center = centerOn ?? user ?? initialCenter;
 
-  const mapRef = useRef<MapView | null>(null);
-  // Screen coords for each pin, by event id. Empty until the MapView is
-  // ready + we've run the first projection pass.
-  const [positions, setPositions] = useState<Record<string, PinPosition>>({});
-  // MapView.pointForCoordinate returns garbage (or rejects) before the
-  // map has finished laying out, so we wait for onMapReady before
-  // running the first projection.
-  const [mapReady, setMapReady] = useState(false);
+  // Current visible region. Initialised from `center` for the mount-
+  // time render; updated continuously by onRegionChange while the user
+  // pans / zooms.
+  const [region, setRegion] = useState<Region>({
+    latitude: center.latitude,
+    longitude: center.longitude,
+    latitudeDelta: 0.04,
+    longitudeDelta: 0.04,
+  });
 
-  // Per-pin data, memoized. Stable across renders that don't change the
-  // event list, the palette tokens, or the user's interests.
+  // Pixel size of the map viewport. Captured via onLayout on the
+  // wrapper View. Pin projection needs this to map degrees → pixels.
+  const [viewSize, setViewSize] = useState<{ w: number; h: number } | null>(null);
+
+  // Memoised per-pin data — stable across renders unless events,
+  // palette tokens, or the user's interests change.
   const markerData = useMemo(
     () => events.map(e => ({
       id: e.id,
@@ -95,45 +112,74 @@ export function Map({
       ll: eventLatLng(e),
       color: pinColor(e, t, meInterests),
     })),
-    // `t` is the tokens object from useTokens(); it's stable across
-    // renders that don't touch the palette / mode, so listing the whole
-    // object keeps the dep list short without invalidating the memo on
-    // unrelated re-renders.
     [events, t, meInterests],
   );
 
-  // Project every pin's lat/lng to a screen {x, y}. Called on:
-  //   - the first onMapReady fire
-  //   - whenever the event list (or palette / interests) changes
-  //   - whenever the map region settles after a pan / zoom
-  // Pins that fail to project (off-screen, or transiently rejected by
-  // the native side during a layout pass) are simply omitted from
-  // `positions`; the render loop below skips any id without a position.
-  const projectAll = useCallback(async () => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    const results = await Promise.all(
-      markerData.map(async ({ id, ll }) => {
-        try {
-          const pt = await map.pointForCoordinate(ll);
-          return { id, pos: { x: pt.x, y: pt.y } };
-        } catch {
-          return null;
-        }
-      }),
-    );
+  // Project every pin's lat/lng to a screen {x, y}. Synchronous, pure
+  // arithmetic, recomputed only when the region, viewport size, or
+  // pin set changes — so the cost is bounded but the result is
+  // immediately available for the next render. No pointForCoordinate
+  // async dance, no waiting on a native bridge round-trip per frame.
+  //
+  // Off-screen pins are skipped to keep the overlay tree small; the
+  // 0.1° pad lets pins just beyond the visible region still render
+  // their tail end (matches native-annotation behaviour at edges).
+  const positions = useMemo<Record<string, PinPosition>>(() => {
+    if (!viewSize) return {};
+    const { w, h } = viewSize;
+    const halfLat = region.latitudeDelta / 2;
+    const halfLng = region.longitudeDelta / 2;
+    const southLat = region.latitude - halfLat;
+    const northLat = region.latitude + halfLat;
+    const westLng = region.longitude - halfLng;
+    const eastLng = region.longitude + halfLng;
+    // Mercator y bounds for the current region — pre-computed once.
+    const yNorth = mercatorY(northLat);
+    const ySouth = mercatorY(southLat);
+    const ySpan = yNorth - ySouth;
+
     const next: Record<string, PinPosition> = {};
-    for (const r of results) if (r) next[r.id] = r.pos;
-    setPositions(next);
-    if (__DEV__) {
-      console.log('[Map] projected', { count: Object.keys(next).length });
+    for (const { id, ll } of markerData) {
+      if (
+        ll.latitude  < southLat - 0.1 ||
+        ll.latitude  > northLat + 0.1 ||
+        ll.longitude < westLng - 0.1 ||
+        ll.longitude > eastLng + 0.1
+      ) continue;
+      // Longitude is linear in Mercator x; map [westLng..eastLng] → [0..w].
+      const x = ((ll.longitude - westLng) / region.longitudeDelta) * w;
+      // Latitude is logarithmic in Mercator y; map [yNorth..ySouth] → [0..h].
+      const yPin = mercatorY(ll.latitude);
+      const y = ((yNorth - yPin) / ySpan) * h;
+      next[id] = { x, y };
     }
-  }, [markerData, mapReady]);
+    return next;
+  }, [markerData, region, viewSize]);
 
-  // Re-project whenever the inputs change.
-  useEffect(() => { projectAll(); }, [projectAll]);
+  const onLayout = useCallback((ev: LayoutChangeEvent) => {
+    const { width, height } = ev.nativeEvent.layout;
+    setViewSize(prev => {
+      if (prev && prev.w === width && prev.h === height) return prev;
+      return { w: width, h: height };
+    });
+  }, []);
 
-  // Diagnostic — fires when selection or events count changes.
+  // Skip the setState (and therefore the render) when the native
+  // MapView reports a region identical to what we already have. iOS
+  // and Android both occasionally fire onRegionChange with no actual
+  // change during quiescence; this guard avoids the wasted reconcile.
+  const updateRegion = useCallback((next: Region) => {
+    setRegion(prev => {
+      if (
+        prev.latitude === next.latitude &&
+        prev.longitude === next.longitude &&
+        prev.latitudeDelta === next.latitudeDelta &&
+        prev.longitudeDelta === next.longitudeDelta
+      ) return prev;
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (__DEV__) {
       console.log('[Map] selectedId →', selectedId ?? 'null', '· events:', events.length);
@@ -142,13 +188,13 @@ export function Map({
 
   return (
     <View
+      onLayout={onLayout}
       // In preview (non-interactive) mode let touches fall through to a
       // parent Pressable so tapping the snapshot opens the full Map tab.
       pointerEvents={interactive ? 'auto' : 'none'}
       style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}
     >
       <MapView
-        ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         style={{ flex: 1 }}
         initialRegion={{
@@ -157,12 +203,14 @@ export function Map({
           latitudeDelta: 0.04,
           longitudeDelta: 0.04,
         }}
-        onMapReady={() => setMapReady(true)}
-        onRegionChangeComplete={(region) => {
-          onRegionChange?.({ latitude: region.latitude, longitude: region.longitude });
-          // Re-project after the gesture settles so the pins land in
-          // their new screen positions.
-          projectAll();
+        // Continuous: fires on every frame the map moves. Keeping the
+        // pins glued to their geographic positions while the user is
+        // panning depends on this — onRegionChangeComplete alone would
+        // only update on gesture end (the original 'snap-back' bug).
+        onRegionChange={updateRegion}
+        onRegionChangeComplete={(r) => {
+          updateRegion(r);
+          onRegionChange?.({ latitude: r.latitude, longitude: r.longitude });
         }}
         showsUserLocation={!!user}
         // Snapshot mode: kill every gesture so the card reads as a
@@ -182,34 +230,27 @@ export function Map({
             strokeWidth={1}
           />
         )}
-        {/* NO <Marker>s here — see the file header. Pins live in the
+        {/* NO <Marker>s — see file header. Event pins live in the
             overlay below. */}
       </MapView>
 
-      {/* Pin overlay. pointerEvents='box-none' on the container lets
-          taps fall through to the underlying MapView for pan / zoom;
-          each Pressable inside captures its own taps. */}
+      {/* Pin overlay. pointerEvents='box-none' lets taps fall through
+          to the underlying MapView for pan / zoom when not on a pin;
+          each Pressable inside captures its own hits. */}
       <View
         pointerEvents="box-none"
-        style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       >
         {markerData.map(({ id, e, color }) => {
           const pos = positions[id];
           if (!pos) return null;
           const selected = id === selectedId;
-          // Slightly bigger dot when selected; thicker white ring too.
           const size = selected ? 28 : 20;
           const half = size / 2;
           return (
             <Pressable
               key={id}
               accessibilityLabel={e.title}
-              // hitSlop=8 makes the effective tap target 36 px square
-              // even though the visible dot is 20 px (or 28 px when
-              // selected). Matches what react-native-maps gave us for
-              // free on native markers.
               hitSlop={8}
               onPress={() => {
                 if (__DEV__) {
