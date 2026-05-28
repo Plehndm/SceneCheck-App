@@ -5,90 +5,67 @@
 // Metro auto-selects this file on iOS/Android via the `.native.tsx`
 // suffix; the TS-only Map.tsx is the fallback the typechecker resolves.
 //
-// Pin selection — what we learned the hard way:
+// Why this file does NOT render react-native-maps <Marker>s:
+// ──────────────────────────────────────────────────────────────────────
+// Several iterations of marker-based pin rendering all crashed the app
+// after 2–3 pin selections in a row. Captured device logs proved every
+// JS-side call landed correctly (onPress, state updates, every effect)
+// before the crash silence — so the bug lives entirely on the native
+// side. Specifically: react-native-maps@1.20.x (the version bundled
+// inside Expo Go for SDK 54) has known issues in its marker / annotation
+// update pipeline that we can't reach from JS:
+//   - Dropping title / description (no callout) didn't help.
+//   - Imperative showCallout via Marker ref didn't help.
+//   - Memoizing markers + stable refs didn't help (and was buggy too:
+//     the per-pin onPress depended on selectedId, so the React.memo
+//     equality check was invalidated on every selection anyway).
+//   - Upgrading react-native-maps in package.json was a no-op because
+//     Expo Go bundles a fixed native version.
 //
-//   1. We initially hypothesised an MKMarkerAnnotationView callout-
-//      lifecycle bug and dropped `title`/`description` to disengage
-//      iOS' callout-view path. Device logs proved the bug ISN'T in the
-//      callout layer — crash still hits exactly at selection #3 with a
-//      callout-less Marker (just coordinate + pinColor + zIndex +
-//      onPress).
+// The custom-overlay approach below sidesteps the entire marker system.
+// MapView renders ONLY the user-location indicator and the discovery-
+// radius circle. Event "pins" are absolute-positioned React Native
+// <Pressable> Views laid on top of the map, anchored at the screen
+// coordinates we compute by projecting each event's lat/lng through
+// MapView.pointForCoordinate(...). There are no native annotations
+// involved, so there's no annotation cache to poison, no select/
+// deselect lifecycle to corrupt, no count-based crash threshold.
 //
-//   2. With the JS layer proven correct (every onPress + every state
-//      update lands fine in the logs), and with no callout to corrupt,
-//      the remaining suspect is `react-native-maps@1.20.1`'s native
-//      marker update pipeline. Every parent re-render of <Map> passes
-//      NEW REFERENCES for `coordinate` (a fresh {latitude,longitude}
-//      from eventLatLng) and `onPress` (a fresh closure) to every one
-//      of the ~36 markers, even though their underlying values haven't
-//      changed. react-native-maps shallow-compares these and shovels
-//      each "change" through the JS-native bridge as a native marker
-//      update. After a few state changes that's hundreds of bridge
-//      messages, and 1.20.1 has open issues for EXC_BAD_ACCESS reads
-//      against recycled annotation references in this regime.
+// Trade-offs we accept:
+//   - Pin positions update when the map region settles (we recompute on
+//     onRegionChangeComplete + on map ready + when the events list
+//     changes). During an active pan / zoom the pins lag the tiles
+//     until the gesture ends. This is the standard cost of an overlay
+//     versus a native annotation, and is acceptable here because the
+//     map is mainly used at rest for tapping a pin and reading the
+//     focused card below.
+//   - We lose react-native-maps' built-in tap-target sizing magic.
+//     Mitigated with hitSlop={8} on each Pressable so the effective
+//     touch area is ~36 px even though the visible dot is 20 px.
 //
-//   3. Fix: every Marker is now a `React.memo`-wrapped PinMarker that
-//      only re-renders when its own props actually differ. Coordinate,
-//      colour, and the per-marker tap callback are computed in a
-//      useMemo pinned to the events array, so a tap that changes
-//      `selectedId` triggers re-renders on AT MOST 2 markers (the new
-//      selection and the previously-selected one for the zIndex
-//      flip), not on all 36. That cuts the per-tap native bridge
-//      traffic by ~95%.
-//
-// If the crash recurs even after the memoisation cuts, the next step
-// is either (a) `npm upgrade react-native-maps` to a release with the
-// known annotation-cache fix, or (b) replace Markers with a custom RN
-// absolute-positioned overlay using MapView.pointForCoordinate(...)
-// for projection — that bypasses MKAnnotationView entirely.
-//
-// Diagnostic logging under `__DEV__` stays in place so the device
-// console keeps showing every tap and every state change.
+// Diagnostic __DEV__ logs are preserved so a future regression — or any
+// unexpected behaviour the user hits during normal use — can be debugged
+// from the device console the same way the marker crash was.
 
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Platform, View, type ViewStyle, type StyleProp } from 'react-native';
-import MapView, {
-  Marker,
-  Circle,
-  PROVIDER_GOOGLE,
-  type MarkerPressEvent,
-} from 'react-native-maps';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Platform,
+  Pressable,
+  View,
+  type ViewStyle,
+  type StyleProp,
+} from 'react-native';
+import MapView, { Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useTokens } from '@/theme/ThemeProvider';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
-  eventLatLng, pinColor, type MapProps, type LatLng,
+  eventLatLng, pinColor, type MapProps,
 } from './types';
 
-// PinMarker is the per-pin component. Wrapping it in React.memo means
-// React will only re-render this marker when its props actually change
-// (shallow compare). Combined with stable references for `ll`, `color`,
-// and `onPressId` from the parent's useMemo / useCallback, a parent
-// re-render that didn't touch this pin's data is a no-op here — no
-// bridge message, no native annotation update.
-const PinMarker = memo(function PinMarker({
-  id,
-  ll,
-  color,
-  selected,
-  onPressId,
-}: {
-  id: string;
-  ll: LatLng;
-  color: string;
-  selected: boolean;
-  onPressId: (id: string, action: string | undefined) => void;
-}) {
-  return (
-    <Marker
-      coordinate={ll}
-      pinColor={color}
-      zIndex={selected ? 999 : undefined}
-      onPress={(ev: MarkerPressEvent) => {
-        onPressId(id, ev?.nativeEvent?.action);
-      }}
-    />
-  );
-});
+interface PinPosition {
+  x: number;
+  y: number;
+}
 
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
@@ -100,56 +77,68 @@ export function Map({
   // is mount-only, so the Map tab remounts (key) when the focus target changes.
   const center = centerOn ?? user ?? initialCenter;
 
-  // Diagnostic — fires when selection changes or event count changes.
-  // Stripped in production by Metro's __DEV__ dead-code elimination.
-  useEffect(() => {
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[Map] selectedId →', selectedId ?? 'null', '· events:', events.length);
-    }
-  }, [selectedId, events.length]);
+  const mapRef = useRef<MapView | null>(null);
+  // Screen coords for each pin, by event id. Empty until the MapView is
+  // ready + we've run the first projection pass.
+  const [positions, setPositions] = useState<Record<string, PinPosition>>({});
+  // MapView.pointForCoordinate returns garbage (or rejects) before the
+  // map has finished laying out, so we wait for onMapReady before
+  // running the first projection.
+  const [mapReady, setMapReady] = useState(false);
 
-  // Stable per-pin data. `ll` and `color` are memoised by event identity
-  // (the events array reference) and the inputs to pinColor, so a state
-  // change that doesn't touch any of those — e.g. a selection flip —
-  // doesn't produce new ll/color references and doesn't invalidate
-  // PinMarker's React.memo equality check.
+  // Per-pin data, memoized. Stable across renders that don't change the
+  // event list, the palette tokens, or the user's interests.
   const markerData = useMemo(
     () => events.map(e => ({
       id: e.id,
-      // We keep a reference to the original event so onPressId can
-      // hand it back to the screen unchanged.
       e,
       ll: eventLatLng(e),
       color: pinColor(e, t, meInterests),
     })),
-    // t.primary / accentFriend / accentBlue / mapPinMute drive pinColor's
-    // output, so list them as deps — palette changes (e.g. light↔dark)
-    // need to recompute all colours.
-    [events, t.primary, t.accentFriend, t.accentBlue, t.mapPinMute, meInterests],
+    // `t` is the tokens object from useTokens(); it's stable across
+    // renders that don't touch the palette / mode, so listing the whole
+    // object keeps the dep list short without invalidating the memo on
+    // unrelated re-renders.
+    [events, t, meInterests],
   );
 
-  // Stable tap callback. Receives the marker id (not the closed-over
-  // event) so the function identity is invariant per <Map> instance,
-  // not per marker. The screen's onPinPress callback is called with the
-  // real event looked up via markerData. Diagnostic log fires here so
-  // every tap is captured in the device console.
-  const onPressId = useCallback(
-    (id: string, action: string | undefined) => {
-      const found = markerData.find(m => m.id === id);
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[Map] Marker.onPress', {
-          id,
-          title: found?.e.title,
-          wasSelected: id === selectedId,
-          action: action ?? 'unknown',
-        });
-      }
-      if (found) onPinPress?.(found.e);
-    },
-    [markerData, selectedId, onPinPress],
-  );
+  // Project every pin's lat/lng to a screen {x, y}. Called on:
+  //   - the first onMapReady fire
+  //   - whenever the event list (or palette / interests) changes
+  //   - whenever the map region settles after a pan / zoom
+  // Pins that fail to project (off-screen, or transiently rejected by
+  // the native side during a layout pass) are simply omitted from
+  // `positions`; the render loop below skips any id without a position.
+  const projectAll = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const results = await Promise.all(
+      markerData.map(async ({ id, ll }) => {
+        try {
+          const pt = await map.pointForCoordinate(ll);
+          return { id, pos: { x: pt.x, y: pt.y } };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const next: Record<string, PinPosition> = {};
+    for (const r of results) if (r) next[r.id] = r.pos;
+    setPositions(next);
+    if (__DEV__) {
+      console.log('[Map] projected', { count: Object.keys(next).length });
+    }
+  }, [markerData, mapReady]);
+
+  // Re-project whenever the inputs change.
+  useEffect(() => { projectAll(); }, [projectAll]);
+
+  // Diagnostic — fires when selection or events count changes.
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[Map] selectedId →', selectedId ?? 'null', '· events:', events.length);
+    }
+  }, [selectedId, events.length]);
 
   return (
     <View
@@ -159,6 +148,7 @@ export function Map({
       style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}
     >
       <MapView
+        ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         style={{ flex: 1 }}
         initialRegion={{
@@ -167,8 +157,12 @@ export function Map({
           latitudeDelta: 0.04,
           longitudeDelta: 0.04,
         }}
+        onMapReady={() => setMapReady(true)}
         onRegionChangeComplete={(region) => {
           onRegionChange?.({ latitude: region.latitude, longitude: region.longitude });
+          // Re-project after the gesture settles so the pins land in
+          // their new screen positions.
+          projectAll();
         }}
         showsUserLocation={!!user}
         // Snapshot mode: kill every gesture so the card reads as a
@@ -188,17 +182,68 @@ export function Map({
             strokeWidth={1}
           />
         )}
-        {markerData.map(({ id, ll, color }) => (
-          <PinMarker
-            key={id}
-            id={id}
-            ll={ll}
-            color={color}
-            selected={id === selectedId}
-            onPressId={onPressId}
-          />
-        ))}
+        {/* NO <Marker>s here — see the file header. Pins live in the
+            overlay below. */}
       </MapView>
+
+      {/* Pin overlay. pointerEvents='box-none' on the container lets
+          taps fall through to the underlying MapView for pan / zoom;
+          each Pressable inside captures its own taps. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        }}
+      >
+        {markerData.map(({ id, e, color }) => {
+          const pos = positions[id];
+          if (!pos) return null;
+          const selected = id === selectedId;
+          // Slightly bigger dot when selected; thicker white ring too.
+          const size = selected ? 28 : 20;
+          const half = size / 2;
+          return (
+            <Pressable
+              key={id}
+              accessibilityLabel={e.title}
+              // hitSlop=8 makes the effective tap target 36 px square
+              // even though the visible dot is 20 px (or 28 px when
+              // selected). Matches what react-native-maps gave us for
+              // free on native markers.
+              hitSlop={8}
+              onPress={() => {
+                if (__DEV__) {
+                  console.log('[Map] Pin tap', {
+                    id, title: e.title, wasSelected: selected,
+                  });
+                }
+                onPinPress?.(e);
+              }}
+              style={{
+                position: 'absolute',
+                left: pos.x - half,
+                top: pos.y - half,
+                width: size,
+                height: size,
+                borderRadius: half,
+                backgroundColor: color,
+                borderWidth: selected ? 3 : 2,
+                borderColor: 'white',
+                // Selected pin floats above the rest so an overlapping
+                // cluster doesn't bury the chosen one.
+                zIndex: selected ? 999 : 1,
+                // Subtle drop shadow so the pin reads against light /
+                // dark map tiles.
+                shadowColor: '#000',
+                shadowOpacity: 0.25,
+                shadowOffset: { width: 0, height: 1 },
+                shadowRadius: 2,
+                elevation: 3,
+              }}
+            />
+          );
+        })}
+      </View>
     </View>
   );
 }

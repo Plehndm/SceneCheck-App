@@ -66,7 +66,6 @@ export default function MapTab() {
   // Stripped in production by Metro's __DEV__ dead-code elimination.
   useEffect(() => {
     if (__DEV__) {
-      // eslint-disable-next-line no-console
       console.log('[MapScreen] focused →', focused?.id ?? 'null',
         focused ? `(${focused.title})` : '');
     }
