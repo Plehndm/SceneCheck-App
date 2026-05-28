@@ -115,12 +115,32 @@ export interface Chat {
   unread: number;
 }
 
+// FR9.5: messages carry a discriminator so the chat thread can render
+// host-only announcements differently (badge + emphasized bubble) from
+// normal chatter. Default is 'normal'; only the event creator can post
+// 'announcement' rows — the backend RLS policy (migration 00038) enforces
+// the actual permission, the client just passes the flag through.
+export type MessageType = 'normal' | 'announcement';
+
 export interface Message {
   from: 'host' | 'them';
   who: string;
   text: string;
   time: string;
   id?: string;
+  // Optional so legacy fixtures + mock SC_THREADS rows (which don't
+  // carry the field) still type-check; consumers should treat absent
+  // as 'normal'.
+  messageType?: MessageType;
+}
+
+// Result shape for analytics RPCs (FR5.3). Returned by
+// host_analytics_by_city / host_analytics_by_venue: one row per interest
+// tag, with the count of events tied to that tag in the scope (city or
+// venue). Sorted client-side by event_count desc when needed.
+export interface HostAnalyticsRow {
+  interest_name: string;
+  event_count: number;
 }
 
 export interface FriendRequest {

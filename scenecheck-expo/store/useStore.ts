@@ -157,10 +157,26 @@ interface State {
   session: { userId: string; email: string | null } | null;
   picture: string | null;        // user-selected profile photo data URL
   orgPictures: Record<string, string>;
+  // FR1.3 — When the user finished the onboarding questionnaire. `null`
+  // means "not yet onboarded" → AuthGate redirects to /onboarding/interests.
+  // The number is a JS timestamp on the client; AuthBootstrap mirrors the
+  // server-side profiles.onboarded_at column (migration 00035) into this
+  // slice. Persisted so a quick reload doesn't re-trigger onboarding before
+  // hydrate completes.
+  onboardedAt: number | null;
+  // FR1.3 — Tri-state guard for AuthGate. `false` until AuthBootstrap has
+  // finished its first hydrate (or in mock mode, set to true immediately).
+  // Without this, the gate can't distinguish "store starts up with
+  // onboardedAt=null" from "user is genuinely not onboarded" and races into
+  // a wrong redirect on first paint. NOT persisted — every reload should
+  // re-hydrate from the server.
+  hydrated: boolean;
   setPicture: (dataUrl: string | null) => void;
   setOrgPicture: (orgId: string, dataUrl: string | null) => void;
   setMe: (patch: Partial<Account>) => void;
   setSession: (s: { userId: string; email: string | null } | null) => void;
+  setOnboarded: (ts: number | null) => void;
+  setHydrated: (h: boolean) => void;
 
   // ── drafts ──
   drafts: import('@/types/domain').Draft[];
@@ -289,6 +305,12 @@ export const useStore = create<State>()(
       session: null,
       picture: null,
       orgPictures: {},
+      // In mock mode there is no AuthBootstrap hydrate to run, so the
+      // tri-state guard for AuthGate is pre-resolved: hydrated=true and
+      // onboardedAt=1 (any non-null number works) so the mock user is
+      // treated as already onboarded and never bounced to /onboarding.
+      onboardedAt: isMockSeed ? 1 : null,
+      hydrated: isMockSeed,
       setPicture: (dataUrl) => set({ picture: dataUrl }),
       setOrgPicture: (orgId, dataUrl) => set(s => {
         const next = { ...s.orgPictures };
@@ -298,6 +320,8 @@ export const useStore = create<State>()(
       }),
       setMe: (patch) => set(s => ({ me: { ...s.me, ...patch } })),
       setSession: (next) => set({ session: next }),
+      setOnboarded: (ts) => set({ onboardedAt: ts }),
+      setHydrated: (h) => set({ hydrated: h }),
 
       // ── drafts ──
       drafts: [],
@@ -418,6 +442,12 @@ export const useStore = create<State>()(
         following: Array.from(s.following),
         subscribedInterests: Array.from(s.subscribedInterests),
         drafts: s.drafts,
+        // Persist the onboarding timestamp so a reload doesn't briefly
+        // redirect a returning user to /onboarding while the network
+        // hydrate is in flight (AuthBootstrap overwrites it once the
+        // server value lands). `hydrated` is deliberately NOT persisted —
+        // every fresh app launch must re-verify the session.
+        onboardedAt: s.onboardedAt,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<State> & {

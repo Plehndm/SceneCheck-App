@@ -186,6 +186,15 @@ export const SC_CHATS: Chat[] = [
 ];
 
 const SC_THREAD_E1: Message[] = [
+  // FR9.5 — a host announcement at the top of the thread, so the screen
+  // agent has a visible example to render against. messageType='announcement'
+  // marks it for the badge/styling; the host-only composer toggle is what
+  // produces these in live mode.
+  {
+    from: 'host', who: 'You',
+    text: 'Heads up — meet at the FAR side of Anteater Plaza by the bike racks. The main path is closed for resurfacing.',
+    time: 'Wed', messageType: 'announcement',
+  },
   { from: 'host', who: 'You', text: "Posted! 7am at Anteater Plaza, easy 14mi pace.", time: 'Wed' },
   { from: 'them', who: 'Sasha W.', text: "in! bringing extra tubes 🛞", time: 'Wed' },
   { from: 'them', who: 'Maya C.', text: "can we add a coffee stop at Common Room after?", time: 'Thu' },

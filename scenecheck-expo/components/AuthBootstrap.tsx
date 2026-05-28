@@ -78,7 +78,11 @@ export function AuthBootstrap() {
         { data: followRows },
       ] = await Promise.all([
         supabase!.from('profiles')
-          .select('name, username, bio, visibility, account_type, avatar_url')
+          // `onboarded_at` (migration 00035) gates the onboarding redirect
+          // in AuthGate. Pulling it here lets the gate decide immediately
+          // post-hydrate; without it, an authenticated returning user
+          // would still see the questionnaire on every cold start.
+          .select('name, username, bio, visibility, account_type, avatar_url, onboarded_at')
           .eq('user_id', userId)
           .maybeSingle(),
         supabase!.from('user_interests')
@@ -184,6 +188,13 @@ export function AuthBootstrap() {
         (followRows ?? []).map((r: OrgFollowRow) => toMockId(r.org_id)),
       );
 
+      // FR1.3 — onboarding flag mirrored into the store. `onboarded_at` is
+      // a TIMESTAMPTZ column; coerce to a JS ms-since-epoch (or null). The
+      // AuthGate reads (hydrated, session, onboardedAt) as a tri-state to
+      // decide redirects.
+      const onboardedRaw = (profile as { onboarded_at?: string | null } | null)?.onboarded_at;
+      const onboardedAt = onboardedRaw ? new Date(onboardedRaw).getTime() : null;
+
       useStore.setState({
         joined,
         friends,
@@ -191,6 +202,10 @@ export function AuthBootstrap() {
         incomingRequests: incoming,
         subscribedInterests,
         following,
+        onboardedAt,
+        // Mark hydrate complete LAST so the AuthGate only flips its redirect
+        // logic once every dependent slice (session + onboardedAt) is final.
+        hydrated: true,
       });
     }
 
@@ -206,6 +221,13 @@ export function AuthBootstrap() {
         // next) account doesn't inherit the previous user's avatar.
         picture: null,
         orgPictures: {},
+        // FR1.3 — drop the previous user's onboarding stamp on sign-out
+        // so a fresh sign-in (or sign-up) is correctly redirected through
+        // the onboarding questionnaire. Mark hydrated=true here so AuthGate
+        // can still make its (negative) decision without waiting for a
+        // hydrate that won't happen (no session).
+        onboardedAt: null,
+        hydrated: true,
       });
     }
 
@@ -231,6 +253,10 @@ export function AuthBootstrap() {
         hydrate(session.user.id, session.user.email ?? null, metaDisplayName(session.user));
       } else {
         setSession(null);
+        // No session → no hydrate to run; flip the gate's tri-state to
+        // "settled" so it can route to /auth/sign-in immediately instead
+        // of holding the user on a blank screen indefinitely.
+        useStore.setState({ hydrated: true, onboardedAt: null });
       }
     });
 

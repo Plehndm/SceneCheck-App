@@ -19,7 +19,7 @@ import { api, type DbMessageRow } from '@/lib/api';
 import { isoToTime } from '@/lib/date-time';
 import { useStore } from '@/store/useStore';
 import { SC_THREADS } from '@/data/mocks';
-import type { Message } from '@/types/domain';
+import type { Message, MessageType } from '@/types/domain';
 
 export type MessageStatus = 'sending' | 'sent' | 'failed';
 
@@ -27,13 +27,18 @@ export interface UIMessage extends Message {
   id: string;
   status?: MessageStatus;
   edited?: boolean;
+  // FR9.5 — host-only announcements vs normal chatter. Default 'normal'
+  // when absent (legacy fixtures + live rows that predate migration 00038).
+  messageType?: MessageType;
 }
 
 interface UseChatMessagesResult {
   messages: UIMessage[];
   loading: boolean;
   error: Error | null;
-  send: (text: string) => Promise<void>;
+  // FR9.5 — optional second arg lets the host-only announcement composer
+  // route through the same send pipeline. Defaults to 'normal'.
+  send: (text: string, messageType?: MessageType) => Promise<void>;
   retry: (localId: string) => Promise<void>;
   reload: () => void;
 }
@@ -108,7 +113,7 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
     return () => sub.unsubscribe();
   }, [chatId, mock]);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, messageType: MessageType = 'normal') => {
     if (!chatId) return;
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -120,6 +125,7 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
       text: trimmed,
       time: 'now',
       status: 'sending',
+      messageType,
     };
     setMessages(prev => [...prev, optimistic]);
 
@@ -135,12 +141,18 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
     }
 
     try {
-      const row = await api.sendMessage(chatId, trimmed) as unknown as DbMessageRow;
+      const row = await api.sendMessage(chatId, trimmed, messageType) as unknown as DbMessageRow;
       // Swap temp id for the persisted UUID and stamp sent. The
       // realtime echo for this same id is now a no-op (dedupe).
       setMessages(prev => prev.map(m =>
         m.id === tempId
-          ? { ...m, id: row.id, status: 'sent', edited: row.edited }
+          ? {
+              ...m,
+              id: row.id,
+              status: 'sent',
+              edited: row.edited,
+              messageType: row.message_type ?? messageType,
+            }
           : m,
       ));
     } catch (e) {
@@ -167,10 +179,19 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
     }
     if (!chatId) return;
     try {
-      const row = await api.sendMessage(chatId, target.text) as unknown as DbMessageRow;
+      // Preserve the original messageType on retry so a failed announcement
+      // doesn't silently demote to a normal message.
+      const mt = target.messageType ?? 'normal';
+      const row = await api.sendMessage(chatId, target.text, mt) as unknown as DbMessageRow;
       setMessages(prev => prev.map(m =>
         m.id === localId
-          ? { ...m, id: row.id, status: 'sent', edited: row.edited }
+          ? {
+              ...m,
+              id: row.id,
+              status: 'sent',
+              edited: row.edited,
+              messageType: row.message_type ?? mt,
+            }
           : m,
       ));
     } catch {
@@ -198,5 +219,8 @@ function transformRow(row: DbMessageRow, meId: string | null): UIMessage {
     time: isoToTime(row.created_at),
     status: isMe ? 'sent' : undefined,
     edited: row.edited,
+    // FR9.5 — propagate to the UI shape. Default 'normal' so legacy rows
+    // (pre-migration-00038) still render as a plain message.
+    messageType: row.message_type ?? 'normal',
   };
 }

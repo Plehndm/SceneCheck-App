@@ -21,7 +21,10 @@ import {
   SC_CHATS, SC_THREADS,
   SC_VISIBLE_PEOPLE, SC_ORGS, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
-import type { SCEvent, Account, Chat, Interest, Visibility, AccountType } from '@/types/domain';
+import type {
+  SCEvent, Account, Chat, Interest, Visibility, AccountType,
+  HostAnalyticsRow, MessageType,
+} from '@/types/domain';
 
 // The raw `messages` row shape returned by getChatMessages in live mode.
 // Exported so the chat-thread hook can type its transform without re-declaring
@@ -35,6 +38,10 @@ export interface DbMessageRow {
   body: string;
   edited: boolean;
   created_at: string;
+  // FR9.5 — surfaced so useChatMessages can flag announcement bubbles.
+  // Defaults to 'normal' on the DB side (migration 00038); the column is
+  // NOT NULL with a default so it's always present on a returned row.
+  message_type?: import('@/types/domain').MessageType;
 }
 
 // ── ID mapping (mock string IDs ↔ real UUIDs) ─────────────────
@@ -162,6 +169,42 @@ function transformProfileRow(row: ProfileRow): Account {
 const PROFILE_COLS = 'user_id, name, username, bio, avatar_url, visibility, account_type, avg_rating';
 
 export const isMock = (): boolean => !isLiveBackendAvailable();
+
+// FR5.3 — Mock analytics aggregators. Live mode uses RPCs, but to keep the
+// screen browsable in mock mode we derive a tag-count distribution from
+// SC_EVENTS. SC_EVENTS doesn't carry an explicit `city` field, so we treat
+// a city match generously: any event whose `where` contains the city
+// substring counts. Venue matching is exact-substring on `where`.
+function aggregateInterests(events: SCEvent[]): HostAnalyticsRow[] {
+  const counts = new Map<string, number>();
+  for (const ev of events) {
+    for (const tag of ev.interests || []) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([interest_name, event_count]) => ({ interest_name, event_count }))
+    .sort((a, b) => b.event_count - a.event_count);
+}
+
+function mockAnalyticsByCity(city: string): HostAnalyticsRow[] {
+  const needle = city.trim().toLowerCase();
+  if (!needle) return aggregateInterests(SC_EVENTS);
+  const matches = SC_EVENTS.filter(e =>
+    (e.where || '').toLowerCase().includes(needle)
+    // Fallback: a couple of canonical UCI-area cities most fixtures imply.
+    || ['irvine', 'newport', 'uci'].some(token => needle.includes(token)
+      && (e.where || '').toLowerCase().includes(token)),
+  );
+  return aggregateInterests(matches);
+}
+
+function mockAnalyticsByVenue(venue: string): HostAnalyticsRow[] {
+  const needle = venue.trim().toLowerCase();
+  if (!needle) return [];
+  const matches = SC_EVENTS.filter(e => (e.where || '').toLowerCase().includes(needle));
+  return aggregateInterests(matches);
+}
 
 function requireClient() {
   if (!supabase) throw new Error('Supabase client not configured — set EXPO_PUBLIC_SUPABASE_URL/ANON_KEY.');
@@ -971,6 +1014,89 @@ export const api = {
     return { ok: true as const };
   },
 
+  // FR1.3 — Mark the caller's account as onboarded. Subscribes each named
+  // interest first (reuses setInterestSubscribed so new tags are created the
+  // same way the catalog screen creates them), then stamps profiles.onboarded_at
+  // = now() so AuthGate stops redirecting to /onboarding/interests on next
+  // hydrate. Mock mode flips the in-memory `onboardedAt` slice so a screen
+  // built against mock data exercises the same code path as live.
+  async markOnboarded(interestNames: string[]): Promise<{ ok: true }> {
+    if (isMock()) {
+      // Lazy import to avoid a cycle with @/store/useStore (which imports the
+      // mocks that this module also pulls in).
+      const { useStore } = await import('@/store/useStore');
+      useStore.setState({ onboardedAt: Date.now() });
+      // Also push the picked tags into the local interests set so the
+      // onboarding → home transition shows their first batch of matched events.
+      if (interestNames.length) {
+        const current = useStore.getState();
+        const next = new Set(current.subscribedInterests);
+        for (const t of interestNames) next.add(t);
+        useStore.setState({
+          subscribedInterests: next,
+          me: { ...current.me, interests: Array.from(next) },
+        });
+      }
+      return { ok: true };
+    }
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    // Sequential rather than Promise.all so a failure on tag #3 doesn't leave
+    // tags #1+#2 written-and-orphaned with the onboarding flag unset (or vice
+    // versa). The set is tiny in practice (≤ ~10 tags during onboarding).
+    for (const name of interestNames) {
+      await this.setInterestSubscribed(name, true);
+    }
+    const { error } = await sb.from('profiles')
+      .update({ onboarded_at: new Date().toISOString() })
+      .eq('user_id', user.id);
+    if (error) throw error;
+    return { ok: true };
+  },
+
+  // FR5.3 — Host analytics: "what tags are popular among events in this city?"
+  // Backed by RPC host_analytics_by_city (migration 00036), which returns
+  // (interest_name TEXT, event_count INT). Mock mode aggregates over SC_EVENTS
+  // filtered by .city, since the mock fixtures don't have a populated city
+  // column — we use a small derived map keyed off the venue name so the
+  // screen has *something* sensible to render in mock mode. Live mode is the
+  // accurate path.
+  async fetchHostAnalyticsByCity(city: string): Promise<HostAnalyticsRow[]> {
+    if (isMock()) return mockAnalyticsByCity(city);
+    const sb = requireClient();
+    const { data, error } = await sb.rpc('host_analytics_by_city', { p_city: city });
+    if (error) throw error;
+    return (data ?? []) as HostAnalyticsRow[];
+  },
+
+  // FR5.3 — Host analytics: "what tags have been hosted at this venue?"
+  // Backed by RPC host_analytics_by_venue (migration 00036). Same shape as
+  // by_city; mock mode aggregates over SC_EVENTS filtered by `where`.
+  async fetchHostAnalyticsByVenue(venue: string): Promise<HostAnalyticsRow[]> {
+    if (isMock()) return mockAnalyticsByVenue(venue);
+    const sb = requireClient();
+    const { data, error } = await sb.rpc('host_analytics_by_venue', { p_venue: venue });
+    if (error) throw error;
+    return (data ?? []) as HostAnalyticsRow[];
+  },
+
+  // FR5.10 — Organizer remove. Invokes the organizer-remove Edge Function
+  // (which deletes the event_subscriptions row + the chat_members row under
+  // service-role privileges, neither of which the host can touch directly via
+  // client RLS). supabase-js auto-forwards the caller's JWT in the
+  // Authorization header so the Edge Function can verify the caller is the
+  // event's creator before doing anything destructive.
+  async organizerRemove(eventId: string, userId: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const { error } = await sb.functions.invoke('organizer-remove', {
+      body: { event_id: toUUID(eventId), user_id: toUUID(userId) },
+    });
+    if (error) throw new Error(error.message || 'Failed to remove attendee');
+    return { ok: true };
+  },
+
   // ── Chat ──
   async getChats(): Promise<Chat[]> {
     if (isMock()) return SC_CHATS;
@@ -1027,20 +1153,65 @@ export const api = {
     return (data ?? []) as DbMessageRow[];
   },
 
-  async sendMessage(chatId: string, body: string) {
-    if (isMock()) return { id: 'mock_' + Date.now(), body };
+  async sendMessage(chatId: string, body: string, messageType: MessageType = 'normal') {
+    if (isMock()) return { id: 'mock_' + Date.now(), body, message_type: messageType };
     const sb = requireClient();
     const user = await this.getCurrentUser();
     if (!user || !('id' in user)) throw new Error('Not authenticated');
+    // FR9.5 — pass message_type through to the INSERT. The RLS policy on the
+    // backend (migration 00038) is what actually permits / denies announcement
+    // posts (only the event creator can); the client just forwards the flag.
+    // Defaults to 'normal' so existing callers (everywhere except the
+    // host-only announcement composer) keep their behaviour unchanged.
     const { data, error } = await sb
       .from('messages')
-      .insert({ chat_id: toUUID(chatId), sender_id: user.id, body })
+      .insert({
+        chat_id: toUUID(chatId),
+        sender_id: user.id,
+        body,
+        message_type: messageType,
+      })
       .select()
       .single();
     // Throw a real Error (with the PostgREST message) rather than the raw
     // error object — otherwise it surfaces in the UI as "[object Object]".
     if (error) throw new Error(error.message || 'Failed to send message');
     return data;
+  },
+
+  // FR9.5 helper — does the caller have permission to post announcements
+  // in this chat? Returns true only when the chat is tied to an event AND
+  // the current user is that event's creator. The screen uses this to
+  // gate the announcement-toggle on the composer; the RLS policy on
+  // messages still enforces server-side.
+  async canPostAnnouncement(chatId: string): Promise<boolean> {
+    if (isMock()) {
+      // Mock convenience: if the chat is an event chat hosted by SC_ME,
+      // allow it. Otherwise deny. Matches the live semantics closely
+      // enough for the screen agent to develop against.
+      const chat = SC_CHATS.find(c => c.id === chatId);
+      if (!chat || chat.kind !== 'event' || !chat.eventId) return false;
+      const event = SC_EVENT_BY_ID[chat.eventId];
+      return !!event && event.hostId === SC_ME.id;
+    }
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) return false;
+    // Embed events to fetch the creator_id; if the chat has no event link
+    // (it's a DM or a non-event group), the embed yields null and we
+    // return false. Single-row read keyed on chat.id, RLS-readable.
+    const { data, error } = await sb
+      .from('chats')
+      .select('event_id, events(creator_id)')
+      .eq('id', toUUID(chatId))
+      .maybeSingle();
+    if (error || !data) return false;
+    // The PostgREST embed is a to-one row when there's at most one parent;
+    // narrow without `as any` by extracting via known keys.
+    const row = data as { event_id: string | null; events: { creator_id?: string } | { creator_id?: string }[] | null };
+    if (!row.event_id || !row.events) return false;
+    const event = Array.isArray(row.events) ? row.events[0] : row.events;
+    return event?.creator_id === user.id;
   },
 
   subscribeToChat(chatId: string, onMessage: (m: unknown) => void) {
