@@ -386,6 +386,64 @@ export default function CreateEventScreen() {
           </View>
         </Field>
 
+        {/* Group-chat + calendar opt-ins (FR5.9, FR7.2). Both defaulted on,
+            but explicit so the user consents. Same chip-row pattern as
+            Visibility above — a single chip per option that toggles between
+            "On" / "Off" affordances. */}
+        <Field label="Group chat">
+          <Pressable
+            onPress={() => set('autoGroupChat', !form.autoGroupChat)}
+            accessibilityLabel="Toggle auto-create group chat"
+            style={({ pressed }) => [{
+              padding: 12, borderRadius: RADIUS.md,
+              borderWidth: 1.5,
+              borderColor: form.autoGroupChat ? t.primary : t.line,
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon
+              name={form.autoGroupChat ? 'check' : 'x'}
+              size={14}
+              color={form.autoGroupChat ? t.primary : t.ink3}
+            />
+            <View style={{ flex: 1 }}>
+              <SCText size={13} weight={form.autoGroupChat ? '600' : '500'}>
+                {form.autoGroupChat ? 'Auto-create group chat' : 'No group chat'}
+              </SCText>
+              <SCText size={11} color={t.ink3} style={{ marginTop: 2 }}>
+                Attendees can chat together leading up to the event.
+              </SCText>
+            </View>
+          </Pressable>
+        </Field>
+
+        <Field label="Calendar">
+          <Pressable
+            onPress={() => set('addToCalendar', !form.addToCalendar)}
+            accessibilityLabel="Toggle add to my calendar"
+            style={({ pressed }) => [{
+              padding: 12, borderRadius: RADIUS.md,
+              borderWidth: 1.5,
+              borderColor: form.addToCalendar ? t.primary : t.line,
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+            }, pressed && { opacity: 0.85 }]}
+          >
+            <SCIcon
+              name={form.addToCalendar ? 'check' : 'x'}
+              size={14}
+              color={form.addToCalendar ? t.primary : t.ink3}
+            />
+            <View style={{ flex: 1 }}>
+              <SCText size={13} weight={form.addToCalendar ? '600' : '500'}>
+                {form.addToCalendar ? 'Add to my calendar' : 'Don\'t add to calendar'}
+              </SCText>
+              <SCText size={11} color={t.ink3} style={{ marginTop: 2 }}>
+                Saves this event to your linked Google Calendar.
+              </SCText>
+            </View>
+          </Pressable>
+        </Field>
+
         <SCCard style={{ padding: 12 }}>
           <SCText variant="mono" size={11} color={t.ink3}>
             Once {Math.max(1, Math.ceil(form.cap / 5))} subscribers join, this event becomes publicly

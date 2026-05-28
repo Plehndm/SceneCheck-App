@@ -45,9 +45,9 @@ export default function HelpFeedbackScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 14, gap: 8 }}>
-        {ROWS.map((row, i) => (
+        {ROWS.map((row) => (
           <Pressable
-            key={i}
+            key={row.label}
             onPress={() => handlePress(row)}
             style={({ pressed }) => [pressed && { opacity: 0.85 }]}
           >

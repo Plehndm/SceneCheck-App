@@ -55,7 +55,16 @@ export default function InterestDetailScreen() {
         <SCText size={16} style={{ lineHeight: 23, marginTop: 18 }}>{i.desc}</SCText>
 
         <View style={{ marginTop: 22, marginBottom: 22 }}>
-          <SCText variant="labelCap" style={{ marginBottom: 8 }}>Activity in your area</SCText>
+          <View style={{
+            flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
+            marginBottom: 8,
+          }}>
+            <SCText variant="labelCap">Activity in your area</SCText>
+            {/* The chart below is a fixed fixture — labelled so users
+                aren't misled into reading it as real per-tag activity.
+                (L-9; real per-tag activity TBD.) */}
+            <SCText variant="mono" size={9} weight="700" color={t.ink3}>SAMPLE</SCText>
+          </View>
           <SCCard style={{ padding: 16 }}>
             <ActivityBar />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>

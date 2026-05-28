@@ -61,8 +61,18 @@ export default function RatingsScreen() {
       },
     });
   };
+  // Newest first. Live data carries an ISO `createdAt` from the DB
+  // (`ratings.created_at`); mock fixtures don't, but their string `id` is
+  // insertion-ordered ("r01", "r02", …), so falling back to id preserves the
+  // newest-first ordering in mock mode. Sorting on `id` alone in live mode
+  // produced UUID lexicographic order, which has no chronological meaning
+  // and randomly buried recent reviews.
   const ordered = useMemo(
-    () => [...all].sort((a, b) => b.id.localeCompare(a.id)),
+    () => [...all].sort((a, b) => {
+      const aKey = a.createdAt ?? a.id;
+      const bKey = b.createdAt ?? b.id;
+      return bKey.localeCompare(aKey);
+    }),
     [all],
   );
 
@@ -154,7 +164,7 @@ export default function RatingsScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       {Array.from({ length: 5 }).map((_, i) => (
                         <SCIcon
-                          key={i}
+                          key={`star-${i}`}
                           name="star"
                           size={12}
                           color={i < r.rating ? t.warn : t.line}

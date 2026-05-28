@@ -28,7 +28,7 @@ import { useAttendees } from '@/hooks/useAttendees';
 import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
 import { SC_CHATS } from '@/data/mocks';
-import { whenRange } from '@/lib/date-time';
+import { whenRange, parseTime } from '@/lib/date-time';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { RADIUS } from '@/theme/tokens';
@@ -147,6 +147,29 @@ export default function EventDetailScreen() {
   // "RECOMMENDED" pill next to the category label.
   const alsoRec = isAlsoRecommended(e, me.interests ?? []);
 
+  // Rate-event gating (FR5.11). The rate button only appears when the event
+  // has ended AND the viewer attended (and isn't the host). SCEvent doesn't
+  // carry an ISO `endAt` field — the closest we have is `startAt` (ISO) and
+  // `endTime` (display string like "9:00 PM"); combine them to derive the
+  // real end Date. Falls back to "not ended" if either is missing (scraped
+  // events without a known end time).
+  const endAt = (() => {
+    if (!e.startAt || !e.endTime) return null;
+    const start = new Date(e.startAt);
+    if (Number.isNaN(start.getTime())) return null;
+    const { h, m, ap } = parseTime(e.endTime);
+    let hr = h % 12;
+    if (ap === 'PM') hr += 12;
+    const end = new Date(start);
+    end.setHours(hr, m, 0, 0);
+    // End-of-day rollover: if the end clock-time is earlier than the start
+    // clock-time on the same date, the event ends the next calendar day.
+    if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
+    return end;
+  })();
+  const eventEnded = endAt ? endAt.getTime() < Date.now() : false;
+  const canRate = !isHost && isJoined && eventEnded;
+
   const handleToggleJoin = async () => {
     if (!id) return;
     if (isJoined) {
@@ -171,6 +194,11 @@ export default function EventDetailScreen() {
     } else {
       // Optimistic add — local first, then commit.
       joinEvent(id);
+      // Will this join hit the waitlist? (FR5.5). We use the same predicate the
+      // CTA label uses — capacity is known AND it's full — to decide which toast
+      // to show before the server responds. If the server returns a different
+      // status (e.g. somebody else's slot opened up) we override below.
+      const willWaitlist = !capUnknown && goingCount >= e.cap;
       if (capUnknown) {
         // No listed capacity (scraped) — joining is unlimited; warn the user to
         // check the source for the real attendee limit / details.
@@ -182,11 +210,33 @@ export default function EventDetailScreen() {
             ? { label: 'VIEW LISTING', onPress: () => { Linking.openURL(e.sourceUrl!).catch(() => {}); } }
             : undefined,
         });
+      } else if (willWaitlist) {
+        showToast({ message: `Added to waitlist for "${e.title}".`, kind: 'info' });
       } else {
         showToast({ message: `Joined "${e.title}".`, kind: 'success' });
       }
       try {
-        await api.subscribeToEvent(id, true);
+        const result = await api.subscribeToEvent(id, true);
+        // FR5.5: when the atomic-subscribe RPC reports the join landed on the
+        // waitlist, surface that explicitly with the position. `api.subscribe
+        // ToEvent` now returns `{ status, chat_id, waitlist_position }` — the
+        // position comes from a one-row follow-up SELECT against the waitlist
+        // table (the RPC itself still returns the legacy two-field shape).
+        const status = result.status;
+        const waitlistPosition = result.waitlist_position;
+        if (status === 'waitlisted' && !willWaitlist && !capUnknown) {
+          showToast({
+            message: typeof waitlistPosition === 'number'
+              ? `You're #${waitlistPosition} on the waitlist for "${e.title}".`
+              : `Added to waitlist for "${e.title}".`,
+            kind: 'info',
+          });
+        } else if (status === 'waitlisted' && typeof waitlistPosition === 'number') {
+          showToast({
+            message: `You're #${waitlistPosition} on the waitlist for "${e.title}".`,
+            kind: 'info',
+          });
+        }
       } catch (err) {
         // Roll back the optimistic add so the UI matches reality.
         leaveEventStore(id);
@@ -442,8 +492,11 @@ export default function EventDetailScreen() {
         >
           <SCIcon name="chat" size={20} color={t.ink} />
         </Pressable>
-        {/* Rate the event — not on your own event (you don't rate yourself). */}
-        {!isHost && (
+        {/* Rate the event — FR5.11: only visible to attendees, after the
+            event has ended, and never to the host. We surface the rate
+            sheet only while `canRate` is true; the server still enforces
+            attendance + the 24h window. */}
+        {canRate && (
           <Pressable
             onPress={() => setRateOpen(true)}
             accessibilityLabel="Rate this event"

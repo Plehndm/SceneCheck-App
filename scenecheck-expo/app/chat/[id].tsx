@@ -55,9 +55,13 @@ export default function ChatThreadScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    // Auto-scroll to bottom when messages change.
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [msgs.length]);
+    // Auto-scroll to bottom when messages change. Clean up the pending timer
+    // on unmount / re-run so it can't fire against a stale ref (M7). Depend
+    // on the message array identity, not just its length, so edited /
+    // replaced messages (same length, different content) still re-scroll.
+    const tid = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+    return () => clearTimeout(tid);
+  }, [msgs]);
 
   // Mock-only: a DM with someone who blocked you renders an unavailable stub
   // (the blockedYou fixture). Live blocking is enforced by RLS — such a chat

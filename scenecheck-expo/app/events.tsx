@@ -16,6 +16,8 @@ import { SCListSkeleton } from '@/components/SCSkeleton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useEvents } from '@/hooks/useEvents';
+import { useDateCityLabel } from '@/hooks/useDateCityLabel';
+import { useLocation } from '@/hooks/useLocation';
 import { isRecommendedFor, eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { whenRange } from '@/lib/date-time';
@@ -30,6 +32,12 @@ export default function EventsListScreen() {
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
   const meInterests = useStore(s => s.me.interests ?? []);
+  // Live "today · city" label, same hook the Home + Map tabs use; previously
+  // hardcoded to "Sat May 9 · Irvine" (L-8). Pass location through explicitly
+  // — `useDateCityLabel` no longer mounts its own `useLocation()` (M4 in
+  // CODE_REVIEW_REPORT_3.md).
+  const { coords, status: locStatus } = useLocation();
+  const dateCityLabel = useDateCityLabel(coords, locStatus);
   // Live in live mode, fixture array in mock mode — same hook the
   // Home tab + Map tab use.
   const { events: allEvents, loading, reload } = useEvents();
@@ -82,7 +90,7 @@ export default function EventsListScreen() {
       <View style={{ paddingHorizontal: 18, paddingBottom: 14 }}>
         <SCText variant="displayTight" size={32}>Events nearby</SCText>
         <SCText size={13} color={t.ink3} style={{ marginTop: 6 }}>
-          {list.length} {list.length === 1 ? 'event' : 'events'} happening · Sat May 9 · Irvine
+          {list.length} {list.length === 1 ? 'event' : 'events'} happening · {dateCityLabel}
         </SCText>
       </View>
 
