@@ -72,6 +72,7 @@ export default function RootLayout() {
           <Stack.Screen name="settings/help" options={{ presentation: 'card' }} />
           <Stack.Screen name="requests" options={{ presentation: 'card' }} />
           <Stack.Screen name="my-hosting" options={{ presentation: 'card' }} />
+          <Stack.Screen name="host-analytics" options={{ presentation: 'card' }} />
           <Stack.Screen name="my-events" options={{ presentation: 'card' }} />
           <Stack.Screen name="my-friends" options={{ presentation: 'card' }} />
           <Stack.Screen name="my-following" options={{ presentation: 'card' }} />
@@ -97,6 +98,11 @@ export default function RootLayout() {
           <Stack.Screen name="auth/reset-password" />
           <Stack.Screen name="auth/sign-up" options={{ presentation: 'modal' }} />
           <Stack.Screen name="auth/forgot-password" options={{ presentation: 'modal' }} />
+          {/* FR1.3 onboarding picker — outside the (tabs) group so the
+              AuthGate inside the tabs layout doesn't loop the user back here
+              the moment they finish picking. Presented as a card so it
+              transitions cleanly from sign-up's modal. */}
+          <Stack.Screen name="onboarding/interests" options={{ presentation: 'card' }} />
         </Stack>
         <AuthBootstrap />
         <ToastHost />

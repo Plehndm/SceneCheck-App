@@ -122,7 +122,19 @@ export default function SignUpScreen() {
         message: `Welcome to SceneCheck, ${displayName.trim().split(' ')[0]}!`,
         kind: 'success',
       });
-      router.replace('/(tabs)' as never);
+      // FR1.3: live-mode signups with a session land on the interest picker
+      // before reaching the tabs so the home feed has something to rank
+      // against. Mock mode seeds skip onboarding (the mock user already has
+      // SC_ME.interests, and onboardedAt defaults to non-null in the store),
+      // so we drop straight into /(tabs) — AuthGate won't bounce them.
+      // Returning users re-signing up are handled by the gate too: if the
+      // server already has onboarded_at set, AuthBootstrap re-hydrates it
+      // on next session refresh and the gate routes them out of onboarding.
+      if (api.isMock()) {
+        router.replace('/(tabs)' as never);
+      } else {
+        router.replace('/onboarding/interests' as never);
+      }
     } catch (e) {
       showToast({
         message: e instanceof Error ? e.message : 'Sign-up failed.',
