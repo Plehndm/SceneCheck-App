@@ -28,13 +28,22 @@ serve(async (req: Request) => {
     const admin = createAdminClient();
 
     // Atomic seat decision. The RPC takes a per-event advisory lock,
-    // checks capacity, inserts the subscription, and (if full) appends
-    // the waitlist row + returns the position — all in one transaction.
+    // checks event status + capacity, inserts the subscription, and (if
+    // full) appends the waitlist row + returns the position — all in one
+    // transaction. Migration 00029 added the status guard: subscribing to a
+    // draft/cancelled/past event raises a Postgres exception that we map
+    // back to a 4xx so the client distinguishes "event not open" from a
+    // real server fault.
     const { data: rpcResult, error: rpcErr } = await admin.rpc(
       "subscribe_to_event_atomic",
       { p_event_id: event_id, p_user_id: userId },
     );
-    if (rpcErr) return errorResponse(rpcErr.message, 500);
+    if (rpcErr) {
+      const msg = rpcErr.message ?? "";
+      if (msg.includes("Event not found")) return errorResponse(msg, 404);
+      if (msg.includes("not open for subscription")) return errorResponse(msg, 409);
+      return errorResponse(msg || "subscribe RPC failed", 500);
+    }
 
     const row = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
     if (!row) return errorResponse("subscribe RPC returned no row", 500);
