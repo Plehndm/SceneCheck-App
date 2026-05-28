@@ -46,6 +46,26 @@ jest.mock('expo-notifications', () => ({
 // expo-device — controls the "real device only" guard in lib/notifications.
 jest.mock('expo-device', () => ({ isDevice: true }));
 
+// expo-auth-session/providers/google — settings/linked-calendar.tsx mounts
+// `Google.useAuthRequest`, which throws when no client IDs are configured
+// (jest's env strips EXPO_PUBLIC_GOOGLE_OAUTH_*). Stub the hook so the
+// screen renders; tests don't exercise the OAuth round-trip.
+jest.mock('expo-auth-session/providers/google', () => ({
+  useAuthRequest: jest.fn(() => [
+    /* request */ null,
+    /* response */ null,
+    /* promptAsync */ jest.fn().mockResolvedValue({ type: 'dismiss' }),
+  ]),
+}));
+
+// expo-web-browser — linked-calendar calls `maybeCompleteAuthSession` at
+// module scope to finalize the OAuth redirect. In jest there's no browser,
+// so a no-op is correct.
+jest.mock('expo-web-browser', () => ({
+  maybeCompleteAuthSession: jest.fn(),
+  openBrowserAsync: jest.fn().mockResolvedValue({ type: 'cancel' }),
+}));
+
 // expo-router — `useLocalSearchParams` is exposed as a jest.fn so screen
 // tests can override the params per case (e.g. `mockReturnValue({ id: 'e1' })`).
 // Stack/Tabs are made callable with a Screen sub-component so layout
