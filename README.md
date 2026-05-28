@@ -154,6 +154,54 @@ We discussed architecture decisions about what backend we should use and how to 
 
 ---
 
+## Meeting #4 — May 15, 2026
+
+**Type: In-person** <!-- In-person / Virtual / Async -->
+
+**Attendees:**
+| Name | Participation |
+|------|--------------|
+| David Plehn | <mark>In-person</mark> / Virtual / Slack / Email |
+| Shrujan Sriram | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kyle He | <mark>In-person</mark> / Virtual / Slack / Email |
+| Duy Tran | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kaylee Quinn | <mark>In-person</mark> / Virtual / Slack / Email |
+
+**Summary:**
+<!-- 50–100 words describing what was discussed -->
+We discussed how David Plehn should do the programming as he has access to claude code and the group would collaborativly give edits and bugs to be added or fixed to him and he would make the appropriate changes. We decided to have everyone go over the requirements and architecture document again to refresh what features and functionality we wanted and how the architecture would reflect that.
+
+**Action Items:**
+- [ ] Meeting Summary — assigned to @David Plehn — due 5/8/26
+- [ ] Port Over Prototype — assigned to @David Plehn — due 5/20/26
+- [ ] Review Requirements and Architecture Document — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 5/20/26
+
+---
+
+## Meeting #5 — May 22, 2026
+
+**Type: In-person** <!-- In-person / Virtual / Async -->
+
+**Attendees:**
+| Name | Participation |
+|------|--------------|
+| David Plehn | <mark>In-person</mark> / Virtual / Slack / Email |
+| Shrujan Sriram | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kyle He | <mark>In-person</mark> / Virtual / Slack / Email |
+| Duy Tran | <mark>In-person</mark> / Virtual / Slack / Email |
+| Kaylee Quinn | <mark>In-person</mark> / Virtual / Slack / Email |
+
+**Summary:**
+<!-- 50–100 words describing what was discussed -->
+We had a group update on the current state of the project, what features were implemented, how they were implemented, and what has not yet been developed. Reports were given both from David's end in a White Box testing format and from group members in a more Black Box fashion which allowed for deep testing on both fronts.
+
+**Action Items:**
+- [ ] Meeting Summary — assigned to @David Plehn — due 5/30/26
+- [ ] Fix Issues Found From Testing — assigned to @David Plehn — due 5/31/26
+- [ ] Test App and Identify Issues — assigned to @Kaylee Quinn, @David Plehn, @Duy Tran, @Kyle He, @Shrujan Sriram — due 5/31/26
+
+---
+
 ## Meeting #[N] — [Month Day, Year]
 
 **Type:** <!-- In-person / Virtual / Async -->
