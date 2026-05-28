@@ -17,6 +17,28 @@ import { SC_ACCOUNT_BY_ID, SC_EVENT_BY_ID, SC_VISIBLE_PEOPLE } from '@/data/mock
 import { RADIUS } from '@/theme/tokens';
 import type { Chat, ChatMember } from '@/types/domain';
 
+// Number of names to spell out before "+N" takes over in a non-event
+// group-chat title. Two names plus "+N" keeps the row to one line for
+// any group up to ~12-15 members on typical phone widths; past that
+// numberOfLines={1} on the SCText will truncate gracefully.
+const NAMES_BEFORE_PLUS = 2;
+
+// Build a fallback title for non-event group chats from the member
+// names: "Alice, Bob +3" style. Single-member arrays (DM with one
+// other) just return that one name. Empty arrays fall through to the
+// caller's final fallback. Names are trimmed and any empty / falsy
+// ones get a "Someone" placeholder so a missing profile row never
+// makes the title read "Alice, , Bob".
+function namesTitle(members: { name?: string | null }[]): string {
+  if (members.length === 0) return '';
+  const names = members.map(m => m.name?.trim() || 'Someone');
+  if (names.length === 1) return names[0];
+  if (names.length <= NAMES_BEFORE_PLUS + 1) return names.join(', ');
+  const head = names.slice(0, NAMES_BEFORE_PLUS).join(', ');
+  const rest = names.length - NAMES_BEFORE_PLUS;
+  return `${head} +${rest}`;
+}
+
 // Resolve up to two member-shaped objects per chat to render to the
 // left of the chat title. Priority order:
 //   1. chat.members from api.getChats (live mode — already populated
@@ -113,11 +135,36 @@ export default function ChatTab() {
       ) : (
       <View style={{ paddingHorizontal: 14, paddingTop: 14, gap: 10 }}>
         {chats.map(c => {
-          // Live mode: titles are resolved on the Chat (event title / other
-          // member's name) in api.getChats. Mock mode: resolve from SC_*.
-          const title = c.kind === 'event'
-            ? (c.title ?? (mock ? SC_EVENT_BY_ID[c.eventId ?? '']?.title : undefined) ?? 'Event chat')
-            : (c.title ?? (mock ? SC_ACCOUNT_BY_ID[c.personId ?? '']?.name : undefined) ?? 'DM');
+          // Title resolution:
+          //   • event chats   → event title (from chat row or SC_EVENT_BY_ID)
+          //   • DM (1 other)  → that person's name
+          //   • non-event group chat (no event title, multiple members)
+          //                   → comma-separated member names, truncated
+          //                     to "Alice, Bob +N" for larger groups so
+          //                     the row stays one line
+          // The non-event group case used to fall through to a hard-coded
+          // "DM" label because the resolver only looked at c.personId
+          // (which surfaces just one "other" member from getChats).
+          // namesTitle below covers it.
+          let title: string;
+          if (c.kind === 'event') {
+            title = c.title
+              ?? (mock ? SC_EVENT_BY_ID[c.eventId ?? '']?.title : undefined)
+              ?? 'Event chat';
+          } else {
+            const otherCount = c.members?.length ?? 0;
+            if (otherCount > 1) {
+              // Non-event group chat: members from the chat_members embed
+              // (live mode) or empty in mock mode (SC_CHATS doesn't model
+              // these). namesTitle handles both gracefully.
+              title = namesTitle(c.members ?? []) || c.title || 'Group chat';
+            } else {
+              title = c.title
+                ?? (mock ? SC_ACCOUNT_BY_ID[c.personId ?? '']?.name : undefined)
+                ?? namesTitle(c.members ?? [])
+                ?? 'DM';
+            }
+          }
           const avatars = chatAvatars(c, mock);
           // Stacked-avatar geometry: back avatar is top-left, front avatar
           // is offset bottom-right with a card-coloured "ring" around it

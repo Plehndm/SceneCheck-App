@@ -55,7 +55,7 @@ export default function MyHostingScreen() {
         <View style={{ flex: 1, minWidth: 0 }}>
           <SCText size={14} weight="600" numberOfLines={1}>{e.title}</SCText>
           <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-            {whenRange(e)} · {e.attendees}/{e.cap} going
+            {whenRange(e)} · {e.attendees}/{e.cap > 0 ? e.cap : 'unk'} going
           </SCText>
         </View>
         <SCIcon name="chevron-right" size={14} color={t.ink3} />

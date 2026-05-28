@@ -86,7 +86,12 @@ export function SCEventCard({ event, joined, showConflict, onPress, meInterests 
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
           <SCText variant="mono" size={11} weight="600">{String(event.attendees)}</SCText>
-          <SCText variant="mono" size={11} color={t.ink3}>/{event.cap}</SCText>
+          {/* Scraped events frequently arrive with capacity=null (DB) →
+              cap=0 in our domain shape. Treat 0 as "unknown / no
+              listed limit" rather than rendering a misleading "0/0".
+              Matches the events list (app/events.tsx:187) which has
+              the same fallback. */}
+          <SCText variant="mono" size={11} color={t.ink3}>/{event.cap > 0 ? event.cap : 'unk'}</SCText>
         </View>
         {event.interests.slice(0, 1).map(tag => (
           <SCTag key={tag} tag={tag} size="sm" tone="soft" />

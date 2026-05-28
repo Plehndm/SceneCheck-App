@@ -524,7 +524,7 @@ export default function OtherProfileScreen() {
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <SCText variant="display" size={14}>{e.title}</SCText>
                       <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
-                        {whenRange(e)} · {e.attendees}/{e.cap}
+                        {whenRange(e)} · {e.attendees}/{e.cap > 0 ? e.cap : 'unk'}
                       </SCText>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
                         <SCIcon name="star" size={11} color={er.average != null ? t.warn : t.ink3} />
