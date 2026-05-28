@@ -5,105 +5,52 @@
 // Metro auto-selects this file on iOS/Android via the `.native.tsx`
 // suffix; the TS-only Map.tsx is the fallback the typechecker resolves.
 //
-// Pin selection: `title` and `description` populate the native callout
-// bubble. The selected-animation trigger is decoupled from the iOS
-// gesture recognizer's auto-select path by attaching a ref to each
-// Marker and imperatively calling `showCallout()` / `hideCallout()` in
-// response to the screen's `selectedId` prop. That way the React
-// `focused` state is the single source of truth, and the callout's
-// open/close animation is driven by an explicit, traceable JS call
-// rather than by iOS' implicit gesture-recognizer → selectAnnotation:
-// path that has been the recurring crash source. Diagnostic
-// console.logs under `__DEV__` let us correlate every tap with its
-// props on the device console (Metro Bundler / adb logcat / Safari
-// Web Inspector) when the crash is reproduced — see the PinMarker
-// component below.
+// Pin selection — why there is no native callout bubble:
+//
+// iOS' MKMapView has a long-standing reference-counting bug in the
+// default callout-view lifecycle: after 2-3 `selectAnnotation:` cycles
+// on annotations with `canShowCallout = YES`, the next call dereferences
+// a callout view that was deallocated on a prior teardown. The crash is
+// purely count-based (not rate-based; pausing between taps doesn't help)
+// and it's reproducible against this app — see the device log captured
+// during debugging:
+//
+//   [Map] Marker.onPress {id: e9,        wasSelected: false}
+//   [PinMarker] effect   {id: e9,        selected: true}
+//   [Map] Marker.onPress {id: 9980b6f2…, wasSelected: false}
+//   [PinMarker] effect   {id: e9,        selected: false}
+//   [PinMarker] effect   {id: 9980b6f2…, selected: true}
+//   [Map] Marker.onPress {id: e9,        wasSelected: false}
+//   [PinMarker] effect   {id: e9,        selected: true}
+//   [PinMarker] effect   {id: 9980b6f2…, selected: false}
+//                                            ← every JS log lands, crash
+//                                              happens INSIDE iOS' next
+//                                              selectAnnotation: tick.
+//
+// `canShowCallout = YES` is set by iOS whenever a Marker has any of
+// `title`, `description`, or a `<Callout>` child. All three engage the
+// buggy lifecycle. The only reliable JS-level workaround is to not
+// engage it at all: no callout content of any kind on the Marker. The
+// brief-summary text the user would have seen in the callout is already
+// rendered (with more detail) in the focused-event card below the map
+// — see `app/(tabs)/map.tsx` lines ~200-260.
+//
+// If a callout-like bubble ABOVE the pin is wanted later, build it as
+// a custom React Native absolute-positioned overlay using
+// MapView.pointForCoordinate(...) for projection. That path doesn't
+// involve MKAnnotationView and so doesn't engage the bug.
+//
+// Diagnostic logging under `__DEV__` stays in place so any regression
+// is caught early — Metro strips it from production builds.
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Platform, View, type ViewStyle, type StyleProp } from 'react-native';
-import MapView, {
-  Marker,
-  Circle,
-  PROVIDER_GOOGLE,
-  type MapMarker,
-} from 'react-native-maps';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useTokens } from '@/theme/ThemeProvider';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
-  eventLatLng, pinColor, type MapProps, type LatLng,
+  eventLatLng, pinColor, type MapProps,
 } from './types';
-import type { SCEvent } from '@/types/domain';
-
-// One pin. The component exists so each Marker can own its own ref and
-// useEffect, and so the show/hide-callout calls fire in lock-step with
-// the `selected` prop change (rather than from a parent-level effect
-// that would have to iterate every marker on every selection change —
-// noisier on the device console, harder to attribute crashes to a
-// specific pin).
-function PinMarker({
-  e,
-  ll,
-  color,
-  selected,
-  onPress,
-}: {
-  e: SCEvent;
-  ll: LatLng;
-  color: string;
-  selected: boolean;
-  onPress: (ev: SCEvent) => void;
-}) {
-  // MapMarker is the ref shape exported by react-native-maps for the
-  // Marker class component; showCallout / hideCallout are members of it.
-  const ref = useRef<MapMarker | null>(null);
-
-  // Drive the native callout from React state. When `selected` flips:
-  //   true → ref.current.showCallout() (animates the callout open)
-  //   false → ref.current.hideCallout() (animates it closed)
-  // The native gesture-recognizer will ALSO trigger a select-on-tap
-  // for the same marker, but that's now an additive event, not the
-  // sole trigger — and it operates on the SAME annotation view rather
-  // than competing with React's view of the world.
-  useEffect(() => {
-    if (selected) ref.current?.showCallout();
-    else ref.current?.hideCallout();
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[PinMarker] effect', { id: e.id, selected });
-    }
-  }, [selected, e.id]);
-
-  return (
-    <Marker
-      ref={ref}
-      coordinate={ll}
-      // title + description populate the native callout's text. They
-      // are read by iOS once when the callout view is built; the view
-      // is then shown/hidden via the ref calls above.
-      title={e.title}
-      description={e.where}
-      pinColor={color}
-      // Selected pin floats above the rest so an overlapping cluster
-      // doesn't bury the chosen one.
-      zIndex={selected ? 999 : undefined}
-      onPress={(ev) => {
-        if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.log(
-            '[Map] Marker.onPress',
-            {
-              id: e.id,
-              title: e.title,
-              wasSelected: selected,
-              action: ev?.nativeEvent?.action ?? 'unknown',
-            },
-          );
-        }
-        onPress(e);
-      }}
-    />
-  );
-}
 
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
@@ -116,9 +63,9 @@ export function Map({
   const center = centerOn ?? user ?? initialCenter;
 
   // Diagnostic — fires when the prop the screen passes in changes, so
-  // we can correlate React selection state with native callout
-  // behaviour on the device console. Stripped in production by Metro's
-  // __DEV__ dead-code elimination.
+  // we can correlate React selection state with native behaviour on the
+  // device console if anything ever regresses. Stripped in production
+  // by Metro's __DEV__ dead-code elimination.
   useEffect(() => {
     if (__DEV__) {
       // eslint-disable-next-line no-console
@@ -168,13 +115,31 @@ export function Map({
           const color = pinColor(e, t, meInterests);
           const selected = e.id === selectedId;
           return (
-            <PinMarker
+            <Marker
               key={e.id}
-              e={e}
-              ll={ll}
-              color={color}
-              selected={selected}
-              onPress={(ev) => onPinPress?.(ev)}
+              coordinate={ll}
+              // No title / description / <Callout> child — see the header
+              // comment for the iOS callout-lifecycle crash that any of
+              // those engage. Pin appearance is the native sprite tinted
+              // by pinColor; selection is purely a zIndex lift so the
+              // chosen pin floats above an overlapping cluster.
+              pinColor={color}
+              zIndex={selected ? 999 : undefined}
+              onPress={(ev) => {
+                if (__DEV__) {
+                  // eslint-disable-next-line no-console
+                  console.log(
+                    '[Map] Marker.onPress',
+                    {
+                      id: e.id,
+                      title: e.title,
+                      wasSelected: selected,
+                      action: ev?.nativeEvent?.action ?? 'unknown',
+                    },
+                  );
+                }
+                onPinPress?.(e);
+              }}
             />
           );
         })}
