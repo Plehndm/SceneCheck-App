@@ -61,6 +61,16 @@ export default function MapTab() {
   // useLocation() above is the only GPS reader.
   const dateCityLabel = useDateCityLabel(coords, status);
   const [focused, setFocused] = useState<SCEvent | null>(null);
+  // Diagnostic — fires when React selection state actually changes, so
+  // each device-console line is a real state transition (not a render).
+  // Stripped in production by Metro's __DEV__ dead-code elimination.
+  useEffect(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log('[MapScreen] focused →', focused?.id ?? 'null',
+        focused ? `(${focused.title})` : '');
+    }
+  }, [focused]);
   // Pull pins from the API. In live mode this hits the rank_events_query
   // RPC against PostGIS; in mock mode it returns SC_EVENTS synchronously.
   const { events, reload: reloadEvents } = useEvents({
