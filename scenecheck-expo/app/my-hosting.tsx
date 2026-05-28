@@ -79,6 +79,34 @@ export default function MyHostingScreen() {
         </SCText>
       </View>
 
+      {/* FR5.3 — entry point to the host analytics screen. Surfaced above the
+          list so it's visible regardless of whether the host has past events
+          (the analytics screen seeds its inputs from the hosted list). */}
+      <View style={{ paddingHorizontal: 14, paddingBottom: 12 }}>
+        <Pressable
+          onPress={() => router.push('/host-analytics' as never)}
+          accessibilityLabel="Open host analytics"
+          style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+        >
+          <SCCard style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{
+              width: 44, height: 44, borderRadius: RADIUS.md,
+              backgroundColor: t.primarySoft,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <SCIcon name="star" size={20} color={t.primary} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <SCText size={14} weight="600">Analytics</SCText>
+              <SCText variant="mono" size={11} color={t.ink3} style={{ marginTop: 2 }}>
+                Popular interest tags by city &amp; venue
+              </SCText>
+            </View>
+            <SCIcon name="chevron-right" size={14} color={t.ink3} />
+          </SCCard>
+        </Pressable>
+      </View>
+
       {loading && events.length === 0 ? (
         <SCListSkeleton rows={4} />
       ) : events.length === 0 ? (
