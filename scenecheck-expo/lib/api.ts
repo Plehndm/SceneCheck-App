@@ -1052,6 +1052,23 @@ export const api = {
       .update({ onboarded_at: new Date().toISOString() })
       .eq('user_id', user.id);
     if (error) throw error;
+    // Mirror the writes into the local Zustand store so the UI reflects them
+    // BEFORE the next AuthBootstrap re-hydrate. Without this, the freshly-
+    // signed-up user lands on /(tabs) with subscribedInterests empty and
+    // me.interests empty, even though user_interests in the DB is correct —
+    // which reads to the user as "my picks weren't saved". The mock branch
+    // above already does this; the live branch was the only path missing
+    // the mirror.
+    if (interestNames.length) {
+      const { useStore } = await import('@/store/useStore');
+      const current = useStore.getState();
+      const next = new Set(current.subscribedInterests);
+      for (const t of interestNames) next.add(t);
+      useStore.setState({
+        subscribedInterests: next,
+        me: { ...current.me, interests: Array.from(next) },
+      });
+    }
     return { ok: true };
   },
 

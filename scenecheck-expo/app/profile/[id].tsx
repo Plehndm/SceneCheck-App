@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -34,6 +34,7 @@ import { RADIUS } from '@/theme/tokens';
 export default function OtherProfileScreen() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const meId = useStore(s => s.me.id);
   // `useProfile(id)` hits `profiles` in live mode and `SC_ACCOUNT_BY_ID`
   // in mock mode. The visibility gate still consults the mock
   // `VISIBLE_PERSON_BY_ID` table — in live mode the RLS layer
@@ -82,13 +83,26 @@ export default function OtherProfileScreen() {
   const ratingSummary = summarizeRatings(reviews);
   const avgRating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : null;
 
-  const meId = useStore(s => s.me.id);
   const subject = person ?? fallback;          // whoever we can name
   const subjectName = subject?.name ?? 'this person';
   const isPrivate = subject?.privacy === 'private';
   const isFriend = id ? friends.has(id) : false;
   const isPending = id ? outgoing.has(id) : false;
   const isSelf = !!id && id === meId;
+
+  // If the user routed to their own profile (e.g. tapped their own row in
+  // an attendees list, or followed a notification deep-link that resolved
+  // to their own id), hand off to the self-viewing profile tab. That
+  // surface shows the edit affordances and avoids the friend / block UI
+  // which doesn't make sense pointed at yourself. Placed AFTER all
+  // hooks above so the rules-of-hooks aren't violated — the data
+  // fetches briefly run for the self id (which works fine; you can
+  // read your own profile) and then the Redirect navigates away
+  // before paint.
+  if (isSelf) {
+    return <Redirect href={'/(tabs)/profile' as never} />;
+  }
+
   // A private account is fully visible only to its owner or an accepted
   // friend. For everyone else we show the minimal request card — never
   // interests / bio / hosted events. Enforced client-side in EVERY mode

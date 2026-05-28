@@ -37,6 +37,7 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
   const [title, setTitle] = useState(event.title);
   const [when, setWhen] = useState(event.when);
   const [where, setWhere] = useState(event.where);
+  const [desc, setDesc] = useState(event.desc ?? '');
   const [cap, setCap] = useState(event.cap);
   const [saving, setSaving] = useState(false);
 
@@ -48,14 +49,15 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
       setTitle(event.title);
       setWhen(event.when);
       setWhere(event.where);
+      setDesc(event.desc ?? '');
       setCap(event.cap);
       setSaving(false);
     }
-  }, [visible, event.id, event.title, event.when, event.where, event.cap]);
+  }, [visible, event.id, event.title, event.when, event.where, event.desc, event.cap]);
 
   const handleSave = async () => {
     setSaving(true);
-    const patch = { title, where, cap };
+    const patch = { title, where, desc, cap };
     try {
       // `when` isn't passed to api.updateEvent — see the api.ts header.
       // It's still part of the override patch below so the local UI
@@ -142,6 +144,27 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
               onChangeText={setWhere}
               placeholderTextColor={t.ink3}
               style={inputStyle(t)}
+            />
+          </FormField>
+
+          {/* Description — multi-line, auto-grows up to a sensible cap so
+              the sheet doesn't push the SAVE button off the screen on a
+              long edit. Larger min-height matches the create-event
+              composer's description box for visual consistency. */}
+          <FormField label="Description">
+            <TextInput
+              value={desc}
+              onChangeText={setDesc}
+              placeholder="What's the event about?"
+              placeholderTextColor={t.ink3}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              style={[inputStyle(t), {
+                minHeight: 96, maxHeight: 160,
+                paddingTop: 10, paddingBottom: 10,
+                lineHeight: 18,
+              }]}
             />
           </FormField>
 
