@@ -19,6 +19,7 @@ import { LocationPickerSheet } from '@/components/LocationPickerSheet';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { api } from '@/lib/api';
+import * as googleCalendar from '@/lib/google-calendar';
 import { useInterests } from '@/hooks/useInterests';
 import { useLocation } from '@/hooks/useLocation';
 import { timeToMin, fmtDate, friendlyToISO } from '@/lib/date-time';
@@ -62,6 +63,9 @@ export default function CreateEventScreen() {
   const showToast = useStore(s => s.showToast);
   const showConfirm = useStore(s => s.showConfirm);
   const meInterests = useStore(s => s.me.interests ?? []);
+  // FR7.2 — read once at the top so the post-publish side effect can branch
+  // on the linked-calendar value the user picked in settings.
+  const linkedCalendar = useStore(s => s.linkedCalendar);
   // The event location defaults to where the host is (the discovery map +
   // RPC are geo-based, so a published event needs real coordinates). The
   // hook falls back to the UCI default region when permission isn't granted.
@@ -139,6 +143,28 @@ export default function CreateEventScreen() {
         interests: form.interests,
       });
       if (initialDraft) removeDraft(initialDraft.id);
+      // FR7.2 — fire-and-forget add-to-calendar side effect. Only fires when
+      // the user kept the form's "Add to my calendar" toggle on AND has a
+      // Google connection wired. Errors are toasted but never block the
+      // navigation to event-published.
+      if (
+        form.addToCalendar &&
+        linkedCalendar === 'google' &&
+        googleCalendar.isConfigured()
+      ) {
+        googleCalendar.insertEvent({
+          summary: form.title.trim(),
+          description: form.desc.trim(),
+          location: form.location.trim(),
+          startISO: friendlyToISO(form.date, form.timeStart),
+          endISO: friendlyToISO(form.date, form.timeEnd),
+        }).catch(() => {
+          showToast({
+            message: "Event published, but couldn't add to your Calendar.",
+            kind: 'info',
+          });
+        });
+      }
       router.replace({ pathname: '/event-published', params: { eventId: (result as { event_id?: string })?.event_id ?? 'e1', title: form.title } } as never);
     } catch (e) {
       showToast({

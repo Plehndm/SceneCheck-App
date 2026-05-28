@@ -27,6 +27,7 @@ import { useEvent } from '@/hooks/useEvent';
 import { useAttendees } from '@/hooks/useAttendees';
 import { useProfile } from '@/hooks/useProfile';
 import { api } from '@/lib/api';
+import * as googleCalendar from '@/lib/google-calendar';
 import { SC_CHATS } from '@/data/mocks';
 import { whenRange, parseTime } from '@/lib/date-time';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
@@ -93,6 +94,9 @@ export default function EventDetailScreen() {
   const showConfirm = useStore(s => s.showConfirm);
   const me = useStore(s => s.me);
   const meId = me.id;
+  // FR7.2 — used by the post-join calendar side effect below. Only Google
+  // is wired in this iteration; other providers stay no-op for now.
+  const linkedCalendar = useStore(s => s.linkedCalendar);
   // Real attendees — live mode: confirmed event_subscriptions ⨝ profiles;
   // mock mode: SC_VISIBLE_PEOPLE. Drives the count + preview avatars.
   const { attendees, reload: reloadAttendees } = useAttendees(id);
@@ -235,6 +239,31 @@ export default function EventDetailScreen() {
           showToast({
             message: `You're #${waitlistPosition} on the waitlist for "${e.title}".`,
             kind: 'info',
+          });
+        }
+        // FR7.2 — fire-and-forget Google Calendar insert when the user has
+        // the calendar linked AND we have ISO start/end + a real location.
+        // Confirmed joins only: waitlisted means they're not really going
+        // yet, so don't put a placeholder on their calendar. Errors are
+        // swallowed into a toast — the join already succeeded, the calendar
+        // sync is the side effect, not the primary action.
+        if (
+          status !== 'waitlisted' &&
+          linkedCalendar === 'google' &&
+          googleCalendar.isConfigured() &&
+          e.startAt && endAt
+        ) {
+          googleCalendar.insertEvent({
+            summary: e.title,
+            description: e.desc ?? '',
+            location: e.where,
+            startISO: e.startAt,
+            endISO: endAt.toISOString(),
+          }).catch(() => {
+            showToast({
+              message: "Joined, but couldn't add to your Calendar.",
+              kind: 'info',
+            });
           });
         }
       } catch (err) {
