@@ -60,6 +60,22 @@ serve(async (req: Request) => {
       .eq("event_id", event_id)
       .eq("user_id", targetUserId);
 
+    // Notify the removed user (CODE_REVIEW_REPORT_3 M9; architecture doc lists
+    // organizer-removal as a push trigger). Fire-and-forget — a notification
+    // dispatch failure must not roll back the moderation action.
+    void admin.functions.invoke("dispatch-notification", {
+      body: {
+        type: "event.removed",
+        recipient_ids: [targetUserId],
+        event_id,
+        payload: {
+          title: "Removed from event",
+          body: "The host removed you from an event.",
+          deep_link: `/event/${event_id}`,
+        },
+      },
+    });
+
     return jsonResponse({ removed: true });
   } catch (err) {
     return errorResponse(String(err), 500);
