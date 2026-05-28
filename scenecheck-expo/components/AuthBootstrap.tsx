@@ -192,8 +192,20 @@ export function AuthBootstrap() {
       // a TIMESTAMPTZ column; coerce to a JS ms-since-epoch (or null). The
       // AuthGate reads (hydrated, session, onboardedAt) as a tri-state to
       // decide redirects.
+      //
+      // One-shot legacy self-heal (migration 00035 header's contract): any
+      // account that predates 00035 has onboarded_at = NULL even though the
+      // user may have a non-empty user_interests set from the legacy
+      // onboarding screen. Treating those as not-onboarded would force-route
+      // every existing user back to the questionnaire — the opposite of
+      // FR1.3's "upon first login" intent. So when we see NULL + non-empty
+      // interests, treat the user as onboarded *now* and write that back to
+      // the column so future hydrates don't re-trigger the self-heal logic.
       const onboardedRaw = (profile as { onboarded_at?: string | null } | null)?.onboarded_at;
-      const onboardedAt = onboardedRaw ? new Date(onboardedRaw).getTime() : null;
+      const needsSelfHeal = !onboardedRaw && interests.length > 0;
+      const onboardedAt = onboardedRaw
+        ? new Date(onboardedRaw).getTime()
+        : (needsSelfHeal ? Date.now() : null);
 
       useStore.setState({
         joined,
@@ -207,6 +219,17 @@ export function AuthBootstrap() {
         // logic once every dependent slice (session + onboardedAt) is final.
         hydrated: true,
       });
+
+      // Fire the self-heal write best-effort. Doesn't block the hydrate — if
+      // it fails (e.g. RLS not yet applied), we'll just retry next sign-in;
+      // the store reflects the in-memory onboardedAt either way so the user
+      // isn't stuck.
+      if (needsSelfHeal) {
+        supabase!.from('profiles')
+          .update({ onboarded_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .then(() => {}, () => {});
+      }
     }
 
     function reset() {
