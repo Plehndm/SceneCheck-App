@@ -68,11 +68,22 @@ export function Map({
             <Marker
               key={e.id}
               coordinate={ll}
-              title={e.title}
-              description={e.where}
+              // Deliberately no `title` / `description`. Setting either of
+              // those engages iOS' MKMarkerAnnotationView callout lifecycle,
+              // which has a long-standing Apple Maps bug: after 2–3 select/
+              // deselect cycles in a single MapView, `selectAnnotation:`
+              // dereferences a callout view that was deallocated on a
+              // previous teardown and the app crashes with EXC_BAD_ACCESS.
+              // The crash is COUNT-based, not timing-based — pausing
+              // between taps doesn't help because the stale internal
+              // reference isn't cleared by time, only by being touched.
+              // The focused-event card the screen renders below the map
+              // already shows the title + venue + when + interest tags +
+              // OPEN EVENT CTA, so the native callout was redundant in
+              // addition to being the crash source.
               pinColor={color}
-              // Selected pin floats above the rest (and the callout shows when
-              // it's the focused event arriving from "View location").
+              // Selected pin floats above the rest so an overlapping
+              // cluster doesn't bury the chosen one.
               zIndex={selected ? 999 : undefined}
               onPress={() => onPinPress?.(e)}
             />
