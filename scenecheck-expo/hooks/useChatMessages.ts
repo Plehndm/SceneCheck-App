@@ -15,7 +15,8 @@
 // for the existing retry UI.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, type DbMessageRow } from '@/lib/api';
+import { isoToTime } from '@/lib/date-time';
 import { useStore } from '@/store/useStore';
 import { SC_THREADS } from '@/data/mocks';
 import type { Message } from '@/types/domain';
@@ -26,15 +27,6 @@ export interface UIMessage extends Message {
   id: string;
   status?: MessageStatus;
   edited?: boolean;
-}
-
-interface DbMessageRow {
-  id: string;
-  chat_id: string;
-  sender_id: string;
-  body: string;
-  edited: boolean;
-  created_at: string;
 }
 
 interface UseChatMessagesResult {
@@ -81,7 +73,7 @@ export function useChatMessages(chatId: string | undefined): UseChatMessagesResu
     api.getChatMessages(chatId)
       .then(rows => {
         if (cancelled) return;
-        const mapped = (rows as unknown as DbMessageRow[]).map(r => transformRow(r, meIdRef.current));
+        const mapped = rows.map(r => transformRow(r, meIdRef.current));
         setMessages(prev => {
           // Keep any still-sending/failed optimistic messages (no real id yet).
           const pending = prev.filter(m => m.id.startsWith('tmp-') && m.status !== 'sent');
@@ -199,17 +191,12 @@ function transformRow(row: DbMessageRow, meId: string | null): UIMessage {
     from: isMe ? 'host' : 'them',
     who: isMe ? 'You' : '',
     text: row.body,
-    time: formatTime(row.created_at),
+    // Canonical time formatter from lib/date-time — the local copy this
+    // hook used to declare drifted from isoToTime in floor-of-hour edge
+    // cases; importing the helper keeps every "7:00 AM" rendered the
+    // same way across the app.
+    time: isoToTime(row.created_at),
     status: isMe ? 'sent' : undefined,
     edited: row.edited,
   };
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, '0')} ${ap}`;
 }

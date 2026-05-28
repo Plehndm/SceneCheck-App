@@ -87,6 +87,12 @@ export interface ConflictPrompt {
 
 export type ToastKind = 'info' | 'success' | 'error';
 
+// Toast default visible duration. 3.6 s is short enough not to linger and
+// long enough that a one-line message can be read once at normal reading
+// speed. Override via `showToast({ ..., duration: ms })`; pass `0` for
+// indefinite (manual-dismiss only) toasts.
+const TOAST_DEFAULT_MS = 3_600;
+
 export interface Toast {
   id: number;
   message: string;
@@ -174,6 +180,7 @@ interface State {
   setVisibility: (v: Visibility) => void;
   setNotifPref: <K extends keyof NotifPrefs>(key: K, value: NotifPrefs[K]) => void;
   setLinkedCalendar: (c: LinkedCalendar) => void;
+  blockUser: (id: string, name: string, username?: string, reason?: string) => void;
   unblockUser: (id: string) => void;
   toggleFollow: (orgId: string) => void;
   toggleInterestSub: (tag: string) => void;
@@ -333,6 +340,15 @@ export const useStore = create<State>()(
       setVisibility: (v) => set({ visibility: v }),
       setNotifPref: (key, value) => set(s => ({ notifPrefs: { ...s.notifPrefs, [key]: value } })),
       setLinkedCalendar: (c) => set({ linkedCalendar: c }),
+      // Optimistic insert for C1 (block-from-profile). Idempotent — re-blocking
+      // a user already in the list is a no-op rather than a duplicate row.
+      // Username/reason default to empty strings: the profile screen only has
+      // (id, name) at hand; richer detail (the username, the user-supplied
+      // reason) is hydrated by AuthBootstrap on next session refresh.
+      blockUser: (id, name, username = '', reason = '') => set(s => {
+        if (s.blocked.some(b => b.id === id)) return s;
+        return { blocked: [...s.blocked, { id, name, username, reason }] };
+      }),
       unblockUser: (id) => set(s => ({ blocked: s.blocked.filter(b => b.id !== id) })),
       toggleFollow: (orgId) => set(s => {
         const next = new Set(s.following);
@@ -354,7 +370,7 @@ export const useStore = create<State>()(
       confirm: null,
       _toastIdCounter: 0,
       showToast: (opts) => {
-        const duration = opts.duration ?? 3600;
+        const duration = opts.duration ?? TOAST_DEFAULT_MS;
         let id = 0;
         set(s => {
           id = s._toastIdCounter + 1;

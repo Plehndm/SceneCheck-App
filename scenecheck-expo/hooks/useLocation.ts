@@ -7,7 +7,7 @@
 // after sign-up and on first map view." This hook is the single place
 // that request happens.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { DEFAULT_REGION, type LatLng } from '@/components/Map/types';
@@ -25,7 +25,12 @@ export function useLocation(): UseLocationResult {
   const [status, setStatus] = useState<LocationStatus>('idle');
   const [coords, setCoords] = useState<LatLng>(DEFAULT_REGION);
 
-  const request = async () => {
+  // Stable identity across renders — callers (e.g. the map's "Allow location"
+  // Pressable) hand this to `onPress`, and consumers that depend on `request`
+  // (the auto-mount effect below) only need to re-fire when the function
+  // genuinely changes, which is never. `setStatus` / `setCoords` are React's
+  // stable setters so the empty dep array is correct.
+  const request = useCallback(async () => {
     setStatus('requesting');
     try {
       const { status: perm } = await Location.requestForegroundPermissionsAsync();
@@ -42,7 +47,7 @@ export function useLocation(): UseLocationResult {
     } catch {
       setStatus('unavailable');
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Auto-request on mount. Web's permission dialog only fires the first
@@ -54,8 +59,7 @@ export function useLocation(): UseLocationResult {
       // The map screen calls `request()` from a button if needed.
       setStatus('idle');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [request]);
 
   return {
     status,

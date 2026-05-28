@@ -25,6 +25,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
 import { whenRange } from '@/lib/date-time';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
+import { MILES_TO_METERS } from '@/lib/units';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -37,7 +38,6 @@ const MAX_FOCUSED_TAGS = 3;
 // surfaces the Custom button instead of highlighting a chip. Top preset
 // matches the Settings slider's 50-mi ceiling.
 const RADIUS_PRESETS_MI = [1, 3, 5, 10, 25, 50];
-const MILES_TO_METERS = 1609.34;
 // Whole miles render bare ("5"); fractional customs keep one decimal.
 const fmtMi = (mi: number) => (Number.isInteger(mi) ? String(mi) : mi.toFixed(1));
 
@@ -56,8 +56,10 @@ export default function MapTab() {
   // INT, and passing a float (e.g. 5 × 1609.34 = 8046.7) makes the RPC
   // call fail to resolve, which is why pins vanished from the full map.
   const radiusM = Math.round(radius * MILES_TO_METERS);
-  // Same live date + city label the Home header uses.
-  const dateCityLabel = useDateCityLabel();
+  // Same live date + city label the Home header uses. Location is passed in
+  // (rather than the hook reading its own) so this screen's single
+  // useLocation() above is the only GPS reader.
+  const dateCityLabel = useDateCityLabel(coords, status);
   const [focused, setFocused] = useState<SCEvent | null>(null);
   // Pull pins from the API. In live mode this hits the rank_events_query
   // RPC against PostGIS; in mock mode it returns SC_EVENTS synchronously.

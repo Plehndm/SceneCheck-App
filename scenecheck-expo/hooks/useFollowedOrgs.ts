@@ -54,8 +54,12 @@ export function useFollowedOrgs(): UseFollowedOrgsResult {
       .then(list => { if (!cancelled) { setOrgs(list); setLoading(false); } })
       .catch(e => { if (!cancelled) { setError(e instanceof Error ? e : new Error(String(e))); setLoading(false); } });
     return () => { cancelled = true; };
-    // idsKey is the stable string form of `ids`; following drives the mock branch.
-  }, [idsKey, mock, reloadCounter, following, ids]);
+    // `idsKey` is the stable string trigger for the live-mode fetch (it captures
+    // every change to `following` without depending on the unstable array ref);
+    // `following` is the trigger for the mock branch which reads the Set
+    // directly. Listing `ids` here too would be redundant — it always changes
+    // in lockstep with `idsKey`.
+  }, [idsKey, mock, reloadCounter, following]);
 
   const reload = useCallback(() => setReloadCounter(c => c + 1), []);
   return { orgs, loading, error, reload };

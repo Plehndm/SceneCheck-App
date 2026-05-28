@@ -38,6 +38,10 @@ interface SubscriptionRow {
   event_id: string;
 }
 
+interface OrgFollowRow {
+  org_id: string;
+}
+
 export function AuthBootstrap() {
   const setMe = useStore(s => s.setMe);
   const setSession = useStore(s => s.setSession);
@@ -71,6 +75,7 @@ export function AuthBootstrap() {
         { data: tagRows },
         { data: subRows },
         { data: friendshipRows },
+        { data: followRows },
       ] = await Promise.all([
         supabase!.from('profiles')
           .select('name, username, bio, visibility, account_type, avatar_url')
@@ -94,6 +99,13 @@ export function AuthBootstrap() {
         supabase!.from('friendships')
           .select('id, from_id, to_id, status')
           .or(`from_id.eq.${userId},to_id.eq.${userId}`),
+        // Org follows (FR7.1, migration 00034). The store's `following` Set
+        // was previously client-only — without this hydrate, signing in
+        // on a fresh device showed no followed orgs, even if the user had
+        // followed several from another device.
+        supabase!.from('org_follows')
+          .select('org_id')
+          .eq('user_id', userId),
       ]);
 
       if (cancelled) return;
@@ -166,12 +178,19 @@ export function AuthBootstrap() {
 
       const subscribedInterests = new Set<string>(interests);
 
+      // Map followed-org UUIDs through toMockId so seeded mock orgs survive
+      // a hybrid mock/live transition (parity with the joined-events mapping).
+      const following = new Set<string>(
+        (followRows ?? []).map((r: OrgFollowRow) => toMockId(r.org_id)),
+      );
+
       useStore.setState({
         joined,
         friends,
         outgoingRequests: outgoing,
         incomingRequests: incoming,
         subscribedInterests,
+        following,
       });
     }
 

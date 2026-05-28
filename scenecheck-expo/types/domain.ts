@@ -2,7 +2,12 @@
 // UI consumes; `lib/api.ts` is responsible for translating Supabase rows
 // into these shapes (mock-mode returns them directly).
 
-export type EventKind = 'yours' | 'friend' | 'org' | 'recommended';
+// EventKind drives the bucket the event lands in for color + label. The
+// classifier in lib/events.ts (eventCategory) only ever produces these
+// values, so there's no `'org'` ghost variant: an org-hosted event the user
+// has no interest match for is `'recommended'` if it matches an interest,
+// otherwise `'other'` (assigned via the classifier — kept off this union).
+export type EventKind = 'yours' | 'friend' | 'recommended';
 export type Visibility = 'public' | 'private';
 export type AccountType = 'person' | 'org';
 
@@ -90,6 +95,11 @@ export interface Review {
   reviewerName?: string;
   reviewerPicture?: string | null;
   eventTitle?: string;
+  // ISO timestamp from `ratings.created_at` in live mode; absent in mock
+  // fixtures. The host-ratings screen sorts by this when present, falling back
+  // to the (insertion-ordered) `id` for mocks. Without this the live sort
+  // collapsed to UUID lexicographic order, which has no chronological meaning.
+  createdAt?: string;
 }
 
 export type ChatKind = 'event' | 'dm';

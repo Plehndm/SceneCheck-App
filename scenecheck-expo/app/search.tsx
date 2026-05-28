@@ -23,9 +23,8 @@ import { whenRange } from '@/lib/date-time';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { SCListSkeleton } from '@/components/SCSkeleton';
+import { MILES_TO_METERS } from '@/lib/units';
 import { RADIUS } from '@/theme/tokens';
-
-const MILES_TO_METERS = 1609.34;
 import type { SCEvent, Account } from '@/types/domain';
 
 type Tab = 'all' | 'events' | 'people' | 'orgs';

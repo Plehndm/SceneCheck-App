@@ -14,13 +14,28 @@
 
 import { supabase, isLiveBackendAvailable } from './supabase';
 import { isoToTime, isoToWhen } from './date-time';
+import { DEFAULT_REGION } from '@/components/Map/types';
 import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
   SC_CHATS, SC_THREADS,
   SC_VISIBLE_PEOPLE, SC_ORGS, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
-import type { SCEvent, Account, Chat, Message, Interest, Visibility, AccountType } from '@/types/domain';
+import type { SCEvent, Account, Chat, Interest, Visibility, AccountType } from '@/types/domain';
+
+// The raw `messages` row shape returned by getChatMessages in live mode.
+// Exported so the chat-thread hook can type its transform without re-declaring
+// it. Mock-mode is the only branch that returns the domain `Message` shape
+// instead, and the hook never calls getChatMessages in mock mode (it seeds
+// state directly from SC_THREADS).
+export interface DbMessageRow {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  body: string;
+  edited: boolean;
+  created_at: string;
+}
 
 // ── ID mapping (mock string IDs ↔ real UUIDs) ─────────────────
 const ID_MAP: Record<string, string> = {
@@ -160,7 +175,13 @@ export const api = {
   toMockId,
 
   // ── Auth ──
-  async signUp(email: string, password: string, displayName?: string) {
+  async signUp(
+    email: string,
+    password: string,
+    displayName?: string,
+    birthdate?: string,
+    accountType: AccountType = 'person',
+  ) {
     if (isMock()) return { user: SC_ME, session: { access_token: 'mock' } };
     const sb = requireClient();
     // Pass `emailRedirectTo` so the confirmation link doesn't depend
@@ -173,19 +194,31 @@ export const api = {
       ? `${window.location.origin}/auth/sign-in?confirmed=1`
       : 'scenecheckexpo://auth/sign-in?confirmed=1';
     const name = displayName?.trim();
+    // `birthdate` must be an ISO date string (YYYY-MM-DD) — the
+    // handle_new_user trigger reads `raw_user_meta_data ->> 'birthdate'`
+    // and casts to DATE for the age-gate CHECK. The screen formats the
+    // picker's Date before passing it in.
+    const iso = birthdate?.trim();
+    // Build the metadata object incrementally: every field is optional
+    // (back-compat with existing callers), but `account_type` always
+    // ships so the trigger doesn't have to guess the default. The
+    // server-side trigger is the source of truth for FR1.2 (age gate)
+    // and FR1.4 (account-type column).
+    const metadata: Record<string, string> = { account_type: accountType };
+    if (name) metadata.display_name = name;
+    if (iso) metadata.birthdate = iso;
     const { data, error } = await sb.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo,
-        // Stamp the display name into auth.users metadata. This rides
-        // along on the same row the SIGNED_IN session carries, so
-        // AuthBootstrap.hydrate can read it immediately + race-free
-        // via `session.user.user_metadata.display_name`. Without this
-        // the hydrate would read the still-empty profiles.name (the
-        // separate update below can land after the hydrate's read) and
-        // fall back to the email — the bug this fixes.
-        data: name ? { display_name: name } : undefined,
+        // Stamp display_name + birthdate + account_type into auth.users
+        // metadata. These ride along on the same row the SIGNED_IN
+        // session carries, so the handle_new_user trigger (00019+, the
+        // age-gate CHECK / account_type write) sees them server-side at
+        // insertion time; AuthBootstrap.hydrate also reads display_name
+        // race-free via `session.user.user_metadata.display_name`.
+        data: metadata,
       },
     });
     if (error) throw error;
@@ -275,8 +308,8 @@ export const api = {
     const sb = requireClient();
     const user = await this.getCurrentUser();
     const { data, error } = await sb.rpc('rank_events_query', {
-      p_lat: lat ?? 33.6461,
-      p_lng: lng ?? -117.8427,
+      p_lat: lat ?? DEFAULT_REGION.latitude,
+      p_lng: lng ?? DEFAULT_REGION.longitude,
       // p_radius is an INT in the RPC signature — round so a fractional
       // meters value (miles × 1609.34) doesn't fail function resolution.
       p_radius: Math.round(radiusM ?? 8047),
@@ -357,17 +390,22 @@ export const api = {
     return data;
   },
 
-  async subscribeToEvent(eventId: string, _joinChat = false) {
-    if (isMock()) return { status: 'confirmed' as const, chat_id: null };
+  async subscribeToEvent(eventId: string, _joinChat = false): Promise<{
+    status: 'confirmed' | 'waitlisted' | 'already';
+    chat_id: string | null;
+    waitlist_position: number | null;
+  }> {
+    if (isMock()) return { status: 'confirmed', chat_id: null, waitlist_position: null };
     const sb = requireClient();
     const user = await this.getCurrentUser();
     if (!user || !('id' in user)) throw new Error('Not authenticated');
-    // Call the atomic-subscribe RPC directly (migration 00015): it's
-    // SECURITY DEFINER, so it bypasses the INSERT-less event_subscriptions RLS
-    // and handles the capacity check / waitlist / idempotency in one locked
-    // statement. This replaces the `subscribe-to-event` Edge Function, which
-    // isn't deployed on the hosted project — the source of the "Failed to send
-    // a request to the Edge Function" / non-2xx errors when joining.
+    // Call the atomic-subscribe RPC directly (migration 00015 / replaced by
+    // 00029 to add the event-status gate): SECURITY DEFINER, so it bypasses
+    // the INSERT-less event_subscriptions RLS and handles the capacity check
+    // / waitlist / idempotency in one locked statement. Replaces the
+    // `subscribe-to-event` Edge Function, which isn't deployed on the hosted
+    // project — the source of the "Failed to send a request to the Edge
+    // Function" / non-2xx errors when joining.
     const { data, error } = await sb.rpc('subscribe_to_event_atomic', {
       p_event_id: toUUID(eventId),
       p_user_id: user.id,
@@ -376,7 +414,55 @@ export const api = {
     // The RPC returns a set of rows; take the first.
     const row = Array.isArray(data) ? data[0] : data;
     const status = (row?.status ?? 'confirmed') as 'confirmed' | 'waitlisted' | 'already';
-    return { status, chat_id: null };
+    // FR5.5: when the user lands on the waitlist, fetch their position so the
+    // UI can show "You're #N on the waitlist". The RPC's row shape doesn't
+    // surface position today; a one-row follow-up SELECT keyed on (event_id,
+    // user_id) is cheap, and the user's own waitlist row is readable under RLS.
+    let waitlist_position: number | null = null;
+    if (status === 'waitlisted') {
+      const { data: wl } = await sb
+        .from('waitlist')
+        .select('position')
+        .eq('event_id', toUUID(eventId))
+        .eq('user_id', user.id)
+        .maybeSingle();
+      waitlist_position = (wl?.position as number | null) ?? null;
+    }
+    return { status, chat_id: null, waitlist_position };
+  },
+
+  // FR7.1 organisation follow / unfollow. Backed by the `org_follows` table
+  // (migration 00034). Idempotent on both sides: follow swallows a duplicate
+  // PK violation (`23505`), unfollow doesn't care if no row matched. Mock
+  // mode returns OK so screens that use the optimistic-then-commit pattern
+  // exercise the same code path locally.
+  async followOrg(orgId: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('org_follows').insert({
+      user_id: user.id,
+      org_id: toUUID(orgId),
+    });
+    // 23505 = unique_violation — already following. The UI optimistically
+    // toggled to "FOLLOWING" already, so returning ok keeps state in sync.
+    if (error && error.code !== '23505') {
+      throw new Error(error.message || 'Failed to follow');
+    }
+    return { ok: true };
+  },
+  async unfollowOrg(orgId: string): Promise<{ ok: true }> {
+    if (isMock()) return { ok: true };
+    const sb = requireClient();
+    const user = await this.getCurrentUser();
+    if (!user || !('id' in user)) throw new Error('Not authenticated');
+    const { error } = await sb.from('org_follows')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('org_id', toUUID(orgId));
+    if (error) throw new Error(error.message || 'Failed to unfollow');
+    return { ok: true };
   },
 
   // Remove the caller's row from event_subscriptions. We HARD-delete (not a
@@ -837,18 +923,6 @@ export const api = {
     };
   },
 
-  async subscribeToInterest(interestId: string) {
-    if (isMock()) return { subscribed: true as const };
-    const sb = requireClient();
-    const user = await this.getCurrentUser();
-    if (!user || !('id' in user)) throw new Error('Not authenticated');
-    const { error } = await sb
-      .from('user_interests')
-      .insert({ user_id: user.id, interest_id: toUUID(interestId) });
-    if (error) throw error;
-    return { subscribed: true as const };
-  },
-
   // A given user's interest tag names. `user_interests` is publicly
   // readable (RLS `USING (true)`), so this works for ANY account —
   // including private ones, whose interests we intentionally expose even
@@ -935,8 +1009,14 @@ export const api = {
     });
   },
 
-  async getChatMessages(chatId: string): Promise<Message[]> {
-    if (isMock()) return SC_THREADS[chatId] || [];
+  async getChatMessages(chatId: string): Promise<DbMessageRow[]> {
+    // Mock-mode keeps returning the in-memory `Message[]` thread fixture so the
+    // existing api-mock tests (reference-equality against SC_THREADS) still
+    // pass. Live mode is the only caller (useChatMessages early-exits in mock),
+    // so the runtime shape DbMessageRow[] only matters for the live path —
+    // the `as unknown as` here is the same lie as before, scoped to the mock
+    // branch only, while the live return is now honest.
+    if (isMock()) return (SC_THREADS[chatId] || []) as unknown as DbMessageRow[];
     const sb = requireClient();
     const { data, error } = await sb
       .from('messages')
@@ -944,7 +1024,7 @@ export const api = {
       .eq('chat_id', toUUID(chatId))
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return data as Message[];
+    return (data ?? []) as DbMessageRow[];
   },
 
   async sendMessage(chatId: string, body: string) {
@@ -1059,6 +1139,9 @@ export const api = {
       reviewerId: toMockId(r.user_id),
       rating: r.stars,
       when: new Date(r.created_at).toLocaleDateString(),
+      // Preserve the ISO timestamp so the host-ratings screen can sort
+      // chronologically. `when` is the human display string and isn't sortable.
+      createdAt: r.created_at,
       text: r.text ?? '',
       reviewerName: r.reviewer?.name ?? undefined,
       reviewerPicture: r.reviewer?.avatar_url ?? null,

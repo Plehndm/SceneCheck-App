@@ -29,6 +29,7 @@ import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
 import { useSearchPeople } from '@/hooks/useSearch';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
+import { useLocation } from '@/hooks/useLocation';
 import { excludeSelf } from '@/lib/people';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
@@ -54,8 +55,11 @@ export default function HomeScreen() {
   // id → event lookup for the conflict chip (resolves joined events' times in
   // live mode, where SC_EVENT_BY_ID only has the seeded events).
   const eventsById = Object.fromEntries(events.map(e => [e.id, e]));
-  // Live date + (if location granted) reverse-geocoded city.
-  const dateCityLabel = useDateCityLabel();
+  // Live date + (if location granted) reverse-geocoded city. Pass location
+  // through explicitly — `useDateCityLabel` no longer mounts its own
+  // `useLocation()` (M4 in CODE_REVIEW_REPORT_3.md).
+  const { coords, status: locStatus } = useLocation();
+  const dateCityLabel = useDateCityLabel(coords, locStatus);
 
   return (
     <Screen onRefresh={() => { reloadEvents(); reloadPeople(); }}>
