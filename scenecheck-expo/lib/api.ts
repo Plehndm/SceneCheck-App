@@ -22,7 +22,7 @@ import {
   SC_VISIBLE_PEOPLE, SC_ORGS, SC_FRIEND_REQUESTS, SC_REVIEWS,
 } from '@/data/mocks';
 import type {
-  SCEvent, Account, Chat, Interest, Visibility, AccountType,
+  SCEvent, Account, Chat, ChatMember, Interest, Visibility, AccountType,
   HostAnalyticsRow, MessageType,
 } from '@/types/domain';
 
@@ -1103,15 +1103,25 @@ export const api = {
     const sb = requireClient();
     const user = await this.getCurrentUser();
     const meId = (user && 'id' in user) ? user.id : null;
-    // Embed members (+ their name) and messages so we can resolve a DM's
-    // title to the OTHER member's name and surface the last message — all
-    // server-side, so the chat list needs no client-side SC_* lookups.
+    // Embed members (+ their name, avatar, account_type) and messages so we
+    // can resolve a DM's title to the OTHER member's name AND populate the
+    // chat-list avatar(s) — server-side, no client-side SC_* lookups.
+    // avatar_url + account_type are new in this query so the chat-list can
+    // render a single DM avatar or a stacked group-avatar pair without an
+    // extra per-row fetch.
     const { data, error } = await sb
       .from('chats')
-      .select('id, type, event_id, title, created_at, chat_members(user_id, profiles(name)), messages(body, created_at, sender_id)')
+      .select('id, type, event_id, title, created_at, chat_members(user_id, profiles(name, avatar_url, account_type)), messages(body, created_at, sender_id)')
       .order('created_at', { foreignTable: 'messages', ascending: false });
     if (error) throw error;
-    interface MemberRow { user_id: string; profiles: { name: string | null } | null }
+    interface MemberRow {
+      user_id: string;
+      profiles: {
+        name: string | null;
+        avatar_url: string | null;
+        account_type: 'person' | 'org' | null;
+      } | null;
+    }
     interface MsgRow { body: string | null; created_at: string; sender_id: string }
     interface ChatRow {
       id: string; type: string | null; event_id: string | null; title: string | null;
@@ -1122,6 +1132,19 @@ export const api = {
       const lastMsg = row.messages?.[0];
       // The other participant in a DM (everyone but me); its name titles the row.
       const other = (row.chat_members ?? []).find(m => m.user_id !== meId);
+      // For the avatar(s): drop self for DMs (we don't need our own face
+      // on our own row), but keep self for event/group chats so the
+      // stacked render reflects the actual member roster. Cap to four
+      // for cheap rendering; the screen only shows up to two anyway.
+      const memberRows = (row.chat_members ?? []);
+      const avatarMembers = (isEvent ? memberRows : memberRows.filter(m => m.user_id !== meId))
+        .slice(0, 4)
+        .map((m): ChatMember => ({
+          id: toMockId(m.user_id),
+          name: m.profiles?.name ?? '',
+          picture: m.profiles?.avatar_url ?? null,
+          type: m.profiles?.account_type ?? 'person',
+        }));
       return {
         id: row.id,
         kind: isEvent ? 'event' : 'dm',
@@ -1131,6 +1154,7 @@ export const api = {
         last: lastMsg?.body ?? '',
         time: lastMsg ? new Date(lastMsg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '',
         unread: 0, // read receipts aren't modeled yet
+        members: avatarMembers,
       };
     });
   },

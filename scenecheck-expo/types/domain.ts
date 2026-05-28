@@ -104,6 +104,14 @@ export interface Review {
 
 export type ChatKind = 'event' | 'dm';
 
+// A trimmed Account-shaped record carrying just what the chat-list
+// avatars need. Live mode populates this from the chat_members
+// embedded profile join; mock mode leaves it undefined and the screen
+// falls back to SC_ACCOUNT_BY_ID lookups. Capped to the first few
+// members per chat — the chat list only renders up to two avatars
+// (stacked, Instagram-style) for group chats anyway.
+export type ChatMember = Pick<Account, 'id' | 'name' | 'picture' | 'type'>;
+
 export interface Chat {
   id: string;
   kind: ChatKind;
@@ -113,6 +121,10 @@ export interface Chat {
   last: string;
   time: string;
   unread: number;
+  // OPTIONAL: first ~4 members (excluding self for DMs). Used by the
+  // chat-list avatar rendering. Not always populated — see the type
+  // comment above.
+  members?: ChatMember[];
 }
 
 // FR9.5: messages carry a discriminator so the chat thread can render
