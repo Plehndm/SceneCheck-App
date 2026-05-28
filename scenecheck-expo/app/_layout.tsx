@@ -3,7 +3,8 @@
 // ThemeProvider since we manage palette/mode in the Zustand store and
 // render our own header chrome (the navigation header is hidden).
 
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -14,6 +15,10 @@ import { useStore } from '@/store/useStore';
 import { ToastHost } from '@/components/ToastHost';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AuthBootstrap } from '@/components/AuthBootstrap';
+import {
+  registerForPushNotifications,
+  onNotificationResponseReceived,
+} from '@/lib/notifications';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -22,6 +27,30 @@ export const unstable_settings = {
 export default function RootLayout() {
   // Subscribe so StatusBar style flips with the active mode.
   const mode = useStore(s => s.mode);
+
+  // Push-notification registration + tap deep-link (FR10.4).
+  // AuthBootstrap is the canonical place for this, but it's out of this
+  // agent's scope, so we register at the root layout. Registering before a
+  // session is resolved is safe — the function checks platform/device and
+  // only persists the token if a Supabase session exists. The response
+  // listener routes taps to the relevant screen using the data payload the
+  // dispatch function attaches.
+  useEffect(() => {
+    let mounted = true;
+    registerForPushNotifications().catch(() => {});
+    const sub = onNotificationResponseReceived((response) => {
+      if (!mounted) return;
+      const data = response.notification.request.content.data as
+        | Record<string, string>
+        | undefined;
+      if (!data) return;
+      if (data.eventId) router.push(`/event/${data.eventId}` as never);
+      else if (data.chatId) router.push(`/chat/${data.chatId}` as never);
+      else if (data.profileId) router.push(`/profile/${data.profileId}` as never);
+    });
+    return () => { mounted = false; sub.remove(); };
+  }, []);
+
   return (
     // SafeAreaProvider must wrap the tree so the custom SCTopBar /
     // Screen `SafeAreaView edges={['top']}` get real top insets on

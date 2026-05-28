@@ -18,6 +18,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { SCTag } from '@/components/SCTag';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCButton } from '@/components/SCAddButton';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { useProfile } from '@/hooks/useProfile';
@@ -134,6 +135,7 @@ export default function OtherProfileScreen() {
       return (
         <Screen>
           <SCTopBar onBack={() => router.back()} />
+          <SCListSkeleton rows={5} />
         </Screen>
       );
     }
@@ -209,6 +211,7 @@ export default function OtherProfileScreen() {
       return (
         <Screen>
           <SCTopBar onBack={() => router.back()} />
+          <SCListSkeleton rows={5} />
         </Screen>
       );
     }
@@ -245,13 +248,28 @@ export default function OtherProfileScreen() {
     }
   };
 
-  const handleFollowToggle = () => {
+  const handleFollowToggle = async () => {
     if (!id) return;
+    // Optimistic-then-commit (FR7.1 / migration 00034 `org_follows`). Snapshot
+    // the prior state so we can roll the local toggle back if the server call
+    // fails — the persisted `following` Set is the single source of truth
+    // until AuthBootstrap re-hydrates.
+    const wasFollowing = isFollowing;
     toggleFollow(id);
     showToast({
-      message: isFollowing ? `Unfollowed ${person.name}.` : `Following ${person.name}.`,
-      kind: isFollowing ? 'info' : 'success',
+      message: wasFollowing ? `Unfollowed ${person.name}.` : `Following ${person.name}.`,
+      kind: wasFollowing ? 'info' : 'success',
     });
+    try {
+      if (wasFollowing) await api.unfollowOrg(id);
+      else await api.followOrg(id);
+    } catch {
+      toggleFollow(id); // revert
+      showToast({
+        message: wasFollowing ? "Couldn't unfollow. Try again." : "Couldn't follow. Try again.",
+        kind: 'error',
+      });
+    }
   };
 
   // Open (or create) a DM with this person via createChat — which returns the
@@ -279,22 +297,44 @@ export default function OtherProfileScreen() {
       body: 'They won\'t see you in the app, and you won\'t see them. You can unblock from Settings.',
       confirmLabel: 'BLOCK',
       tone: 'danger',
-      onConfirm: () => {
+      // Persist the block (FR11.1 / FR8.3). Optimistic-then-commit: store
+      // first so Settings → Blocked updates instantly without waiting for a
+      // hydrate; backend insert second; on failure, surface an error toast
+      // and roll back the optimistic add. This is the pattern the original
+      // review (CODE_REVIEW_REPORT_3 C1) prescribed.
+      onConfirm: async () => {
+        useStore.getState().blockUser(id, person.name);
         showToast({ message: `Blocked ${person.name}.`, kind: 'info' });
         router.back();
+        try {
+          await api.blockUser(id);
+        } catch {
+          // Roll the optimistic add back so state matches the server.
+          useStore.getState().unblockUser(id);
+          showToast({ message: "Couldn't save block. Try again.", kind: 'error' });
+        }
       },
     });
   };
 
   const handleReport = () => {
+    if (!id) return;
     showConfirm({
       title: `Report ${person.name}?`,
-      body: 'Our team will review their account within 24 hours.',
+      body: 'Thanks — we\'ll log this for review.',
       confirmLabel: 'SUBMIT REPORT',
       tone: 'danger',
       icon: 'flag',
-      onConfirm: () => {
-        showToast({ message: 'Report submitted. Thank you.', kind: 'success' });
+      // Persist into the `reports` table via api.submitReport (FR11.2). The
+      // dialog copy was previously a lie ("Our team will review … within 24
+      // hours"); rewritten honestly while we wire actual moderation review.
+      onConfirm: async () => {
+        try {
+          await api.submitReport(id, null, 'profile-report');
+          showToast({ message: 'Report submitted. Thank you.', kind: 'success' });
+        } catch {
+          showToast({ message: "Couldn't submit report. Try again.", kind: 'error' });
+        }
       },
     });
   };

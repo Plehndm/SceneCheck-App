@@ -15,7 +15,9 @@ import { SCDatePicker } from '@/components/SCDatePicker';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/api';
+import { parseDateWithYear } from '@/lib/date-time';
 import { RADIUS } from '@/theme/tokens';
+import type { AccountType } from '@/types/domain';
 
 export default function SignUpScreen() {
   const t = useTokens();
@@ -23,6 +25,10 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [birthdate, setBirthdate] = useState('');
+  // FR1.4: pick Individual / Organization at sign-up so an org account can
+  // exist through the product (previously only reachable via direct DB edit).
+  // Default to 'person' since that's the overwhelmingly common case.
+  const [accountType, setAccountType] = useState<AccountType>('person');
   const [submitting, setSubmitting] = useState(false);
   const showToast = useStore(s => s.showToast);
   const setMe = useStore(s => s.setMe);
@@ -56,7 +62,29 @@ export default function SignUpScreen() {
     }
     setSubmitting(true);
     try {
-      const result = await api.signUp(email, password, displayName.trim());
+      // `api.signUp` accepts `(email, password, displayName?, birthdate?, accountType?)`.
+      // - `birthdate` is stamped into auth user_metadata as `birthdate` (ISO
+      //   YYYY-MM-DD); the handle_new_user trigger casts it to DATE and
+      //   persists `profiles.birthdate`, which the server-side age gate
+      //   enforces (FR1.2). Without this, the age gate's `< 18` raise never
+      //   fires because the value is NULL.
+      // - `accountType` is stamped as `account_type`; the trigger reads it
+      //   and persists `profiles.account_type` so organisation accounts
+      //   created from the UI actually become org accounts (FR1.4).
+      // The picker's `birthdate` string is the human-readable "May 27, 2026"
+      // form from `fmtDateWithYear`; Postgres `text::DATE` accepts that in
+      // most locales but ISO is universal, so we convert here.
+      const parsed = parseDateWithYear(birthdate);
+      const isoBirthdate = parsed
+        ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+        : undefined;
+      const result = await api.signUp(
+        email,
+        password,
+        displayName.trim(),
+        isoBirthdate,
+        accountType,
+      );
       // Write the name into the store directly so the profile tab
       // reflects it immediately, even before AuthBootstrap's listener
       // re-hydrates from the profiles row.
@@ -126,6 +154,35 @@ export default function SignUpScreen() {
       </View>
 
       <View style={{ gap: 12 }}>
+        {/* Account type — Individual / Organization. Same chip-row pattern
+            as create-event.tsx Visibility. (FR1.4) */}
+        <View>
+          <SCText variant="labelCap" style={{ marginBottom: 6 }}>Account type</SCText>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['person', 'org'] as AccountType[]).map(opt => (
+              <Pressable
+                key={opt}
+                onPress={() => setAccountType(opt)}
+                accessibilityLabel={opt === 'person' ? 'Individual account' : 'Organization account'}
+                style={({ pressed }) => [{
+                  flex: 1, padding: 12, borderRadius: RADIUS.md,
+                  borderWidth: 1.5,
+                  borderColor: accountType === opt ? t.primary : t.line,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }, pressed && { opacity: 0.85 }]}
+              >
+                <SCIcon
+                  name={opt === 'person' ? 'profile' : 'shield'}
+                  size={14}
+                  color={accountType === opt ? t.primary : t.ink2}
+                />
+                <SCText size={13} weight={accountType === opt ? '600' : '500'}>
+                  {opt === 'person' ? 'Individual' : 'Organization'}
+                </SCText>
+              </Pressable>
+            ))}
+          </View>
+        </View>
         <View>
           <SCText variant="labelCap" style={{ marginBottom: 6 }}>Display name</SCText>
           <TextInput

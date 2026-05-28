@@ -13,6 +13,7 @@ import { SCButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useFollowedOrgs } from '@/hooks/useFollowedOrgs';
+import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 
 export default function MyFollowingScreen() {
@@ -65,9 +66,19 @@ export default function MyFollowingScreen() {
                 </View>
               </Pressable>
               <Pressable
-                onPress={() => {
+                onPress={async () => {
+                  // Optimistic-then-commit (FR7.1). `api.unfollowOrg` is
+                  // backed by the `org_follows` table (migration 00034) and
+                  // returns ok in mock mode; if the server call fails we
+                  // revert the local toggle so state matches the database.
                   toggleFollow(o.id);
                   showToast({ message: `Unfollowed ${o.name}.`, kind: 'info' });
+                  try {
+                    await api.unfollowOrg(o.id);
+                  } catch {
+                    toggleFollow(o.id);
+                    showToast({ message: "Couldn't unfollow. Try again.", kind: 'error' });
+                  }
                 }}
                 style={({ pressed }) => [{
                   paddingHorizontal: 14, height: 32, borderRadius: 999,
