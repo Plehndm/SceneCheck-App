@@ -93,7 +93,7 @@ in `.env`._
 
 ### 1.5 Environment & assumptions
 
-- **Runtime:** Node.js 24 (frontend), Deno 1.x (Edge Functions), PostgreSQL 15 + PostGIS 3.x (DB)
+- **Runtime:** Node.js 22 LTS (frontend + scraper), Deno 1.x (Edge Functions), PostgreSQL 15 + PostGIS 3.x (DB)
 - **Test runner:** Jest 29 with `jest-expo` preset; `@testing-library/react-native` 13 for component / screen rendering
 - **TypeScript:** Strict mode, `@/*` path alias mirrored in jest config via `moduleNameMapper`
 - **Mock infrastructure:** Centralized in `scenecheck-expo/jest.setup.ts` — covers AsyncStorage, expo-router, expo-location, expo-image-picker, expo-notifications, expo-device, react-native-maps, @react-native-community/slider, react-native-safe-area-context

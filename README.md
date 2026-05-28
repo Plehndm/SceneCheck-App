@@ -34,7 +34,7 @@ All project documents live in the [`docs/`](docs/) folder:
 cd scenecheck-expo
 npm install
 npm start          # interactive — press w for web, or scan the QR with Expo Go for iOS/Android
-npm test           # 385 tests
+npm test
 ```
 
 ### Quick start (legacy prototype)

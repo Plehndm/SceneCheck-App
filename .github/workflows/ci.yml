@@ -1,0 +1,39 @@
+name: CI
+
+# Lint + typecheck + tests on every push / PR to main. Satisfies the
+# architecture doc's "Build & CI" row (ESLint + TypeScript typecheck + unit
+# tests pre-merge) and runs the Deno-only Edge Function tests that the Jest
+# suite can't reach.
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults: { run: { working-directory: scenecheck-expo } }
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.3.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: scenecheck-expo/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test -- --forceExit
+
+  deno-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - run: deno test supabase/functions/_shared/interest-matching.test.ts

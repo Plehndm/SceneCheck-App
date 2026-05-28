@@ -16,7 +16,7 @@
 // comma-separated EVENTS_SOURCE_URLS (or the legacy single EVENTS_SOURCE_URL)
 // pointing at any Eventbrite location(s) — or any page that publishes event JSON-LD.
 //
-// Node 20+ only (uses global fetch).
+// Node 22 LTS (uses global fetch). Workflow pins node-version: '22'.
 //
 // Test without credentials:  DRY_RUN=1 node scripts/scrape-events.mjs
 // (scrapes + prints the payloads, skips the POST).
@@ -33,6 +33,22 @@ if (!DRY_RUN && (!SUPABASE_URL || !SECRET_KEY || !INGEST_TOKEN)) {
 }
 
 const ENDPOINT = `${SUPABASE_URL}/functions/v1/ingest-scraped`;
+
+// Per-request timeouts (H5). The architecture doc calls out per-fetch timeouts
+// as "critical" — without them a host that accepts the TCP connection but
+// never responds holds the slot until the job-level timeout-minutes fires,
+// starving every later source.
+const SCRAPE_FETCH_TIMEOUT_MS = Number(process.env.SCRAPE_FETCH_TIMEOUT_MS || 15_000);
+const INGEST_TIMEOUT_MS = Number(process.env.INGEST_TIMEOUT_MS || 10_000);
+
+// Wrap global fetch with an AbortController-backed timeout. The signal is
+// passed through, so a caller can still compose its own AbortSignal.
+async function fetchWithTimeout(url, options = {}, timeoutMs = SCRAPE_FETCH_TIMEOUT_MS) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), timeoutMs);
+  try { return await fetch(url, { ...options, signal: c.signal }); }
+  finally { clearTimeout(t); }
+}
 
 // Scan several nearby cities so the feed isn't all one place. Override the whole
 // set with a comma-separated EVENTS_SOURCE_URLS, or the legacy single
@@ -72,7 +88,11 @@ const FALLBACK_EVENTS = [
 function extractJsonLdEvents(html) {
   const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
   const items = [];
-  for (const block of blocks) {
+  for (const rawBlock of blocks) {
+    // Some campus calendars wrap their JSON-LD in CDATA (legal in XHTML
+    // serializations); JSON.parse rejects the literal "<![CDATA[ … ]]>"
+    // wrapper. Strip it before parsing so those sources don't get dropped.
+    const block = rawBlock.trim().replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '');
     let parsed;
     try { parsed = JSON.parse(block); } catch { continue; }
     const list = Array.isArray(parsed?.itemListElement) ? parsed.itemListElement : [];
@@ -108,16 +128,18 @@ async function fetchSourceHtml(url) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: {
           'User-Agent': USER_AGENTS[i % USER_AGENTS.length],
           'Accept': 'text/html,application/xhtml+xml',
           'Accept-Language': 'en-US,en;q=0.9',
         },
-      });
+      }, SCRAPE_FETCH_TIMEOUT_MS);
       if (res.ok) return await res.text();
       lastErr = new Error(`Source fetch failed: ${res.status} ${url}`);
     } catch (err) {
+      // An AbortError here means the SCRAPE_FETCH_TIMEOUT_MS budget was used
+      // up; it's a normal retryable failure, not a crash.
       lastErr = err;
     }
     if (i < attempts - 1) {
@@ -176,16 +198,23 @@ async function scrapeOneSource(url) {
 // contribute. Returns up to MAX_EVENTS events, de-duped across cities
 // (Eventbrite cross-lists some events under neighboring cities).
 async function scrapeEvents() {
+  // Parallelize per-source fetches so one slow host can't block the others
+  // (H5). The per-request timeout caps each source's wall-clock cost; we use
+  // allSettled so a rejection is just a skipped source. The original input
+  // order is preserved across results, which keeps the round-robin merge
+  // deterministic (city A before city B every run).
+  const results = await Promise.allSettled(SOURCE_URLS.map((url) => scrapeOneSource(url)));
   const lists = [];
-  for (const url of SOURCE_URLS) {
-    try {
-      const evs = await scrapeOneSource(url);
+  results.forEach((r, idx) => {
+    const url = SOURCE_URLS[idx];
+    if (r.status === 'fulfilled') {
+      const evs = r.value;
       console.log(`  ${url} → ${evs.length} event(s)`);
       if (evs.length) lists.push(evs);
-    } catch (err) {
-      console.warn(`  ${url} → skipped (${err})`);
+    } else {
+      console.warn(`  ${url} → skipped (${r.reason})`);
     }
-  }
+  });
 
   const merged = [];
   const seen = new Set();
@@ -194,7 +223,16 @@ async function scrapeEvents() {
     for (const list of lists) {
       if (i >= list.length) continue;
       const e = list[i];
-      const key = `${e.title}|${e.start_at}|${e.location.lat},${e.location.lng}`;
+      // M6: prefer the source's own canonical URL as the dedup key. Two
+      // listings with the same title+start+coords are sometimes genuinely
+      // distinct (recurring series, rounded coords); the source_url is the
+      // stable per-event identity from Eventbrite's JSON-LD. Fall back to the
+      // old composite when source_url is missing (e.g. malformed JSON-LD).
+      // A partial unique index on events.source_url WHERE source='scraped'
+      // enforces the same identity at the DB.
+      const key = e.source_url
+        ? `url:${e.source_url}`
+        : `composite:${e.title}|${e.start_at}|${e.location.lat},${e.location.lng}`;
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(e);
@@ -205,7 +243,7 @@ async function scrapeEvents() {
 }
 
 async function ingest(event) {
-  const res = await fetch(ENDPOINT, {
+  const res = await fetchWithTimeout(ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -219,7 +257,7 @@ async function ingest(event) {
       'x-ingest-token': INGEST_TOKEN,
     },
     body: JSON.stringify(event),
-  });
+  }, INGEST_TIMEOUT_MS);
   const body = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, body };
 }
@@ -246,6 +284,13 @@ async function main() {
     // loudly, so it's clear in the log this isn't live data.
     console.warn('No parseable events from the live source (bot-check / markup change / fetch error). ' +
       'Falling back to seed events so the ingest path still runs.');
+    console.warn('NOTICE: ingest used fallback seed events; live sources returned 0 results.');
+    // M8: surface a degraded run in CI without hard-failing the workflow.
+    // process.exitCode = 2 lets the rest of the run complete (we still want
+    // the ingest path exercised) and surfaces as a non-zero exit in the Actions
+    // log — distinct from a successful 0 and a hard-fail 1. Set BEFORE the
+    // ingest loop so a successful ingest of the seed rows doesn't reset it.
+    process.exitCode = 2;
     events = FALLBACK_EVENTS;
   }
 
