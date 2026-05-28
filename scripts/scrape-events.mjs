@@ -80,7 +80,12 @@ const FALLBACK_EVENTS = [
   start_at: new Date(Date.now() + (i + 2) * 86_400_000).toISOString(),
   end_at: null,
   capacity: 30,
-  source_url: SOURCE_URLS[0], // no per-event page in fallback; link to the first listing
+  // No per-event page exists for hand-rolled fallback seeds. Leave source_url
+  // NULL so the partial unique index on events(source_url) WHERE source='scraped'
+  // (migration 00033) doesn't collide every time the fallback path fires —
+  // three seed events all sharing the listing URL was the original cause of
+  // that index failing to create.
+  source_url: null,
 }));
 
 // Pull every JSON-LD <script> block from the page and collect the events out of

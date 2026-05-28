@@ -20,6 +20,29 @@
 -- listing. The partial index enforces that uniqueness for `source='scraped'`
 -- rows that have a non-NULL source_url, and leaves user-created rows
 -- untouched.
+--
+-- One-time cleanup BEFORE creating the index: rows already in the table that
+-- share a source_url with another row had source_url set to the LISTING page
+-- URL (the city browse URL) rather than the per-event canonical URL — the
+-- live scraper writes the per-event URL via the JSON-LD `url` field
+-- (scrape-events.mjs:188), but the FALLBACK_EVENTS path used to write the
+-- listing URL for all three hand-rolled seed events, and every CI fallback
+-- run minted three rows sharing the same value. The listing URL is not a
+-- meaningful per-event identity, so clear it (NULL is excluded by the
+-- partial WHERE clause below, so the index applies cleanly to the
+-- remaining well-formed rows and to every future scrape). The scraper has
+-- been patched to write NULL for fallback seeds going forward, so this
+-- cleanup is one-shot.
+UPDATE public.events
+   SET source_url = NULL
+ WHERE source = 'scraped'
+   AND source_url IN (
+     SELECT source_url
+       FROM public.events
+      WHERE source = 'scraped' AND source_url IS NOT NULL
+      GROUP BY source_url
+      HAVING COUNT(*) > 1
+   );
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS events_scraped_source_url_uniq
   ON public.events (source_url)
