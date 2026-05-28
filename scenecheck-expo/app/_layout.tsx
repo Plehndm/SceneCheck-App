@@ -70,6 +70,7 @@ export default function RootLayout() {
           <Stack.Screen name="settings/blocked" options={{ presentation: 'card' }} />
           <Stack.Screen name="settings/linked-calendar" options={{ presentation: 'card' }} />
           <Stack.Screen name="settings/help" options={{ presentation: 'card' }} />
+          <Stack.Screen name="settings/privacy" options={{ presentation: 'card' }} />
           <Stack.Screen name="requests" options={{ presentation: 'card' }} />
           <Stack.Screen name="my-hosting" options={{ presentation: 'card' }} />
           <Stack.Screen name="host-analytics" options={{ presentation: 'card' }} />

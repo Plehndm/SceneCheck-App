@@ -115,6 +115,12 @@ export default function OtherProfileScreen() {
   // In mock mode a public add is instant; private + every live add goes
   // to "pending" since only the recipient can accept.
   const requestFriend = async () => {
+    // Defense in depth — the Redirect above SHOULD have already taken us
+    // to /(tabs)/profile if this is our own profile, but if any edge
+    // case slips through (e.g. meId temporarily empty during a hydrate
+    // race) we still refuse to act. Repeated on every other handler
+    // below.
+    if (isSelf) return;
     if (!id || isFriend) return;
     if (isPending) {
       showToast({ message: 'Friend request pending.', kind: 'info' });
@@ -245,7 +251,7 @@ export default function OtherProfileScreen() {
   const isFollowing = id ? following.has(id) : false;
 
   const handleFriendToggle = () => {
-    if (!id) return;
+    if (isSelf || !id) return;
     if (isFriend) {
       showConfirm({
         title: `Unfriend ${person.name}?`,
@@ -263,7 +269,7 @@ export default function OtherProfileScreen() {
   };
 
   const handleFollowToggle = async () => {
-    if (!id) return;
+    if (isSelf || !id) return;
     // Optimistic-then-commit (FR7.1 / migration 00034 `org_follows`). Snapshot
     // the prior state so we can roll the local toggle back if the server call
     // fails — the persisted `following` Set is the single source of truth
@@ -292,7 +298,7 @@ export default function OtherProfileScreen() {
   // mode sent that non-UUID straight into the messages insert ("invalid input
   // syntax for type uuid").
   const handleMessage = async () => {
-    if (!id) return;
+    if (isSelf || !id) return;
     try {
       const { id: chatId } = await api.createChat([id], 'dm');
       router.push(`/chat/${chatId}` as never);
@@ -305,7 +311,7 @@ export default function OtherProfileScreen() {
   };
 
   const handleBlock = () => {
-    if (!id) return;
+    if (isSelf || !id) return;
     showConfirm({
       title: `Block ${person.name}?`,
       body: 'They won\'t see you in the app, and you won\'t see them. You can unblock from Settings.',
@@ -332,7 +338,7 @@ export default function OtherProfileScreen() {
   };
 
   const handleReport = () => {
-    if (!id) return;
+    if (isSelf || !id) return;
     showConfirm({
       title: `Report ${person.name}?`,
       body: 'Thanks — we\'ll log this for review.',
@@ -403,41 +409,48 @@ export default function OtherProfileScreen() {
         </View>
       )}
 
-      {/* Actions */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 18, paddingBottom: 14 }}>
-        {isOrg ? (
-          isManaged ? (
-            <View style={{ flex: 1 }}>
-              <SCButton label="Switch to this account" onPress={() => router.replace('/(tabs)/profile' as never)} variant="secondary" />
-            </View>
+      {/* Actions — hidden entirely when isSelf, so the Add Friend /
+          Block / Follow / Message / Report affordances can't be
+          reached even if the early Redirect above somehow doesn't
+          fire (e.g. meId temporarily empty during a hydrate race).
+          The Redirect is still the primary defense; this is the
+          belt-and-braces. */}
+      {!isSelf && (
+        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 18, paddingBottom: 14 }}>
+          {isOrg ? (
+            isManaged ? (
+              <View style={{ flex: 1 }}>
+                <SCButton label="Switch to this account" onPress={() => router.replace('/(tabs)/profile' as never)} variant="secondary" />
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <SCButton
+                  label={isFollowing ? 'Following · tap to unfollow' : 'Follow'}
+                  onPress={handleFollowToggle}
+                  variant={isFollowing ? 'secondary' : 'primary'}
+                />
+              </View>
+            )
           ) : (
-            <View style={{ flex: 1 }}>
-              <SCButton
-                label={isFollowing ? 'Following · tap to unfollow' : 'Follow'}
-                onPress={handleFollowToggle}
-                variant={isFollowing ? 'secondary' : 'primary'}
-              />
-            </View>
-          )
-        ) : (
-          <>
-            <View style={{ flex: 1 }}>
-              <SCButton
-                label={isFriend ? 'Friends' : isPending ? 'Pending' : person.privacy === 'private' ? 'Request' : 'Add'}
-                onPress={handleFriendToggle}
-                variant={isFriend ? 'secondary' : 'primary'}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <SCButton
-                label="Message"
-                onPress={handleMessage}
-                variant="ghost"
-              />
-            </View>
-          </>
-        )}
-      </View>
+            <>
+              <View style={{ flex: 1 }}>
+                <SCButton
+                  label={isFriend ? 'Friends' : isPending ? 'Pending' : person.privacy === 'private' ? 'Request' : 'Add'}
+                  onPress={handleFriendToggle}
+                  variant={isFriend ? 'secondary' : 'primary'}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <SCButton
+                  label="Message"
+                  onPress={handleMessage}
+                  variant="ghost"
+                />
+              </View>
+            </>
+          )}
+        </View>
+      )}
 
       {/* Interests */}
       {userInterests.length > 0 && (
@@ -531,8 +544,10 @@ export default function OtherProfileScreen() {
         )}
       </View>
 
-      {/* Safety actions (people only — orgs use Report flow elsewhere) */}
-      {!isOrg && (
+      {/* Safety actions (people only — orgs use Report flow elsewhere).
+          Also hidden when isSelf for the same belt-and-braces reason
+          as the Add/Message row above. */}
+      {!isOrg && !isSelf && (
         <View style={{ paddingHorizontal: 18, paddingTop: 8 }}>
           <SCText variant="labelCap" style={{ marginBottom: 8 }}>Safety</SCText>
           <SCCard>

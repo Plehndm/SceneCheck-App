@@ -12,11 +12,21 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { RADIUS } from '@/theme/tokens';
 
-const ROWS: { icon: IconName; label: string; sub: string; href?: string; action?: 'replay-tour' }[] = [
+// Each row either:
+//   - opens an external URL via Linking (`href`)
+//   - navigates to an in-app screen (`route`)
+//   - runs an inline action (`action`)
+// Privacy used to link out to https://scenecheck.app/privacy — that
+// domain isn't owned by this project and serves an unrelated demo
+// site, so we route to an in-app privacy screen that accurately
+// describes what SceneCheck does instead. The bug-report URL was
+// also pointing at a non-existent github.com/scenecheck/issues; it
+// now points at the actual repo.
+const ROWS: { icon: IconName; label: string; sub: string; href?: string; route?: string; action?: 'replay-tour' }[] = [
   { icon: 'help', label: 'How SceneCheck works', sub: 'A walkthrough of the main features', action: 'replay-tour' },
   { icon: 'mail', label: 'Email support', sub: 'support@scenecheck.app', href: 'mailto:support@scenecheck.app' },
-  { icon: 'shield', label: 'Privacy policy', sub: 'scenecheck.app/privacy', href: 'https://scenecheck.app/privacy' },
-  { icon: 'flag', label: 'Report a bug', sub: 'github.com/scenecheck/issues', href: 'https://github.com/scenecheck/issues' },
+  { icon: 'shield', label: 'Privacy policy', sub: 'How SceneCheck handles your data', route: '/settings/privacy' },
+  { icon: 'flag', label: 'Report a bug', sub: 'github.com/Plehndm/SceneCheck-App/issues', href: 'https://github.com/Plehndm/SceneCheck-App/issues' },
 ];
 
 export default function HelpFeedbackScreen() {
@@ -27,6 +37,10 @@ export default function HelpFeedbackScreen() {
     if (row.action === 'replay-tour') {
       // Onboarding tour can be re-enabled here once it's built.
       showToast({ message: 'Welcome tour replay coming soon.', kind: 'info' });
+      return;
+    }
+    if (row.route) {
+      router.push(row.route as never);
       return;
     }
     if (row.href) {
