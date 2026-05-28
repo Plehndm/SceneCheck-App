@@ -31,6 +31,11 @@ export interface MapProps {
   meInterests?: string[];
   // Pin tap callback. Native uses the marker's onPress; web uses the marker click.
   onPinPress?: (event: SCEvent) => void;
+  // Map-background tap (anywhere that isn't a pin). The screen wires this to
+  // clear the focused selection so the "tap off the pin to deselect" UX
+  // works without requiring the user to hunt for the CLEAR button on the
+  // focused-event card.
+  onMapPress?: () => void;
   // The currently-selected event's id. Its pin renders enlarged + ringed (the
   // same look a tap produces) — so arriving from an event's "View location"
   // highlights that pin, not just centers on it.

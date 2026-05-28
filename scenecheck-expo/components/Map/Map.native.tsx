@@ -46,7 +46,7 @@
 // Diagnostic __DEV__ logs preserved so future regressions surface in
 // the device console the same way the marker crash did.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -57,6 +57,7 @@ import {
 } from 'react-native';
 import MapView, { Circle, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 import { useTokens } from '@/theme/ThemeProvider';
+import { SCIcon } from '@/components/SCIcon';
 import {
   DEFAULT_REGION, DEFAULT_RADIUS_M,
   eventLatLng, pinColor, type MapProps,
@@ -80,7 +81,7 @@ function mercatorY(latDeg: number): number {
 export function Map({
   events, user, initialCenter = DEFAULT_REGION, centerOn, radiusM = DEFAULT_RADIUS_M,
   meInterests = [],
-  onPinPress, onRegionChange, interactive = true, style, selectedId,
+  onPinPress, onMapPress, onRegionChange, interactive = true, style, selectedId,
 }: MapProps) {
   const t = useTokens();
   // centerOn (a focused event) wins over the you-are-here center. The
@@ -88,6 +89,10 @@ export function Map({
   // after that, the region tracked in state below is the source of
   // truth for pin projection.
   const center = centerOn ?? user ?? initialCenter;
+
+  // Imperative handle on the MapView so the recenter button can call
+  // animateToRegion. Stays null until the MapView mounts.
+  const mapRef = useRef<MapView | null>(null);
 
   // Current visible region. Initialised from `center` for the mount-
   // time render; updated continuously by onRegionChange while the user
@@ -186,6 +191,33 @@ export function Map({
     }
   }, [selectedId, events.length]);
 
+  // Recenter the map on (in priority order):
+  //   1. the selected event's coordinates, if any
+  //   2. the user's current location, if available
+  //   3. the initialCenter prop (defaults to UCI / Irvine)
+  // Animation uses the current region's deltas so the zoom level is
+  // preserved across the recenter — only the centroid changes.
+  const recenter = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    let target = initialCenter;
+    if (selectedId) {
+      const found = markerData.find(m => m.id === selectedId);
+      if (found) target = found.ll;
+    } else if (user) {
+      target = user;
+    }
+    map.animateToRegion(
+      {
+        latitude: target.latitude,
+        longitude: target.longitude,
+        latitudeDelta: region.latitudeDelta,
+        longitudeDelta: region.longitudeDelta,
+      },
+      300,
+    );
+  }, [selectedId, markerData, user, initialCenter, region.latitudeDelta, region.longitudeDelta]);
+
   return (
     <View
       onLayout={onLayout}
@@ -195,6 +227,7 @@ export function Map({
       style={[{ width: '100%' as const, height: 300 }, style as StyleProp<ViewStyle>]}
     >
       <MapView
+        ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         style={{ flex: 1 }}
         initialRegion={{
@@ -212,6 +245,13 @@ export function Map({
           updateRegion(r);
           onRegionChange?.({ latitude: r.latitude, longitude: r.longitude });
         }}
+        // Tap on the map background (anywhere that isn't a pin) →
+        // onMapPress. The pin overlay below uses pointerEvents='box-none'
+        // and individual Pressables for the pins themselves, so a tap
+        // either hits a Pressable (→ onPinPress) OR falls through to
+        // the MapView (→ this handler). The two are mutually exclusive
+        // per gesture, so no cross-fire guard is needed here.
+        onPress={interactive ? () => onMapPress?.() : undefined}
         showsUserLocation={!!user}
         // Snapshot mode: kill every gesture so the card reads as a
         // static map. `toolbarEnabled` is Android-only.
@@ -285,6 +325,41 @@ export function Map({
           );
         })}
       </View>
+
+      {/* Recenter button. Sits in the bottom-right corner of the map,
+          floating above the tiles + pin overlay. Tap target:
+            • selected event's coordinates, if any
+            • the user's current location, otherwise
+            • the initialCenter (default region), if neither is available.
+          Only rendered in interactive mode so the static MapPreview on
+          the Home tab doesn't get one. */}
+      {interactive && (
+        <Pressable
+          onPress={recenter}
+          accessibilityLabel="Recenter map"
+          hitSlop={8}
+          style={({ pressed }) => [{
+            position: 'absolute',
+            bottom: 12,
+            right: 12,
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: t.card,
+            borderWidth: 1,
+            borderColor: t.line,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: '#000',
+            shadowOpacity: 0.18,
+            shadowOffset: { width: 0, height: 2 },
+            shadowRadius: 4,
+            elevation: 4,
+          }, pressed && { opacity: 0.7 }]}
+        >
+          <SCIcon name="crosshair" size={18} color={t.ink} />
+        </Pressable>
+      )}
     </View>
   );
 }

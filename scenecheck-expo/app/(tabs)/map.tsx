@@ -150,6 +150,13 @@ export default function MapTab() {
             meInterests={meInterests}
             selectedId={focused?.id}
             onPinPress={(e) => setFocused(e)}
+            // Tap anywhere on the map that isn't a pin → clear the
+            // focused selection. The Map component routes the
+            // MapView.onPress here only when the gesture missed every
+            // pin (the pin overlay's Pressables capture their own
+            // taps), so this is the "tap off the selected pin"
+            // behaviour the user asked for.
+            onMapPress={() => setFocused(null)}
             style={{ width: '100%', height: '100%' }}
           />
         </View>
