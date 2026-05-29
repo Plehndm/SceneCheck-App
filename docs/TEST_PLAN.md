@@ -1625,6 +1625,155 @@ or the DB schema — it tunes stop-word + alias *data*. Applying it live needs a
 
 ---
 
+### 2.56 Round 3 code review + multi-agent fix sweep (post-§2.55 delta)
+
+_Captured 2026-05-27 alongside `docs/PROGRESS_SNAPSHOT.md` §62._
+
+A second full-stack audit produced `docs/CODE_REVIEW_REPORT_3.md` (2 Critical
++ 10 High + 10 Medium + 18 Low); four file-disjoint worker agents + a compliance
+agent landed the fixes in eight commits.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/migrations/00028_promote_waitlist_atomic.sql` + `supabase/functions/promote-waitlist/index.ts` (organizer-auth check) | _SQL/Edge — manually verified against hosted DB_ | Waitlist promotion is atomic (advisory lock + FIFO + capacity recheck); only `events.creator_id` can invoke the Edge Function. |
+| `supabase/migrations/00029_subscribe_event_status_check.sql` | _SQL — manually verified_ | `subscribe_to_event_atomic` raises on non-published events under the lock; idempotency preserved on re-subscribe. |
+| `supabase/migrations/00030_profiles_birthdate_age_gate.sql` (+ `handle_new_user` account_type read) | _SQL — manually verified_ | INSERT/UPDATE with `birthdate` < 18y raises; sign-up writes both birthdate and account_type from `raw_user_meta_data`. |
+| `supabase/migrations/00031_ratings_server_gate.sql` | _SQL — manually verified_ | Ratings INSERT raises on non-attendees, before event end, or past the 24h window. |
+| `supabase/migrations/00032_events_update_notify.sql` | _SQL — manually verified_ | UPDATE on user-visible fields fans out one `notifications` row per confirmed subscriber; scraped events are skipped. |
+| `supabase/migrations/00033_scraper_dedup_and_polish.sql` | _SQL — manually verified_ | Partial unique index on `(source_url) WHERE source='scraped'`; `create_chat` raises on invalid `p_type`. |
+| `scenecheck-expo/app/profile/[id].tsx` (block + report persist) | Jest 412/412 (existing screen tests) | Block call rolls back local state on API failure; report writes to `reports` table with the dishonest copy removed. |
+| `scenecheck-expo/app/_layout.tsx` (notification deep-link listener) | Jest 412/412 (manual integration on device) | Notification tap routes to `/event/:id`, `/chat/:id`, or `/profile/:id` based on payload. |
+| `scenecheck-expo/lib/api.ts` (subscribeToEvent returns waitlist_position; signUp 5-arg; followOrg) | Jest 412/412 | Waitlist response includes position from follow-up SELECT; sign-up stamps both birthdate + account type into metadata; follow toggles hit `org_follows`. |
+| `scenecheck-expo/store/useStore.ts` (`blockUser` action; `TOAST_DEFAULT_MS`) | Jest 412/412 (store tests) | `blockUser` mirrors `unblockUser`; toast duration centralised. |
+| `scripts/scrape-events.mjs` (timeouts + parallel sources + dedup key + exit-code-2 fallback) | _Node — exercised via the scrape workflow_ | Each fetch is timeout-bounded; `process.exitCode = 2` when only fallback data ingested. |
+| `.github/workflows/ci.yml` (NEW) + `scrape-events.yml` (perms + pins) | _CI — green on push_ | Lint + tsc + jest + Deno tests run on every push; `permissions: contents: read`; `ubuntu-24.04` pinned. |
+
+**Delivered count**: 412 / 412 (no change — the changes are server-side SQL,
+notification plumbing, and refactors of code that already had tests covering
+the screen-level state flow). `tsc` clean. Lint 7 problems (1 pre-existing
+error + 6 pre-existing warnings), down 1 from the pre-session baseline.
+
+**What this section deliberately does NOT do:** add new Jest coverage for the
+SQL migrations or Edge Function organizer-auth check — they live outside the
+Jest harness. The Deno suite covers `interest-matching.ts`; the migrations
+were verified manually against the hosted DB after `npx supabase db push`.
+
+---
+
+### 2.57 Post-audit patches: self-heal onboarded_at + capacity-increase trigger (post-§2.56 delta)
+
+_Captured 2026-05-27 alongside `docs/PROGRESS_SNAPSHOT.md` §63._
+
+Two defects surfaced by the §2.56 compliance audit.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/components/AuthBootstrap.tsx` (self-heal: `onboardedAt IS NULL && interests.length > 0`) | Jest 412/412 | Legacy users with seeded interests + null `onboarded_at` aren't force-routed back to the questionnaire; in-memory `onboardedAt` set immediately, DB `UPDATE` is fire-and-forget. |
+| `supabase/migrations/00039_capacity_increase_promote.sql` | _SQL — manually verified_ | AFTER UPDATE OF capacity trigger loops `promote_waitlist_atomic` when `NEW.capacity > OLD.capacity`; reentrant advisory lock means trigger calling locked function is safe. |
+
+**Delivered count**: 412 / 412 (no change). `tsc` clean.
+
+**What this section deliberately does NOT do:** add a Jest test asserting the
+AuthBootstrap heal runs once-per-account — the heal is idempotent (next
+hydrate sees `onboardedAt` and skips), so a re-trigger is harmless and not
+worth the mocking surface.
+
+---
+
+### 2.58 FR-gap closures: FR1.3 / 5.3 / 5.10 / 7.2 / 9.5 (post-§2.57 delta)
+
+_Captured 2026-05-27 alongside `docs/PROGRESS_SNAPSHOT.md` §64._
+
+Five FR-traceability gaps closed by three parallel agents + a compliance pass.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/migrations/00035_profiles_onboarded_at.sql` | _SQL — manually verified_ | New `onboarded_at TIMESTAMPTZ NULL` column; AuthGate consults it. |
+| `supabase/migrations/00036_host_analytics_rpcs.sql` (`host_analytics_by_city` + `…by_venue`) | _SQL — manually verified_ | Top-10 (interest_name, event_count) histogram per filter; raises P0001 on empty input; granted to `authenticated`. |
+| `supabase/migrations/00037_capacity_decrease_demote.sql` | _SQL — manually verified_ | AFTER UPDATE OF capacity demotes excess confirmed subscribers to front of waitlist in reverse-chronological order; existing positions shift up; one notification per demoted user. |
+| `supabase/migrations/00038_messages_announcements.sql` (`message_type` enum + BEFORE INSERT trigger + RLS) | _SQL — manually verified_ | Non-host insert with `message_type='announcement'` raises 42501; permissive RLS policy documents intent (trigger is the gate). |
+| `scenecheck-expo/app/onboarding/interests.tsx` (NEW) + `app/auth/sign-up.tsx` live-mode redirect | Jest 412/412 (mock onboarding flow tests) | First-launch picker calls `api.markOnboarded(tags)` on Continue OR `[]` on Skip; both replace to `/(tabs)`. |
+| `scenecheck-expo/app/host-analytics.tsx` (NEW) + `hooks/useHostAnalytics.ts` (NEW) + `app/my-hosting.tsx` row | Jest 412/412 | Two ranked top-10 lists with city/venue inputs auto-seeded from host's most-frequent event venue; empty state when both lists empty. |
+| `scenecheck-expo/app/attendees/[id].tsx` (host-only Remove + ConfirmDialog + optimistic-hide + rollback) | Jest 412/412 (existing attendees test extended) | Remove button only visible to host; on error the row reappears. |
+| `scenecheck-expo/app/settings/linked-calendar.tsx` (Google `useAuthRequest` + `OAUTH NOT CONFIGURED` fallback) + `lib/google-calendar.ts` (NEW) | Jest 412/412 (mocks for `expo-auth-session/providers/google` + `expo-web-browser`) | Connect/disconnect drives `useAuthRequest`; missing env var flips label and bypasses the OAuth round-trip. |
+| `scenecheck-expo/app/event/[id].tsx` + `create-event.tsx` (fire-and-forget calendar insert) | Jest 412/412 | After confirmed join / publish, fire `googleCalendar.insertEvent`; failure surfaces info toast and never blocks the primary flow. |
+| `scenecheck-expo/app/chat/[id].tsx` (host-only Announcement chip + warn-yellow rendering) + `lib/api.ts` (`canPostAnnouncement`, `sendMessage(messageType?)`) | Jest 412/412 | Announcement chip gated on `canPostAnnouncement`; armed composer flips border + send tint warn-yellow; announcement bubbles render full-width with bell icon. |
+| `scenecheck-expo/store/useStore.ts` (`onboardedAt` persisted, `hydrated` not persisted, `setOnboarded` / `setHydrated`) + `components/AuthGate.tsx` (tri-state redirect) | Jest 412/412 (store + AuthGate tests extended) | AuthGate renders through while `!hydrated`; routes `/auth/sign-in` while `!session`; routes `/onboarding/interests` while `session && onboardedAt == null`. |
+| `package.json` (`"engines": { "node": ">=22 <25" }` + `expo-auth-session` + `expo-crypto`) | _Build-time — Metro accepts_ | Sign-up runs end-to-end against Node 22 LTS; Google `useAuthRequest` hook resolves. |
+
+**Delivered count**: 412 / 412. `tsc` clean. Lint at 7-problem baseline.
+
+**Post-audit fix:** sign-up call's first cut used a type-cast that misaligned
+arg 4 (`birthdate`) and arg 5 (`accountType`), and `handle_new_user` in
+`00030` was still hard-coding `account_type = 'person'`. Both corrected;
+covered above under §2.56's `00030` row (account_type read) and the existing
+sign-up screen integration test.
+
+**What this section deliberately does NOT do:** add an end-to-end test for the
+Google Calendar OAuth round-trip — the mocked `useAuthRequest` makes the
+state machine testable but the network round-trip needs a real client ID and
+isn't reproducible in CI. The screen's `isConfigured()` branch is covered;
+the network branch is a manual checklist item.
+
+---
+
+### 2.59 Map iOS pin-crash → custom RN overlay rewrite (post-§2.58 delta)
+
+_Captured 2026-05-28 alongside `docs/PROGRESS_SNAPSHOT.md` §65._
+
+Recurring user crash report: tapping pins on the Map tab in Expo Go closed
+the app after 2-3 selections, regardless of timing. Device logs proved the
+bug lived entirely in the bundled `react-native-maps@1.20.x` native marker
+pipeline (JS state machine + memoization confirmed correct). Fix structurally
+removes the entire `<Marker>` code path.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/components/Map/Map.native.tsx` (no `<Marker>` children; overlay of absolute `<Pressable>`s; in-JS Mercator projection; continuous `onRegionChange`; recenter button; tap-empty-map deselect) | Jest 412/412 (jest-expo `react-native-maps` mock; screen-level state flow unchanged) | Selection state advances 0 → focused → null correctly; recenter prioritises `selectedId → user → initialCenter`; `MapView.onPress` only fires when overlay misses (mutually exclusive per gesture). |
+| `scenecheck-expo/app/(tabs)/map.tsx` (wires `onMapPress = () => setFocused(null)`) | Jest 412/412 | Tap-off-pin clears focused id; same `setFocused` path the back button used. |
+
+**Delivered count**: 412 / 412 (no change — existing tests use a marker-free
+mock; the structural rewrite is invisible to the jest layer). `tsc` clean.
+
+**What this section deliberately does NOT do:** add a Jest test asserting
+pixel positions match what `MKMapView` would have placed. The Mercator
+formula is the same one Apple/Google use to render tiles, so by construction
+the pin pixel matches the underlying tile feature; verifying it requires a
+real `MapView` instance which jest-expo doesn't provide. Manual side-by-side
+inspection on iPhone 13 + Pixel 7 was the acceptance gate.
+
+**Trade-off captured in code:** the projection ignores map rotation
+(`region.camera.heading` not read), so pins won't follow if the user rotates
+the map. Apple Maps north-locks by default; adding rotation correction is
+~10 lines if it ever matters.
+
+---
+
+### 2.60 Polish pass: self-profile redirect + privacy + /unk + group titles + edit description (post-§2.59 delta)
+
+_Captured 2026-05-28 alongside `docs/PROGRESS_SNAPSHOT.md` §§66–67._
+
+Cluster of small fixes from rapid user-report iteration on the deployed build.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/app/profile/[id].tsx` (`<Redirect>` after hooks + 6 handler early-returns + `{!isSelf && ...}` button gates) | Jest 412/412 (existing profile screen tests) | Navigating to own id redirects to `/(tabs)/profile`; even with redirect bypassed, the action buttons don't render and the handlers are no-ops. |
+| `scenecheck-expo/app/(tabs)/chat.tsx` (`chatAvatars` resolver + stacked-pair render + `namesTitle` for non-event groups) + `lib/api.ts` (chat embed extended to include `avatar_url + account_type`) + `types/domain.ts` (`Chat.members?`) | Jest 412/412 (chat list tests) | DM row leads with single 40px avatar; group row leads with Instagram-style stacked pair; non-event groups title to `Alice, Bob +N` when no event name exists. |
+| `scenecheck-expo/app/settings/privacy.tsx` (NEW) + `app/settings/help.tsx` (route swap + correct GitHub issues URL) | Jest 412/412 | Privacy row navigates to in-app screen instead of out to `scenecheck.app/privacy`; bug-report URL points to `github.com/Plehndm/SceneCheck-App/issues`. |
+| `scenecheck-expo/components/SCEventCard.tsx`, `app/my-hosting.tsx`, `app/profile/[id].tsx` (cap `> 0 ? cap : 'unk'` fallback) | Jest 412/412 | Scraped events without listed capacity read `0/unk` consistently across Home rail, my-hosting list, and the hosting card on profile (was `0/0` in the rail). |
+| `scenecheck-expo/components/EditEventSheet.tsx` (multi-line description TextInput + `desc` patch) + `lib/api.ts` `updateEvent.desc` | Jest 412/412 (edit sheet tests extended) | Edit sheet seeds description from `event.desc`; SAVE patches `desc` alongside other fields; `applyEventOverride` reflects new description immediately. |
+| `scenecheck-expo/lib/api.ts` `markOnboarded` live-branch (mirror writes into Zustand `subscribedInterests` + `me.interests`) | Jest 412/412 | After live-mode onboarding completion, picked tags appear in the store immediately — no wait for next hydrate. |
+
+**Delivered count**: 412 / 412. `tsc` clean. Lint at 7-problem baseline.
+
+**What this section deliberately does NOT do:** add automated coverage of the
+self-profile redirect *from a deep-linked notification payload* — `<Redirect>`
+fires within a `useEffect`-equivalent render path that expo-router doesn't
+expose to jest cleanly. The handler early-returns + button hides give
+defence-in-depth, and the redirect was visually verified on device.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

@@ -99,6 +99,12 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-24 | **Unknown-capacity scraped events: unlimited join + listing warning.** Scraped events have no listed capacity (DB `capacity` is null → `SCEvent.cap` 0). The event-detail screen now treats `cap <= 0` as **unknown / no limit**: the detail row shows "N going · capacity unknown" (not "N/0 · waitlist"), the CTA stays **JOIN EVENT** (never JOIN WAITLIST), and joining pops an info toast — *"No listed capacity — check the original listing for details"* — with a **VIEW LISTING** action opening `sourceUrl`. The server already allowed unlimited joins for null capacity (the `subscribe_to_event_atomic` RPC only waitlists when `capacity IS NOT NULL AND count >= capacity`), so this is client-only — no migration/redeploy. +1 test (412/412); `tsc` clean. Ships with the app build. See §59. |
 | 2026-05-26 | **Multi-city scraping + listing capacity + "/unk" display.** **(1)** The scraper scanned only Eventbrite's Irvine listing; it now scans **6 Orange County cities** (Irvine, Santa Ana, Costa Mesa, Newport Beach, Anaheim, Huntington Beach) via a `DEFAULT_SOURCES` list overridable as a whole by a comma-separated **`EVENTS_SOURCE_URLS`** (legacy single `EVENTS_SOURCE_URL` still works). A per-city cap (`MAX_PER_SOURCE`, default `ceil(MAX_EVENTS/sources)` = 7) + a **round-robin merge** mix the cities instead of filling from the first; a bot-blocked/changed source is skipped while the rest contribute, cross-listed dupes collapse, and the global `MAX_EVENTS` (40) still applies. **(2)** Each listing's schema.org **`maximumAttendeeCapacity`** is now parsed → a real `capacity` when present + positive (else `null`); `ingest-scraped` already passes it through, so no redeploy. **(3)** Capacity-unknown events render **"/unk"** instead of "/0": the events feed shows `N/unk` (`app/events.tsx`) and the detail row `N/unk going` (`app/event/[id].tsx`), superseding §59's "capacity unknown" wording; the §59 test was re-pointed. 412/412; `tsc` clean. Scraper changes apply on re-scrape; UI ships with the app build. See §60. |
 | 2026-05-26 | **Tag-quality pass: month/filler stop words + trimmed group10 aliases.** The first multi-city live run re-surfaced derive-noise: `may` tagged 4 events (dates in titles), plus `one`/filler. Added all 12 month names (+ `jan`…`dec` abbrevs), number words (`one`/`two`/`three`), and `now`/`actually`/`learn` to the analyzer's `STOP_WORDS` (derivation-only; catalog matching unaffected). Also trimmed `group10`'s `similar_tags` from `['in4matx-43','team','project']` to `['in4matx-43']` (`seed.sql`, `seed-hosted.sql`, `data/mocks.ts`) — the generic `project` alias was matching an unrelated band's "side project". Verified via a Node 24 type-strip driver; Jest 412/412, `tsc` clean. Live effect needs `ingest-scraped` redeploy + a hosted `group10` alias `UPDATE` + re-tag. See §61. |
+| 2026-05-27 | **Round 3 code review + multi-agent fix sweep.** `docs/CODE_REVIEW_REPORT_3.md` lands — full-stack audit of the working tree against the requirements + architecture docs (2 Critical + 10 High + 10 Medium + 18 Low). Four worker agents (backend, app-screens, app-infra, scraper+CI+docs) run in parallel on file-disjoint scopes; a compliance agent verifies. 8 logical commits ship: 6 new migrations (`00028`–`00033`, atomic waitlist + status-gated subscribe + age + rating + event-update notifications + scraper-dedup index + chat-enum check), `org_follows` table (`00034`), Edge Function updates (`promote-waitlist`, `subscribe-to-event`, `create-event`, `organizer-remove`), the FR10 client-side notification listener + push-token registration, `api.blockUser`/`submitReport`/`unfollowOrg` persistence, scraper hardening (`fetchWithTimeout`, parallel sources, `source_url` dedup, CDATA strip, fallback exit code), and a brand-new `.github/workflows/ci.yml` (lint + tsc + jest + Deno). 412/412; `tsc` clean. See §62. |
+| 2026-05-27 | **Post-audit patches.** Compliance pass surfaces two real defects in the freshly-landed sweep. (1) AuthBootstrap reads `profiles.onboarded_at` but doesn't self-heal legacy users — every pre-migration account would have been force-routed to the onboarding questionnaire on next sign-in. (2) FR5.6's INCREASE half was unimplemented (the migration comment assumed the host UI would loop `promote_waitlist_atomic`; it didn't). Two fixes: a one-shot self-heal write in AuthBootstrap (write `now()` when `onboarded_at` is NULL but the user has non-empty interests), and a new migration `00039_capacity_increase_promote.sql` — AFTER UPDATE OF capacity trigger symmetric to 00037, loops `promote_waitlist_atomic` until either the waitlist is empty or the new cap is full. See §63. |
+| 2026-05-27 | **FR-gap closures (FR1.3 / FR5.3 / FR5.10 UI / FR7.2 / FR9.5).** Round 3's FR table had several requirements marked ✗ that weren't lifted to numbered findings; this pass closes them. 4 new migrations (`00035` onboarding column, `00036` host-analytics RPCs, `00037` capacity-decrease demotion, `00038` announcements `message_type` + RLS + BEFORE INSERT trigger). New screens: `app/onboarding/interests.tsx`, `app/host-analytics.tsx`. Remove-attendee UI on `app/attendees/[id].tsx`. Google Calendar OAuth: `lib/google-calendar.ts` + `Google.useAuthRequest` wired in `app/settings/linked-calendar.tsx` + on-subscribe / on-publish insert paths. Announcement composer + distinct rendering in `app/chat/[id].tsx`. New deps: `expo-auth-session ~7.0.8`, `expo-crypto ~15.0.7`. `"engines": { "node": ">=22 <25" }` declared. 412/412; `tsc` clean. See §64. |
+| 2026-05-28 | **Map iOS pin-crash saga → custom RN overlay rewrite.** Multi-iteration debugging of an `EXC_BAD_ACCESS` that closed the app after 2-3 pin selections on the Map tab. Tried (in order): drop title/description, imperative `showCallout` via ref, memoize markers + stable refs, upgrade `react-native-maps` to `1.27.2` (couldn't bundle in Expo Go — that package is bundled with the SDK, so a `package.json` bump is a no-op). Device logs proved every JS call landed before each crash — the bug was 100% in the bundled `react-native-maps@1.20.x` native marker pipeline. Settled on a **custom React Native overlay**: `MapView` renders only tiles + the user-location dot + radius `Circle`, **no `<Marker>` children**. Pins are absolute-positioned `<Pressable>` Views projected via in-JS Mercator math against the current region (synchronous, no `pointForCoordinate` round-trips). `onRegionChange` (continuous) tracks the region in state so pins move with the map in real time. Plus a recenter button (`crosshair` icon, bottom-right; targets selected event → user → default in priority) and `onMapPress` wired to clear the focused selection. Pin crash class structurally removed. 412/412; `tsc` clean. See §65. |
+| 2026-05-28 | **Chat row avatars (DM single, group stacked Instagram-style) + non-event group titles.** Chat list rows now lead with avatars: DMs show the other person's, event/group rows show two stacked avatars (back top-left + front bottom-right with a card-coloured ring separating them — same trick Instagram uses). `Chat` type gains optional `members?: ChatMember[]`; `api.getChats` extends its existing `chat_members ⨝ profiles` embed to include `avatar_url` + `account_type` (no extra round-trips). Mock mode falls back to `SC_ACCOUNT_BY_ID` for DMs and host + first visible person for event chats. Non-event group chats (no event title) get a title built from member names: `Alice, Bob +N` truncation past three names. 412/412; `tsc` clean. See §66. |
+| 2026-05-28 | **Polish pass — self-profile redirect, in-app privacy screen, /unk everywhere, edit description, onboarding interest sync.** Six small fixes from rapid bug-report iteration: (1) self-profile redirect on `app/profile/[id].tsx` so navigating to your own user id hands off to `/(tabs)/profile` instead of showing the friend/block UI pointed at yourself, plus belt-and-braces hiding of the action buttons + handler early-returns when `isSelf` is true. (2) New in-app `app/settings/privacy.tsx` replacing the external `scenecheck.app/privacy` link (not our domain — was serving unrelated demo content); bug-report URL corrected to the actual repo. (3) `0/unk` capacity fallback applied to `SCEventCard`, `my-hosting.tsx`, and `profile/[id].tsx` (was only on `events.tsx`). (4) Description editing wired into `EditEventSheet`. (5) Onboarding interest writes now mirror into the local store after the DB write (live-mode branch was missing the mirror, mock branch already had it). 412/412; `tsc` clean. See §67. |
 
 ### Current layout
 
@@ -3541,7 +3547,567 @@ redeploy (the analyzer is bundled into the function) + a hosted `UPDATE` on
 
 ---
 
-## 62. How to re-snapshot this file
+## 62. Round 3 code review + multi-agent fix sweep
+
+_Last updated: 2026-05-27 (shipped to main 2026-05-27)_
+
+A second full-stack audit of the working tree against the requirements +
+architecture docs landed as `docs/CODE_REVIEW_REPORT_3.md`: **2 Critical
++ 10 High + 10 Medium + 18 Low**. The headline themes were UI affordances
+that didn't persist (Block/Report toast-and-disappear), notifications
+wired on neither end, doc drift, and no CI for lint/typecheck/tests.
+
+The fixes shipped via **four worker agents in parallel** (file-disjoint
+scopes — backend SQL+Edge Functions, app screens, app infrastructure,
+scraper+CI+docs) plus a synthesis compliance agent that verified every
+finding against the doc's prescribed Fix. Eight logical commits landed on
+`main`:
+
+**Backend (`supabase/`):**
+
+- `00028_promote_waitlist_atomic.sql` — SECURITY DEFINER RPC with
+  advisory lock, capacity re-check, FIFO promotion, waitlist delete,
+  in-app notification insert in one transaction. `promote-waitlist`
+  Edge Function gains the missing organizer-authorization check
+  (verified caller == `events.creator_id`) before invoking it.
+  Closes Critical C2 (broken access control).
+- `00029_subscribe_event_status_check.sql` — `subscribe_to_event_atomic`
+  now reads `events.status` under the lock and raises on non-published
+  events, with idempotency preserved.
+- `00030_profiles_birthdate_age_gate.sql` — adds `profiles.birthdate
+  DATE`, `enforce_age_gate` BEFORE INSERT/UPDATE trigger raising on
+  `age < 18`, and updates `handle_new_user` to read both `birthdate`
+  and `account_type` from `raw_user_meta_data` (account_type read was
+  added in the post-audit pass — see §63).
+- `00031_ratings_server_gate.sql` — BEFORE INSERT trigger requiring
+  confirmed attendance + `end_at < now()` + within-24h window.
+- `00032_events_update_notify.sql` — AFTER UPDATE trigger inserting
+  one in-app `notifications` row per confirmed subscriber when any
+  user-visible event field changes. Guarded `source <> 'scraped'`
+  so future UPSERT changes to the scraper can't spam subscribers.
+- `00033_scraper_dedup_and_polish.sql` — partial unique index on
+  `events(source_url) WHERE source='scraped'`, `create_chat`
+  pre-validates `p_type`, and a `COMMENT ON TABLE tag_relations`
+  documenting its intentionally-unread state.
+- Edge Function updates: `create-event` now calls `check_publish_gate`
+  via RPC (replacing the inline duplicate) and fire-and-forgets
+  `dispatch-notification` for `event.published`. `organizer-remove`
+  fire-and-forgets the `event.removed` dispatch.
+
+**App screens (`scenecheck-expo/app/`):**
+
+- `profile/[id].tsx` `handleBlock` now calls `useStore.blockUser` +
+  `api.blockUser` with rollback on failure (Critical C1 — the dialog
+  used to toast-then-back without persisting).
+- `profile/[id].tsx` `handleReport` calls `api.submitReport` and the
+  dialog copy is no longer the dishonest "review within 24 hours"
+  (H6).
+- `_layout.tsx` registers `onNotificationResponseReceived` listener at
+  the root + `registerForPushNotifications` so notification taps
+  deep-link to `/event/:id`, `/chat/:id`, or `/profile/:id` from the
+  payload (H1 frontend / FR10.4).
+- `event/[id].tsx` rate button gated on
+  `!isHost && isJoined && eventEnded` (H3 UI / FR5.11). Waitlist
+  toast surfaces `waitlist_position` from the API.
+- `create-event.tsx` gains user-visible toggles for "Auto-create
+  group chat" + "Add to Calendar" (M5 / FR5.9 / FR7.2).
+- `auth/sign-up.tsx` gains an Individual/Organization chip-row and
+  passes all 5 args to `api.signUp` including ISO-formatted birthdate
+  + account type (H7 / FR1.4 + H2 / FR1.2).
+- `my-following.tsx` unfollow drops the defensive duck-typed probe
+  and calls `api.unfollowOrg` directly (M10).
+- Polish: `events.tsx` swaps the hardcoded "Sat May 9 · Irvine"
+  string for `useDateCityLabel` (L-8); `interests/[tag].tsx` labels
+  its activity-bar fixture as `SAMPLE` (L-9); semantic React keys
+  on the help screen + ratings star row (L-10); profile loading
+  skeleton (L-11); chat `setTimeout` cleanup (M7).
+
+**App infrastructure (`scenecheck-expo/{lib,hooks,store,types,components,theme}/`):**
+
+- `lib/api.ts` — `subscribeToEvent` returns
+  `{status, chat_id, waitlist_position}` with a follow-up `waitlist`
+  SELECT after a `waitlisted` response. `signUp` extended with
+  `birthdate` + `accountType` parameters stamped into user metadata
+  (H2/H7). `followOrg` / `unfollowOrg` real implementations against
+  the new `org_follows` table (M10). `getChatMessages` returns
+  `DbMessageRow[]` honestly (H9). `subscribeToInterest` removed
+  (L-3, dead). `fetchEvents` uses `DEFAULT_REGION` instead of
+  inline UCI coords (L-7). `fetchRatings` preserves `createdAt`
+  for the M10 sort.
+- `hooks/useDateCityLabel.ts` — signature changed to accept
+  `(coords, status)`; callers in `(tabs)/index.tsx`, `(tabs)/map.tsx`,
+  `events.tsx` pass their existing `useLocation` result (M4).
+- `hooks/useChatMessages.ts` — `formatTime` replaced by canonical
+  `isoToTime` (L-5).
+- `hooks/useLocation.ts` — `request` wrapped in `useCallback` (L-4).
+- `hooks/useFollowedOrgs.ts` — redundant `ids` dep removed (L-12).
+- `store/useStore.ts` — `blockUser` action mirroring `unblockUser`;
+  `TOAST_DEFAULT_MS = 3_600` named constant (L-13).
+- `types/domain.ts` — `EventKind` drops the unreachable `'org'`
+  variant (M3); `Review` gains optional `createdAt` for sort.
+- `components/AuthBootstrap.tsx` — parallel hydrate query for
+  `org_follows` so the Zustand `following` Set reflects the
+  persisted follow graph on sign-in.
+- `lib/units.ts` (NEW) — `MILES_TO_METERS` extracted out of
+  `(tabs)/map.tsx` and `search.tsx` (L-6).
+- Six dead Expo template files removed: `themed-text.tsx`,
+  `themed-view.tsx`, `parallax-scroll-view.tsx`,
+  `ui/collapsible.tsx`, `constants/theme.ts`,
+  `hooks/use-theme-color.ts` (M2).
+
+**Scraper + CI + docs (`scripts/`, `.github/`, `docs/`):**
+
+- `scripts/scrape-events.mjs` — `fetchWithTimeout` wraps every
+  network call (`SCRAPE_FETCH_TIMEOUT_MS` + `INGEST_TIMEOUT_MS`
+  env vars), sources fetched in parallel via `Promise.allSettled`,
+  dedup key switched to `source_url` (with composite fallback),
+  CDATA stripped before `JSON.parse`, fallback path sets
+  `process.exitCode = 2` so a CI run that ingested only seed data
+  is distinguishable from a real scrape (H5 / M6 / L-16 / M8).
+- `.github/workflows/ci.yml` (NEW) — lint + tsc + jest +
+  `denoland/setup-deno` for the interest-matching analyzer tests.
+  `permissions: contents: read`, `ubuntu-24.04` pinned, actions
+  pinned to full semver (H4 / L-1 / L-2).
+- `.github/workflows/scrape-events.yml` — `permissions` block
+  added, `ubuntu-24.04` pinned, action pins synced.
+- Architecture doc — ingest auth contract updated to
+  `apikey + x-ingest-token + --no-verify-jwt` (was the obsolete
+  `service_role` Bearer description), endpoint name corrected
+  to `ingest-scraped`, Node 20 → 22 LTS rationale block updated
+  to describe the actual JSON-LD-over-`fetch` approach rather
+  than Playwright/Chromium (M8 / L-18).
+- README test count dropped (was stale at 385 vs the live 412);
+  AGENTS.md expanded to ~25 lines of orientation (L-17).
+
+**Verification:** TSC clean, 412/412 jest tests pass, lint at the
+pre-session 7-problem baseline (1 pre-existing error + 6 pre-existing
+warnings). Lint went 8 → 7 problems vs the pre-session baseline (Agent
+C cleaned one stale `import/first` warning while refactoring
+`MILES_TO_METERS`). Working tree clean; 8 commits pushed:
+`24c2f83 → 960d8df`.
+
+**Compliance:** the read-only audit agent confirmed 28 findings ✅
+as-prescribed, 5 ◑ partial, and surfaced 2 real defects introduced by
+the workers that go in §63 below.
+
+---
+
+## 63. Post-audit patches
+
+_Last updated: 2026-05-27 (shipped to main 2026-05-27)_
+
+Two real defects surfaced by §62's compliance review:
+
+**Self-heal `onboarded_at` for legacy users** (`components/AuthBootstrap.tsx`):
+`00030`'s migration header explicitly documented a one-shot self-heal
+AuthBootstrap was supposed to perform — any account predating the
+migration has `profiles.onboarded_at = NULL` even when the user has
+non-empty `user_interests` from the legacy onboarding screen. Without
+the self-heal, the AuthGate would force-route every existing real user
+back to the questionnaire on their next sign-in. The hydrate now
+treats `onboardedAt IS NULL && interests.length > 0` as "already
+onboarded," sets the in-memory `onboardedAt` to `Date.now()` so the
+AuthGate routes to `/(tabs)` immediately, and fires a best-effort
+`UPDATE profiles SET onboarded_at = now()` so future hydrates don't
+re-trigger the heal. The write is non-blocking — failure (e.g. RLS not
+yet applied) just means the next sign-in retries; the in-memory flag
+covers the session either way. Commit `4eb7080`.
+
+**FR5.6 INCREASE auto-promote** (`supabase/migrations/00039_capacity_increase_promote.sql`):
+`00037` covered the DECREASE half of FR5.6 via a trigger. The INCREASE
+half was assumed to be handled by the host UI looping
+`promote_waitlist_atomic` — but `EditEventSheet → api.updateEvent`
+just issues a bare `UPDATE events SET capacity = …` with no follow-up.
+That left raising capacity completely silent (waitlisted users wouldn't
+be promoted until someone else triggered the atomic-subscribe path).
+The fix is symmetric to 00037: AFTER UPDATE OF capacity trigger that,
+when `NEW.capacity > OLD.capacity`, loops `promote_waitlist_atomic`
+until either the new capacity is full or the waitlist is empty. Reuses
+the existing atomic RPC so the promotion semantics stay in one place;
+`pg_advisory_xact_lock` is reentrant on the same xact so the
+trigger calling the locked function is safe. Trigger-based rather than
+UI-based so the behaviour also fires for direct DB edits / future bulk
+RPCs — matches the FR's "automatically" language.
+
+Both fixes verified locally (tsc + 412/412 jest); commits `4eb7080` +
+`e0217ce` pushed to `main`.
+
+---
+
+## 64. FR-gap closures (FR1.3 onboarding, FR5.3 analytics, FR5.10 UI, FR7.2 Calendar, FR9.5 announcements)
+
+_Last updated: 2026-05-27 (shipped to main 2026-05-27)_
+
+Round 3's FR-traceability table marked several requirements ✗ that
+weren't lifted to numbered findings in the report itself. This pass
+closes five of them. Three parallel implementation agents
+(backend SQL, frontend infra, frontend screens) followed by a
+compliance audit; one post-audit fix afterwards for the sign-up
+arg-order bug that surfaced.
+
+**`00035_profiles_onboarded_at.sql`** — `profiles.onboarded_at
+TIMESTAMPTZ NULL` for the FR1.3 onboarding-completion marker. NULL =
+not yet onboarded; the AuthGate redirect (added in §62 work) consults
+this column. New accounts get NULL by default; legacy accounts get
+the self-heal from §63.
+
+**`00036_host_analytics_rpcs.sql`** — two SECURITY DEFINER RPCs
+returning top-10 (interest_name, event_count) histograms:
+`host_analytics_by_city(p_city TEXT)` and
+`host_analytics_by_venue(p_venue TEXT)`. Filter on
+`status = 'published'` and ILIKE substring-match on `location_name`
+(the events table has no first-class city column — geocoding lives
+in `geog`, the human-readable string in `location_name`). Empty
+input raises `P0001` so the screen disables the button until input
+is non-empty. Granted to `authenticated` — non-sensitive aggregates
+of public events.
+
+**`00037_capacity_decrease_demote.sql`** — AFTER UPDATE OF capacity
+trigger that, when the new capacity is strictly less than the old
+AND the event has more confirmed subscribers than the new cap
+allows, demotes the excess to the **front of the waitlist** in
+reverse-chronological order (FR5.6: "the last person to subscribe
+will be removed first"). Existing waitlist positions shift up by
+the demote count; the demoted rows take positions 1..N. Same
+advisory-lock hash as the subscribe / promote paths so concurrent
+operations are serialised. Status transition is
+`UPDATE … SET status='waitlisted'` (not DELETE+INSERT) to mirror
+the existing waitlist representation in `event_subscriptions`. One
+`notifications` row per demoted user. (The INCREASE half came as
+§63's `00039`.)
+
+**`00038_messages_announcements.sql`** — FR9.5 announcement support.
+`messages.message_type TEXT NOT NULL DEFAULT 'normal' CHECK ('normal',
+'announcement')`, BEFORE INSERT trigger
+`enforce_announcement_host()` raising `42501` when a non-host posts
+`message_type='announcement'`, plus a complementary permissive RLS
+policy that documents intent (the trigger is the actual gate because
+PostgreSQL ORs permissive policies and the existing per-member INSERT
+policy doesn't constrain `message_type`).
+
+**New screens:**
+
+- `app/onboarding/interests.tsx` — first-launch interest picker:
+  chip grid + Continue/Skip CTAs. Both call `api.markOnboarded(tags)`
+  (Skip passes `[]`); router replaces with `/(tabs)`. Sign-up
+  screen now redirects here in live mode (mock keeps the legacy
+  straight-to-tabs flow because mock SC_ME already has interests
+  and `onboardedAt` seeds to a non-null value in the store).
+- `app/host-analytics.tsx` — two ranked lists (city + venue, top
+  10 each). City input auto-seeds from the host's most-frequent
+  event `where`. Empty state when both lists are empty. Linked
+  from `app/my-hosting.tsx` via a new primary-tinted "Analytics"
+  row.
+
+**App-screen wiring:**
+
+- `app/attendees/[id].tsx` — host-only Remove button per row,
+  danger-tinted trash icon, ConfirmDialog, optimistic-hide +
+  rollback on error (FR5.10). Calls the existing `organizer-remove`
+  Edge Function via `api.organizerRemove`.
+- `app/settings/linked-calendar.tsx` — Google connect/disconnect
+  row driven by `Google.useAuthRequest` (`expo-auth-session/
+  providers/google`); `WebBrowser.maybeCompleteAuthSession()` at
+  module scope finalises the OAuth round-trip on web. When
+  `googleCalendar.isConfigured()` returns false the button label
+  flips to `OAUTH NOT CONFIGURED` and a press shows an info toast
+  pointing to `AGENTS.md`. Legacy Apple/Outlook chips retained.
+- `app/event/[id].tsx` and `app/create-event.tsx` — fire-and-forget
+  `googleCalendar.insertEvent` after a confirmed (non-waitlisted)
+  join / publish, when `linkedCalendar === 'google'` and
+  `isConfigured()`. Failures surface a "Joined, but couldn't add to
+  your Calendar" info toast; the primary flow never blocks on it.
+- `app/chat/[id].tsx` — host-only `Announcement` chip on the
+  composer, gated on `api.canPostAnnouncement(chatId)`. When armed
+  the composer border + send button tint warn-yellow; toggle resets
+  after each send. Announcement messages render as a full-width
+  warn-tinted card with a bell icon and an
+  `ANNOUNCEMENT · {who} · {time}` mono caption above bolder body
+  text — visually unmistakable next to normal bubbles.
+
+**Infrastructure additions:**
+
+- `lib/google-calendar.ts` (NEW) — `isConfigured` / `getAuthRequestConfig`
+  / `completeConnect` / `disconnect` / `insertEvent`. React-free; the
+  screen drives `useAuthRequest` and hands tokens to
+  `completeConnect`. Implicit (token) flow rather than auth-code+PKCE
+  — the web client doesn't ship a client secret, so refresh-token
+  exchange can't complete without a backend exchanger. 1-hour token
+  expiry forces reconnect; documented in the file header as a
+  future-work upgrade path.
+- `hooks/useHostAnalytics.ts` (NEW) — `{ byCity, byVenue, loading,
+  error, reload }` parallel fetch hook.
+- `lib/api.ts` — `markOnboarded`, `fetchHostAnalyticsByCity`,
+  `fetchHostAnalyticsByVenue`, `organizerRemove`,
+  `canPostAnnouncement`, `sendMessage(chatId, body, messageType?)`,
+  `DbMessageRow.message_type?`.
+- `store/useStore.ts` — `onboardedAt: number | null` (persisted),
+  `hydrated: boolean` (NOT persisted; flips true after AuthBootstrap's
+  first auth check), `setOnboarded` / `setHydrated`.
+- `components/AuthGate.tsx` — tri-state redirect logic: render-through
+  while `!hydrated`; `/auth/sign-in` while `!session`;
+  `/onboarding/interests` while `session && onboardedAt == null`.
+  Mock mode short-circuits.
+- `package.json` — `"engines": { "node": ">=22 <25" }` declared,
+  `expo-auth-session ~7.0.8` + `expo-crypto ~15.0.7` added,
+  `jest.setup.ts` gained mocks for `expo-auth-session/providers/google`
+  and `expo-web-browser`.
+
+**Post-audit fix:** the screen's first cut of the sign-up call used a
+type-cast that misaligned arg 4 (`birthdate`) and arg 5 (`accountType`).
+That silently dropped the birthdate AND landed the account type in the
+wrong metadata key. Separately, `handle_new_user` in `00030` was
+reading `birthdate` but still hard-coding `account_type = 'person'`.
+Both fixed: the sign-up screen now passes all 5 args in order with
+ISO-formatted birthdate, and `00030`'s `handle_new_user` now reads
+`account_type` from `raw_user_meta_data` with enum validation and a
+`'person'` default for callers that omit it. Commit `870b233`.
+
+**User actions surfaced for FR7.2:** Google Cloud Console setup steps
+documented inline in the commit message and in `AGENTS.md` — create
+OAuth client (Web application), enable Calendar API, add scope
+`calendar.events`, set `EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` env var.
+Until those credentials exist, the Connect button shows
+`OAUTH NOT CONFIGURED` and the on-subscribe/on-create paths skip the
+calendar side effect silently. Mock mode works without any of this.
+
+**Verification:** TSC clean, 412/412 jest tests pass, lint at the
+7-problem baseline. Commits `a4dae80 → 4eb7080` + `e0217ce` (the FR5.6
+INCREASE trigger crossed into both this section and §63 narratively).
+
+---
+
+## 65. Map iOS pin-crash saga → custom RN overlay rewrite
+
+_Last updated: 2026-05-28 (shipped to main 2026-05-28)_
+
+Recurring user report: tapping pins on the Map tab in Expo Go
+**closed the app after 2-3 selections, regardless of timing between
+taps**. The fix took many iterations because the cause wasn't where
+each hypothesis pointed. Captured device logs eventually proved the
+JS layer was correct end-to-end; the crash lived entirely in the
+bundled `react-native-maps@1.20.x` native marker pipeline.
+
+**Iteration log (each tried in turn against a live device):**
+
+1. **Drop `title` / `description` on Marker** — hypothesis: iOS
+   MKMarkerAnnotationView callout-lifecycle bug. Didn't help.
+2. **Imperative `showCallout()` via `useRef<MapMarker>`** — let
+   React state drive the callout rather than the gesture
+   recognizer's auto-select. Didn't help; both paths funnel into
+   `selectAnnotation:`.
+3. **Memoize markers with `React.memo` + stable refs** — cut
+   per-render prop-ref churn (each parent re-render was creating
+   new `coordinate` objects and `onPress` closures for all 36
+   markers, ~108 bridge messages per render). Made the crash worse
+   in one direction (hit at tap 2 instead of 3) because the memo
+   was broken: `onPressId` captured `selectedId` so all 36 markers
+   re-rendered on every selection anyway.
+4. **Upgrade `react-native-maps` to `1.27.2`** — `npm install`
+   succeeded locally, tsc + jest passed. But Metro couldn't bundle
+   it on the user's dev-build path (Expo Go bundles a fixed native
+   version regardless of `package.json`; the bundled version
+   shadows whatever's in `node_modules`). Reverted.
+
+Device logs from the bare-Marker iteration (no title, no
+description, no callout child, no ref-driven selection) still
+crashed at tap 3. Every JS log line landed; the crash silence fell
+**after** the React commit completed. Conclusion: the bug is purely
+in the bundled `react-native-maps`'s annotation/selection lifecycle,
+not in any JS-reachable code path.
+
+**Final fix — custom React Native overlay:**
+
+`<MapView>` now renders **only** the tile layer + the user-location
+indicator + the discovery-radius `Circle`. **No `<Marker>` children
+of any kind.** Event pins are absolute-positioned `<Pressable>` Views
+sitting in a sibling overlay that uses `pointerEvents='box-none'`
+so taps that miss a pin fall through to the map for pan/zoom; each
+Pressable explicitly captures its own hits with `hitSlop={8}` for the
+same effective 36px tap target the native markers had.
+
+Per-pin screen coordinates are projected **synchronously in JS** via
+a Mercator formula scoped to the current visible region:
+
+```js
+function mercatorY(latDeg: number): number {
+  const latRad = (latDeg * Math.PI) / 180;
+  const clamped = Math.max(-1.4835, Math.min(1.4835, latRad));
+  return Math.log(Math.tan(Math.PI / 4 + clamped / 2));
+}
+// in render:
+const x = ((ll.longitude - westLng) / region.longitudeDelta) * w;
+const yPin = mercatorY(ll.latitude);
+const y = ((yNorth - yPin) / ySpan) * h;
+```
+
+Same projection Apple Maps + Google Maps use to render tiles, so
+pins land at the exact pixel positions native annotations would
+have. Synchronous arithmetic, ~39 pins × constant ops =
+sub-millisecond per render. The viewport size is captured via
+`onLayout`; the visible region is tracked in state and updated
+**continuously by `onRegionChange`** (every frame the map moves) so
+pins glue to their geographic positions while the user is panning
+— no `pointForCoordinate` async round-trips, no snap-back-on-gesture-
+end.
+
+**Plus two affordances added in the same pass:**
+
+- **Recenter button** — floating circular Pressable at bottom-right
+  of the map, `crosshair` icon. Tap targets in priority order:
+  selected event coords → user location → `initialCenter`. Animates
+  via `mapRef.current.animateToRegion(...)` over 300ms preserving
+  the current zoom (only the centroid moves). Only rendered when
+  the map is interactive (so the Home `MapPreview` doesn't get one).
+- **Tap-empty-map → deselect** — `MapView.onPress` wired to an
+  `onMapPress` callback the screen sets to `setFocused(null)`.
+  Pin overlay's `box-none` ensures `MapView.onPress` only fires
+  when the gesture misses every pin — `onPinPress` and `onMapPress`
+  are mutually exclusive per gesture, no cross-fire guard needed.
+
+**Diagnostic logging preserved under `__DEV__`** so a future
+regression — or any unexpected behaviour — produces an actionable
+trace in the device console without re-instrumenting from scratch.
+
+**Trade-offs documented in the file header:** the projection ignores
+map rotation (`region.camera.heading` isn't read), so pins won't
+follow if the user rotates the map (rotateEnabled stays true). Apple
+Maps north-locks by default and typical UX doesn't rotate; adding
+rotation correction is ~10 lines using `camera.heading` and a 2D
+rotation around the viewport center if it ever matters.
+
+**Net result:** the entire pin-crash class is structurally removed.
+No annotations means no annotation cache to poison, no
+`selectAnnotation:` lifecycle to corrupt, no count-based threshold to
+hit. The version of `react-native-maps` bundled in Expo Go no longer
+matters for this code path. 412/412 jest tests pass throughout —
+the existing tests use `jest-expo`'s `react-native-maps` mock which
+doesn't model the native crash, but they do cover the screen-level
+state flow which is unchanged.
+
+Commits: `7ba9717 → c7a79cb → 0605594 → 80cc7a6`.
+
+---
+
+## 66. Chat row avatars (DM single, group stacked Instagram-style)
+
+_Last updated: 2026-05-28 (shipped to main 2026-05-28)_
+
+Chat list rows now lead with avatars:
+
+- **DM** — single 40px avatar of the other person, to the left of
+  the chat name.
+- **Event / group chat** — two stacked 30px avatars: back top-left,
+  front bottom-right with a 2px card-coloured pad wrapping the
+  front one to create the visual ring that separates them. Same
+  trick Instagram uses for its group-chat avatars. The total stack
+  occupies the same width a single 40px DM avatar would, so row
+  alignment stays tight regardless of chat type.
+
+**Data shape:** `Chat` gains optional `members?: ChatMember[]`
+(`ChatMember = Pick<Account, 'id'|'name'|'picture'|'type'>`), capped
+to the first 4 at the API layer (the row only ever renders two
+avatars anyway). `api.getChats`'s live-mode query extends its
+existing `chat_members ⨝ profiles` embed to include `avatar_url` +
+`account_type` alongside `name` — same round-trip, no per-row extra
+fetch. DMs drop self from the members list (no point putting your
+own face on your own row); event chats keep self so the stacked
+render reflects the actual roster.
+
+**Mock-mode fallback** in `app/(tabs)/chat.tsx`: a `chatAvatars(c, mock)`
+helper resolves up to 2 ChatMembers in priority order — live
+`c.members` → `SC_ACCOUNT_BY_ID[c.personId]` for DMs → event host +
+first non-host visible person for event chats. Render branches on the
+result:
+
+- 0 entries → muted placeholder circle
+- 1 entry → single `SCAvatar`
+- 2 entries → the stacked pair
+
+**Non-event group-chat title fallback** (added in §67 polish pass
+but related): chats with `kind !== 'event'` and `members.length > 1`
+get a title built from member names — `Alice, Bob, Carol` for ≤3
+names, `Alice, Bob +N` truncation past that. Missing names get a
+`'Someone'` placeholder so a stray null doesn't render as
+`Alice, , Bob`.
+
+Commit `a6fcf1e` (avatars), `622f90b` (title fallback).
+
+---
+
+## 67. Polish pass — self-profile redirect + privacy screen + /unk + group-chat names + edit description + onboarding sync
+
+_Last updated: 2026-05-28 (shipped to main 2026-05-28)_
+
+A cluster of small fixes from rapid user-report iteration:
+
+**Self-profile redirect** (`app/profile/[id].tsx`): tapping your own
+user id (in an attendees list, a notification deep-link, anywhere)
+used to land on the other-profile surface with Friend / Block / Report
+buttons pointed at yourself. Now: if `isSelf` (`id === me.id`), the
+screen returns `<Redirect href='/(tabs)/profile' />`. Placed after all
+hooks so the rules-of-hooks aren't violated — the data fetches briefly
+run for the self id (works fine; you can read your own profile) and
+the Redirect navigates away before paint.
+
+**Defense in depth on self-profile**: when the user reported the
+buttons were still reachable in some path, added belt-and-braces — all
+six handlers (`requestFriend`, `handleFriendToggle`, `handleFollowToggle`,
+`handleMessage`, `handleBlock`, `handleReport`) early-return when
+`isSelf` is true, and the action-button row + Safety card are wrapped
+in `{!isSelf && (...)}` so the buttons don't render at all on your
+own profile. The Redirect stays the primary defense; these gates
+backstop it.
+
+**In-app privacy policy** (`app/settings/privacy.tsx` NEW): the Help
+screen used to link out to `https://scenecheck.app/privacy` — that
+domain isn't owned by this project and serves an unrelated demo site.
+Replaced with an in-app screen that accurately describes the app: what
+we collect (account, profile, events, social, location), where it
+lives (Supabase, Expo Push, optional Google Calendar), who can see
+what (public vs friends-only, blocks, RLS-enforced chat scoping), and
+user controls (visibility, notifications, linked calendar, blocked
+list, delete account). The bug-report URL was also wrong
+(`github.com/scenecheck/issues` doesn't exist) — corrected to
+`github.com/Plehndm/SceneCheck-App/issues`. `support@scenecheck.app`
+was left as-is pending a decision on what to do with it.
+
+**`0/unk` capacity fallback consistency**: `app/events.tsx` already
+rendered `'/{cap > 0 ? cap : "unk"}'` so scraped events without a
+listed capacity read as `0/unk` rather than the misleading `0/0`. Three
+other render sites had the same `' / {cap} '` shape without the
+fallback — `components/SCEventCard.tsx` (the card the Home screen
+uses, hence the original report), `app/my-hosting.tsx`, and
+`app/profile/[id].tsx`. All three now apply the same fallback.
+
+**Edit-description on EditEventSheet**: the host edit-sheet had title /
+when / where / capacity but no description field, even though
+`api.updateEvent` already accepted a `desc` patch. Added a multi-line
+TextInput (`minHeight: 96`, `maxHeight: 160` so the SAVE button stays
+on-screen; `textAlignVertical: 'top'`) wired to local state seeded
+from `event.desc` on open. Sent in the patch alongside title/where/cap
+and stamped into `applyEventOverride` so the screen reflects the new
+description immediately.
+
+**Onboarding interest sync** (`lib/api.ts` `markOnboarded`): the
+live-mode branch was writing `user_interests` rows correctly to
+Supabase but never updating the local Zustand store. So after
+onboarding completion, the freshly-signed-up user landed on `/(tabs)`
+with `subscribedInterests` empty + `me.interests` empty until the next
+session hydrate — read as "my picks weren't saved." Mock branch
+already had this mirror; live branch was missing it. Fix: after the
+DB writes succeed, add each picked tag to `subscribedInterests` and
+`me.interests` in the store — same lazy-imported `useStore` pattern
+the mock branch uses to avoid a circular dependency with `data/mocks`.
+
+**Verification:** TSC clean, 412/412 jest tests pass, lint at the
+7-problem baseline. Commits `870b233` (self-profile + edit description
++ onboarding sync), `062e3ee` (in-app privacy + defense in depth),
+`622f90b` (`/unk` + non-event group titles).
+
+---
+
+## 68. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
