@@ -346,7 +346,12 @@ export const useStore = create<State>()(
       clearDrafts: () => set({ drafts: [] }),
 
       // ── preferences ──
-      radius: 5,
+      // Default discovery radius. Bumped from 5 → 10 mi alongside the LA-
+      // cluster scraper expansion so a fresh install surfaces events from
+      // the full anchor metro instead of a tight Irvine bubble that hid
+      // most of the ingested feed. Slider range is 0.5–50 mi; the user
+      // can still pick whatever they want from the Map tab or Settings.
+      radius: 10,
       visibility: 'public',
       notifPrefs: DEFAULT_NOTIF_PREFS,
       linkedCalendar: 'google',

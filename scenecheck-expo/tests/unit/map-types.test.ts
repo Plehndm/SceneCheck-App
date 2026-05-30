@@ -65,7 +65,7 @@ describe('Map defaults', () => {
     expect(DEFAULT_REGION.longitude).toBeCloseTo(-117.8427, 4);
   });
 
-  test('default radius is 5 miles (8047m)', () => {
-    expect(DEFAULT_RADIUS_M).toBe(8047);
+  test('default radius is 10 miles (16093m)', () => {
+    expect(DEFAULT_RADIUS_M).toBe(16093);
   });
 });

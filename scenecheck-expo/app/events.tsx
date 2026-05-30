@@ -23,6 +23,7 @@ import { pinColor } from '@/components/Map/types';
 import { whenRange } from '@/lib/date-time';
 import { formatPrice, priceState } from '@/lib/price';
 import { RADIUS } from '@/theme/tokens';
+import { MILES_TO_METERS } from '@/lib/units';
 import type { SCEvent } from '@/types/domain';
 
 type Filter = 'all' | 'yours' | 'friend' | 'recommended';
@@ -33,15 +34,27 @@ export default function EventsListScreen() {
   const joined = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
   const meInterests = useStore(s => s.me.interests ?? []);
+  // User's discovery-range preference (miles → meters); the same `radius`
+  // slider that controls the Map tab. Without passing this, fetchEvents
+  // fell back to its 5-mile internal default — that's why the list could
+  // top out at ~19 even after the 14-city scrape added 100+ events into
+  // the wider OC+LA area.
+  const radiusMiles = useStore(s => s.radius);
   // Live "today · city" label, same hook the Home + Map tabs use; previously
   // hardcoded to "Sat May 9 · Irvine" (L-8). Pass location through explicitly
   // — `useDateCityLabel` no longer mounts its own `useLocation()` (M4 in
   // CODE_REVIEW_REPORT_3.md).
   const { coords, status: locStatus } = useLocation();
   const dateCityLabel = useDateCityLabel(coords, locStatus);
-  // Live in live mode, fixture array in mock mode — same hook the
-  // Home tab + Map tab use.
-  const { events: allEvents, loading, reload } = useEvents();
+  // Pass coords + radius into the discovery RPC so the "events nearby"
+  // list reflects the user's ACTUAL location and ACTUAL discovery range
+  // instead of the api-layer default (DEFAULT_REGION + 5 miles). Mock
+  // mode short-circuits these args inside the hook.
+  const { events: allEvents, loading, reload } = useEvents({
+    lat: coords.latitude,
+    lng: coords.longitude,
+    radiusM: Math.round(radiusMiles * MILES_TO_METERS),
+  });
   // id → event lookup so the conflict chip can resolve joined events' times
   // (live mode — SC_EVENT_BY_ID only has the seeded ones).
   const eventsById = useMemo(

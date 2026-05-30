@@ -33,6 +33,7 @@ import { useLocation } from '@/hooks/useLocation';
 import { excludeSelf } from '@/lib/people';
 import { Pressable } from 'react-native';
 import { RADIUS } from '@/theme/tokens';
+import { MILES_TO_METERS } from '@/lib/units';
 
 export default function HomeScreen() {
   const t = useTokens();
@@ -49,17 +50,25 @@ export default function HomeScreen() {
   // Honor the persisted discovery radius (miles → meters) so changing it in
   // the Map/Settings re-fetches the in-range events here too, and their
   // recommendations re-derive against your current interests.
-  const radiusM = Math.round(useStore(s => s.radius) * 1609.34);
-  // Live in live mode, fixture array in mock mode — see hooks/useEvents.
-  const { events, loading, reload: reloadEvents } = useEvents({ radiusM });
-  // id → event lookup for the conflict chip (resolves joined events' times in
-  // live mode, where SC_EVENT_BY_ID only has the seeded events).
-  const eventsById = Object.fromEntries(events.map(e => [e.id, e]));
+  const radiusM = Math.round(useStore(s => s.radius) * MILES_TO_METERS);
   // Live date + (if location granted) reverse-geocoded city. Pass location
   // through explicitly — `useDateCityLabel` no longer mounts its own
   // `useLocation()` (M4 in CODE_REVIEW_REPORT_3.md).
   const { coords, status: locStatus } = useLocation();
   const dateCityLabel = useDateCityLabel(coords, locStatus);
+  // Live in live mode, fixture array in mock mode — see hooks/useEvents.
+  // Coords are passed explicitly so the discovery RPC anchors on the
+  // user's ACTUAL location (matches the Map tab); without this the call
+  // fell back to DEFAULT_REGION (Irvine) inside fetchEvents — fine for
+  // demos centered on UCI, wrong for anyone else.
+  const { events, loading, reload: reloadEvents } = useEvents({
+    lat: coords.latitude,
+    lng: coords.longitude,
+    radiusM,
+  });
+  // id → event lookup for the conflict chip (resolves joined events' times in
+  // live mode, where SC_EVENT_BY_ID only has the seeded events).
+  const eventsById = Object.fromEntries(events.map(e => [e.id, e]));
 
   return (
     <Screen onRefresh={() => { reloadEvents(); reloadPeople(); }}>

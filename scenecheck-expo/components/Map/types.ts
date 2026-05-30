@@ -55,7 +55,7 @@ export interface MapProps {
 
 // Default region centered on UCI (Aldrich Park area, per architecture doc).
 export const DEFAULT_REGION: LatLng = { latitude: 33.6461, longitude: -117.8427 };
-export const DEFAULT_RADIUS_M = 8047; // 5 miles, matches api.fetchEvents default
+export const DEFAULT_RADIUS_M = 16093; // 10 miles, matches store.radius default + api.fetchEvents fallback
 
 // Real-world coordinates for an event. Prefer `lat`/`lng` from the database
 // row; fall back to the prototype's normalized x/y transform for fixtures

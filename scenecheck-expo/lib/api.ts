@@ -14,7 +14,7 @@
 
 import { supabase, isLiveBackendAvailable } from './supabase';
 import { isoToTime, isoToWhen } from './date-time';
-import { DEFAULT_REGION } from '@/components/Map/types';
+import { DEFAULT_REGION, DEFAULT_RADIUS_M } from '@/components/Map/types';
 import {
   SC_ME, SC_EVENTS, SC_EVENT_BY_ID,
   SC_ACCOUNT_BY_ID, SC_INTERESTS_SUGGESTED, SC_INTERESTS_DETAILS,
@@ -377,7 +377,7 @@ export const api = {
       p_lng: lng ?? DEFAULT_REGION.longitude,
       // p_radius is an INT in the RPC signature — round so a fractional
       // meters value (miles × 1609.34) doesn't fail function resolution.
-      p_radius: Math.round(radiusM ?? 8047),
+      p_radius: Math.round(radiusM ?? DEFAULT_RADIUS_M),
       p_user_id: (user && 'id' in user) ? user.id : null,
     });
     if (error) throw error;

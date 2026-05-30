@@ -32,7 +32,7 @@ export function resetStore(overrides: Partial<ReturnType<typeof useStore.getStat
     mode: 'light',
     tweaks: DEFAULT_TWEAKS,
     drafts: [],
-    radius: 5,
+    radius: 10,
     visibility: 'public',
     notifPrefs: DEFAULT_NOTIF_PREFS,
     linkedCalendar: 'google',

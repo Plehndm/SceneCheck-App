@@ -43,12 +43,14 @@ describe('MapTab', () => {
   });
 
   test('tapping a radius chip writes the persisted store radius (miles)', () => {
-    // resetStore seeds radius=5; tapping 10 MI updates the shared store
-    // value that Settings reads and that survives reloads via persist.
-    expect(useStore.getState().radius).toBe(5);
-    const { getByText } = renderScreen(<MapTab />);
-    fireEvent.press(getByText('10 MI'));
+    // resetStore seeds radius=10 (the default); tapping 25 MI updates the
+    // shared store value that Settings reads and that survives reloads
+    // via persist. Use a chip that DIFFERS from the default so the test
+    // proves the write actually happens.
     expect(useStore.getState().radius).toBe(10);
+    const { getByText } = renderScreen(<MapTab />);
+    fireEvent.press(getByText('25 MI'));
+    expect(useStore.getState().radius).toBe(25);
   });
 
   test('a non-preset (custom) radius surfaces the Custom button with its value', () => {
