@@ -8,6 +8,7 @@
 // the main profile tab instead of opening this overlay. Mirrors the
 // native sibling's Redirect-on-self.
 
+import { useEffect, useState } from 'react';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
@@ -16,7 +17,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useHostedEvents } from '@/hooks/useHostedEvents';
 import { useRatings } from '@/hooks/useRatings';
 import { useUserInterests } from '@/hooks/useUserInterests';
-import { summarizeRatings } from '@/lib/ratings';
+import { summarizeRatings, ratingForEvent } from '@/lib/ratings';
 import { whenRange } from '@/lib/date-time';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
@@ -49,6 +50,18 @@ export default function OtherProfileWeb() {
   const { events: hosted } = useHostedEvents(id);
   const { ratings } = useRatings(id);
   const { interests } = useUserInterests(id);
+  // Events this person has attended (confirmed subscriptions). Their own
+  // event_subscriptions rows are RLS-hidden, so this goes through the
+  // attended_count RPC — same as native. 0 in mock mode.
+  const [attendedCount, setAttendedCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!id) { setAttendedCount(null); return; }
+    let cancelled = false;
+    api.getAttendedCount(id)
+      .then(n => { if (!cancelled) setAttendedCount(n); })
+      .catch(() => { if (!cancelled) setAttendedCount(0); });
+    return () => { cancelled = true; };
+  }, [id]);
 
   const close = () => router.back();
 
@@ -288,6 +301,31 @@ export default function OtherProfileWeb() {
             </div>
           )}
 
+          {/* Stats row (people) — HOSTED / ATTENDED / RATING, mirroring the
+              native other-profile + your own profile tab. */}
+          {!isOrg && !privateLocked && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 8,
+                marginBottom: 18,
+              }}
+            >
+              <Stat label="HOSTED" value={String(hosted.length)} />
+              <Stat label="ATTENDED" value={attendedCount != null ? String(attendedCount) : '—'} />
+              <Stat
+                label="RATING"
+                value={summary.average != null ? `${summary.average.toFixed(1)}★` : '—'}
+                onPress={
+                  ratings.length > 0
+                    ? () => router.push(`/ratings/${profile.id}` as never)
+                    : undefined
+                }
+              />
+            </div>
+          )}
+
           {/*
             M-07 — Private-account note. Mirrors native (`app/profile/[id].tsx:202-215`):
             when locked, render a short explainer card in place of the bio so the
@@ -386,79 +424,131 @@ export default function OtherProfileWeb() {
             </div>
           )}
 
-          {hosted.length > 0 && !privateLocked && (
+          {/* Hosting — always shown (with an empty state) for a visible
+              profile, matching the native other-profile, so friends/public
+              viewers see the section even when there's nothing hosted yet.
+              Each row carries its own per-event rating like native. */}
+          {!privateLocked && (
             <div style={{ marginBottom: 22 }}>
-              <LabelCap>
-                {isOrg ? 'Upcoming & past events' : 'Hosting & past events'}
-              </LabelCap>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  marginTop: 10,
-                }}
-              >
-                {hosted.map(e => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => router.push(`/event/${e.id}` as never)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      background: t.card,
-                      border: `1px solid ${t.line}`,
-                      borderRadius: 14,
-                      padding: 13,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 11,
-                        background: t.subtle,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: t.ink3,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <WebIcon name="pin" size={17} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: t.ink }}>
-                        {e.title}
-                      </div>
-                      <div
+              <LabelCap>{isOrg ? 'Events posted' : 'Hosting & past events'}</LabelCap>
+              {hosted.length === 0 ? (
+                <div
+                  style={{
+                    marginTop: 10,
+                    background: t.card,
+                    border: `1px solid ${t.line}`,
+                    borderRadius: 14,
+                    padding: 14,
+                    fontSize: 13,
+                    color: t.ink3,
+                    textAlign: 'center',
+                  }}
+                >
+                  {isOrg ? 'No events posted yet.' : 'Not hosting anything right now.'}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    marginTop: 10,
+                  }}
+                >
+                  {hosted.map(e => {
+                    const er = ratingForEvent(ratings, e.id);
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => router.push(`/event/${e.id}` as never)}
                         style={{
-                          fontFamily: FONT.mono,
-                          fontSize: 10.5,
-                          color: t.ink3,
-                          marginTop: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          background: t.card,
+                          border: `1px solid ${t.line}`,
+                          borderRadius: 14,
+                          padding: 13,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
                         }}
                       >
-                        {whenRange(e)}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 11,
+                            background: t.subtle,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: t.ink3,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <WebIcon name="pin" size={17} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: t.ink }}>
+                            {e.title}
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: FONT.mono,
+                              fontSize: 10.5,
+                              color: t.ink3,
+                              marginTop: 2,
+                            }}
+                          >
+                            {whenRange(e)} · {e.attendees}/{e.cap > 0 ? e.cap : 'unk'}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                            <WebIcon name="star" size={11} color={er.average != null ? t.warn : t.ink3} />
+                            <span style={{ fontFamily: FONT.mono, fontSize: 10, color: t.ink3 }}>
+                              {er.average != null
+                                ? `${er.average.toFixed(1)} · ${er.count} ${er.count === 1 ? 'review' : 'reviews'}`
+                                : 'No ratings yet'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          {ratings.length > 0 && !privateLocked && (
-            <ReviewsInline
-              ratings={ratings.slice(0, 3)}
-              hostId={profile.id}
-              total={ratings.length}
-            />
+          {/* Reviews — always shown (with an empty state) for a visible
+              profile so the ratings surface matches native. */}
+          {!privateLocked && (
+            ratings.length > 0 ? (
+              <ReviewsInline
+                ratings={ratings.slice(0, 3)}
+                hostId={profile.id}
+                total={ratings.length}
+              />
+            ) : (
+              <div>
+                <LabelCap>Reviews</LabelCap>
+                <div
+                  style={{
+                    marginTop: 10,
+                    background: t.card,
+                    border: `1px solid ${t.line}`,
+                    borderRadius: 14,
+                    padding: 14,
+                    fontSize: 13,
+                    color: t.ink3,
+                    textAlign: 'center',
+                  }}
+                >
+                  No ratings yet.
+                </div>
+              </div>
+            )
           )}
         </div>
       </div>

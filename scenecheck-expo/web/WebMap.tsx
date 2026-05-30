@@ -97,6 +97,13 @@ export interface WebMapProps {
    * pulse or the discovery circle.
    */
   centerOn?: LatLngLike | null;
+  /**
+   * Render the map chrome — the bottom-right zoom/recenter controls and the
+   * bottom-left LIVE/OFFLINE + legend chip. Defaults to true. Set false for
+   * small, non-interactive previews (e.g. the create-event location preview)
+   * where the chip + controls would cover the pin.
+   */
+  chrome?: boolean;
   style?: CSSProperties;
 }
 
@@ -119,6 +126,7 @@ export function WebMap({
   height = '100%',
   radiusM,
   centerOn,
+  chrome = true,
   style,
 }: WebMapProps) {
   const t = useTokens();
@@ -513,6 +521,7 @@ export function WebMap({
       )}
 
       {/* Zoom + recenter controls (bottom-right) */}
+      {chrome && (
       <div
         data-ctrl
         style={{
@@ -541,8 +550,10 @@ export function WebMap({
           </button>
         </WebTip>
       </div>
+      )}
 
       {/* LIVE/OFFLINE chip + legend (bottom-left) */}
+      {chrome && (
       <div
         style={{
           position: 'absolute',
@@ -630,6 +641,7 @@ export function WebMap({
           <WebLegendDot color={t.mapPinMute} label="Other" />
         </div>
       </div>
+      )}
 
       {/* Pulse keyframes — scoped to this component, injected once. */}
       <style>{`

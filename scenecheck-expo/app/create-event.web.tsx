@@ -169,13 +169,15 @@ export default function CreateEventWeb() {
   }, [me]);
   const account =
     accountList.find(a => a.id === activeAccount) ?? accountList[0];
-  // `picture` is the user-uploaded avatar for the signed-in account; in
-  // mock mode the fixture id is the literal 'me', in live mode it's the
-  // user UUID. Treat either as "show the user's avatar".
+  // Resolve the account avatar the same way the rail does: the locally-picked
+  // `picture` (store) wins, then fall back to the account's own `avatar_url`
+  // (carried on `account.picture` / `me.picture`). The previous code used only
+  // the store `picture`, so a signed-in user whose avatar lives on their
+  // profile row — but who hadn't re-picked it this session — showed initials.
   const accountPic =
     account.id === 'me' || account.id === me.id
-      ? picture
-      : (orgPictures[account.id] ?? null);
+      ? (picture ?? account.picture ?? null)
+      : (orgPictures[account.id] ?? account.picture ?? null);
 
   const { interests: catalogResults } = useInterests(tagQuery);
   const addableTags = useMemo(() => {
@@ -662,6 +664,9 @@ export default function CreateEventWeb() {
                   joinedSet={new Set()}
                   richHover={false}
                   online
+                  // Hide the legend + zoom controls — at 180px they'd cover the
+                  // pin; the preview just needs to show where it lands.
+                  chrome={false}
                 />
               </div>
             ) : (
