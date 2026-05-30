@@ -21,6 +21,15 @@
 // Test without credentials:  DRY_RUN=1 node scripts/scrape-events.mjs
 // (scrapes + prints the payloads, skips the POST).
 
+import {
+  isDateOnly,
+  hasTimezone,
+  timezoneFromSourceUrl,
+  extractFullJsonLdTimestamp,
+  dateOnlyToVenueLocalNoonIso,
+} from './scrape-time.mjs';
+import { extractPriceFromOffers } from './scrape-price.mjs';
+
 const DRY_RUN = process.env.DRY_RUN === '1' || process.argv.includes('--dry-run');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;        // https://<project-ref>.supabase.co
@@ -72,9 +81,9 @@ const MAX_PER_SOURCE = Math.max(1, Number(process.env.MAX_PER_SOURCE || Math.cei
 // interest keywords in the description so auto-tagging still matches. Keeps the
 // FR6 pipeline demonstrably working regardless of the live source's bot defenses.
 const FALLBACK_EVENTS = [
-  { title: 'Beginner Bouldering Night', description: 'Intro climbing and bouldering meetup for all levels.', location: { lat: 33.6846, lng: -117.8265 }, location_name: 'Irvine' },
-  { title: 'Aldrich Park Morning Run', description: 'Easy 5k running group, all paces, coffee after.', location: { lat: 33.6461, lng: -117.8427 }, location_name: 'Aldrich Park, UCI' },
-  { title: 'Common Room Coffee Meetup', description: 'Casual coffee and study session.', location: { lat: 33.6512, lng: -117.8417 }, location_name: 'Common Room Coffee' },
+  { title: 'Beginner Bouldering Night', description: 'Intro climbing and bouldering meetup for all levels.', location: { lat: 33.6846, lng: -117.8265 }, location_name: 'Irvine', price_min: 0, price_max: 0, price_currency: 'USD' },
+  { title: 'Aldrich Park Morning Run', description: 'Easy 5k running group, all paces, coffee after.', location: { lat: 33.6461, lng: -117.8427 }, location_name: 'Aldrich Park, UCI', price_min: 0, price_max: 0, price_currency: 'USD' },
+  { title: 'Common Room Coffee Meetup', description: 'Casual coffee and study session.', location: { lat: 33.6512, lng: -117.8417 }, location_name: 'Common Room Coffee', price_min: 0, price_max: 0, price_currency: 'USD' },
 ].map((e, i) => ({
   ...e,
   start_at: new Date(Date.now() + (i + 2) * 86_400_000).toISOString(),
@@ -126,10 +135,12 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
 ];
 
-// Fetch one listing URL with a few retries (rotating UA + backoff). Throws after
-// the last attempt so the caller can skip that source and continue with the rest.
-async function fetchSourceHtml(url) {
-  const attempts = Math.max(1, Number(process.env.SCRAPE_RETRIES || 3));
+// Fetch one URL with a few retries (rotating UA + backoff). Throws after
+// the last attempt so the caller can skip that source/detail and continue
+// with the rest. `verbose=false` silences the per-attempt warn line so
+// detail-page fetches don't flood the log on intermittent failures.
+async function fetchSourceHtml(url, { attempts: attemptsOverride, verbose = true } = {}) {
+  const attempts = Math.max(1, Number(attemptsOverride ?? process.env.SCRAPE_RETRIES ?? 3));
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -149,28 +160,272 @@ async function fetchSourceHtml(url) {
     }
     if (i < attempts - 1) {
       const delayMs = 2000 * (i + 1);
-      console.warn(`Scrape attempt ${i + 1}/${attempts} failed (${lastErr}); retrying in ${delayMs}ms…`);
+      if (verbose) {
+        console.warn(`Scrape attempt ${i + 1}/${attempts} failed (${lastErr}); retrying in ${delayMs}ms…`);
+      }
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
   throw lastErr;
 }
 
+// Follow an event's detail URL to recover precise time + price data.
+// Two reasons we hit the detail page:
+//
+//   1. Eventbrite listing JSON-LD emits date-only `startDate` shapes
+//      ("2026-05-29") that `new Date()` mis-parses as UTC midnight; the
+//      detail page carries the real timezone-aware value
+//      ("2026-05-29T14:00:00-07:00").
+//   2. Listing JSON-LD rarely includes `offers` (Eventbrite omits it
+//      from city pages entirely), so price is only available from the
+//      detail page.
+//
+// Returns whatever fields could be recovered (start_at / end_at / price
+// fields); each is null when missing. The caller picks which to use
+// based on what the listing already provided: a listing with a clean
+// full datetime keeps its time and just takes price from here.
+//
+// `sourceListingUrl` is the URL of the listing page the scraper is
+// iterating (e.g. /d/ca--irvine/events/). The price helper's US→CAD
+// override keys off the state-code in /d/<state>--<city>/ URLs — the
+// per-event detail URL (/e/<slug>-tickets-<id>) doesn't carry that
+// information, so passing it would silently leak Eventbrite's CAD
+// mis-tag through onto US events.
+async function enrichFromDetailPage(detailUrl, sourceListingUrl) {
+  try {
+    // 1 retry for detail pages — the listing already succeeded, so most
+    // failures are intermittent block-page responses that won't be cured
+    // by hammering. Keeps total wall-clock per source bounded.
+    const html = await fetchSourceHtml(detailUrl, { attempts: 1, verbose: false });
+    const startFull = extractFullJsonLdTimestamp(html, 'startDate');
+    const endFull = extractFullJsonLdTimestamp(html, 'endDate');
+    // Price extraction needs the structured Event object so the nested
+    // `offers` value is accessible — the per-field regex used for the
+    // timestamps can't reach into nested objects safely. Re-parse the
+    // JSON-LD blocks, find the first Event with a usable offer, and
+    // hand it to the helper alongside the listing URL.
+    let price = null;
+    for (const it of extractJsonLdEventObjects(html)) {
+      const got = extractPriceFromOffers(it.offers, sourceListingUrl);
+      if (got) { price = got; break; }
+    }
+    return {
+      start_at: startFull,
+      end_at: endFull,
+      price_min: price?.priceMin ?? null,
+      price_max: price?.priceMax ?? null,
+      price_currency: price?.priceCurrency ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Parse every JSON-LD <script> block and yield each Event-shaped object
+// inside. Unlike extractJsonLdEvents (which only walks top-level
+// `itemListElement` lists used on listing pages), this also accepts
+// single top-level Events — the shape detail pages use — so the
+// `offers` block is reachable on either page type.
+function extractJsonLdEventObjects(html) {
+  const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  const out = [];
+  for (const rawBlock of blocks) {
+    const block = rawBlock.trim().replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '');
+    let parsed;
+    try { parsed = JSON.parse(block); } catch { continue; }
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    for (const c of candidates) {
+      if (c && String(c['@type'] || '').includes('Event')) out.push(c);
+      const list = Array.isArray(c?.itemListElement) ? c.itemListElement : [];
+      for (const el of list) {
+        const it = el?.item ?? el;
+        if (it && String(it['@type'] || '').includes('Event')) out.push(it);
+      }
+    }
+  }
+  return out;
+}
+
+// Resolve time + price for one schema.org Event into a payload-ready
+// triple the ingest function can store losslessly.
+//
+// Time input shapes:
+//   1. Full datetime with offset  ("2026-05-29T14:00:00-07:00")
+//      → use as-is; new Date() parses correctly.
+//   2. Date-only                  ("2026-05-29")
+//      → follow the detail URL for the precise time; fall back to the
+//        venue's local noon when the detail fetch fails.
+//   3. Naive datetime (no offset) ("2026-05-29T14:00:00")
+//      → would otherwise be interpreted as runner-local time (UTC on
+//        CI), so we treat it as venue-local by appending the venue's
+//        current UTC offset.
+//
+// Price: tried listing-side first (extractPriceFromOffers on it.offers),
+// then via the detail page when listing has none. A detail-page fetch
+// runs once per event when either time or price needs it — the same
+// fetch satisfies both.
+//
+// Returns ISO strings + price fields (each null when unresolved) plus
+// a `tag` describing the time path taken — useful for the CI log.
+async function resolveEventFields(it, venueTz, sourceListingUrl) {
+  const rawStart = typeof it.startDate === 'string' ? it.startDate.trim() : '';
+  const rawEnd = typeof it.endDate === 'string' ? it.endDate.trim() : '';
+  const url = typeof it.url === 'string' ? it.url.trim() : '';
+
+  // Listing-side time, if it's already fully qualified. The common case
+  // for richer sources (campus calendars, custom feeds). No round trip
+  // needed for time, but we may still need one for price.
+  let startAt = hasTimezone(rawStart) ? new Date(rawStart).toISOString() : null;
+  let endAt = (startAt && hasTimezone(rawEnd)) ? new Date(rawEnd).toISOString() : null;
+  let tag = startAt ? 'listing' : null;
+
+  // Listing-side price. Most Eventbrite listings omit `offers` entirely
+  // (only the detail page has it), but other sources may carry it.
+  // Pass sourceListingUrl so the CAD→USD override fires when applicable
+  // — the per-event detail URL doesn't encode US-ness.
+  let price = extractPriceFromOffers(it.offers, sourceListingUrl);
+
+  // Detail-page fetch when either time or price is still missing AND we
+  // have a URL to follow. ONE round-trip serves both needs.
+  if (url && (!startAt || !price)) {
+    const detail = await enrichFromDetailPage(url, sourceListingUrl);
+    if (detail) {
+      if (!startAt && hasTimezone(detail.start_at || '')) {
+        startAt = new Date(detail.start_at).toISOString();
+        endAt = detail.end_at && hasTimezone(detail.end_at)
+          ? new Date(detail.end_at).toISOString()
+          : null;
+        tag = 'detail';
+      }
+      if (!price && detail.price_min !== null) {
+        price = {
+          priceMin: detail.price_min,
+          priceMax: detail.price_max,
+          priceCurrency: detail.price_currency,
+        };
+      }
+    }
+  }
+
+  // Time fallback: date-only listing whose detail fetch didn't yield a
+  // full timestamp. Anchor to the venue's local noon so the calendar day
+  // doesn't slip back a day under UTC midnight.
+  if (!startAt && isDateOnly(rawStart)) {
+    const fbStart = dateOnlyToVenueLocalNoonIso(rawStart, venueTz);
+    if (fbStart) {
+      startAt = fbStart;
+      endAt = isDateOnly(rawEnd) ? dateOnlyToVenueLocalNoonIso(rawEnd, venueTz) : null;
+      tag = 'noon-fallback';
+    }
+  }
+
+  // Naive datetime — treat as venue-local by stamping the venue's
+  // current UTC offset onto the string.
+  if (!startAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawStart)) {
+    const dayInstant = new Date(`${rawStart.slice(0, 10)}T12:00:00Z`);
+    const offsetMin = -venueOffsetMinutesAt(venueTz, dayInstant);
+    const sign = offsetMin >= 0 ? '+' : '-';
+    const abs = Math.abs(offsetMin);
+    const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const mm = String(abs % 60).padStart(2, '0');
+    const off = `${sign}${hh}:${mm}`;
+    const start = new Date(`${rawStart}${off}`);
+    if (!Number.isNaN(+start)) {
+      const end = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawEnd)
+        ? new Date(`${rawEnd}${off}`)
+        : null;
+      startAt = start.toISOString();
+      endAt = end && !Number.isNaN(+end) ? end.toISOString() : null;
+      tag = 'naive-localized';
+    }
+  }
+
+  // Last resort: pass to new Date(). May be wrong if the source is a
+  // naive datetime; the tag flags it for the log.
+  if (!startAt && rawStart) {
+    const start = new Date(rawStart);
+    if (!Number.isNaN(+start)) {
+      const end = rawEnd ? new Date(rawEnd) : null;
+      startAt = start.toISOString();
+      endAt = end && !Number.isNaN(+end) ? end.toISOString() : null;
+      tag = 'raw';
+    }
+  }
+
+  return {
+    start_at: startAt,
+    end_at: endAt,
+    price_min: price?.priceMin ?? null,
+    price_max: price?.priceMax ?? null,
+    price_currency: price?.priceCurrency ?? null,
+    tag: tag ?? 'unresolved',
+  };
+}
+
+// Cached wrapper around timezoneOffsetMinutes — called once per event
+// in the naive-datetime path. The Intl.DateTimeFormat construction
+// is not free; one cache entry per (tz, yyyy-mm-dd) is plenty.
+const tzOffsetCache = new Map();
+function venueOffsetMinutesAt(tz, instant) {
+  const day = instant.toISOString().slice(0, 10);
+  const key = `${tz}|${day}`;
+  if (tzOffsetCache.has(key)) return tzOffsetCache.get(key);
+  // Reuse the helper imported above (scrape-time.mjs) for parity with
+  // the unit tests. Inline import path is awkward — instead we recreate
+  // the computation here to avoid an extra module call in the hot loop.
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(instant).reduce((acc, p) => {
+    acc[p.type] = p.value; return acc;
+  }, {});
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  const wallAsUtc = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(hour), Number(parts.minute), Number(parts.second),
+  );
+  const offset = Math.round((wallAsUtc - instant.getTime()) / 60_000);
+  tzOffsetCache.set(key, offset);
+  return offset;
+}
+
 // Scrape one listing URL into payload-shaped events (capped at MAX_PER_SOURCE).
 async function scrapeOneSource(url) {
   const html = await fetchSourceHtml(url);
+  // Eventbrite listing JSON-LD often has date-only `startDate`; the venue
+  // timezone (inferred from the source URL's state code) anchors the
+  // fallback when we can't reach the detail page for the real time.
+  const venueTz = timezoneFromSourceUrl(url);
 
   const events = [];
   const seen = new Set(); // Eventbrite lists some events twice (featured + regular)
+  // Counters for the per-source log so a glance at CI output tells us how
+  // many events needed a detail-page round-trip vs. came clean, and how
+  // many ended up with usable price data.
+  const counts = { listing: 0, detail: 0, 'noon-fallback': 0, 'naive-localized': 0, raw: 0, unresolved: 0 };
+  let priceCount = 0;
+  let freeCount = 0;
   for (const it of extractJsonLdEvents(html)) {
     const geo = it.location?.geo;
     const lat = geo ? Number(geo.latitude) : NaN;
     const lng = geo ? Number(geo.longitude) : NaN;
-    const start = it.startDate ? new Date(it.startDate) : null;
-    const end = it.endDate ? new Date(it.endDate) : null;
-    // Required by ingest-scraped: title, valid start, and a real lat/lng
-    // (skips online/location-less events).
-    if (!it.name || !start || Number.isNaN(+start) || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (!it.name || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+    // Resolve time + price BEFORE the dedup key, so two listings of the
+    // same event don't dedup based on a placeholder UTC-midnight and then
+    // diverge after the detail-page lookup. The single detail-page fetch
+    // inside resolveEventFields satisfies both needs. Pass the listing
+    // URL so the CAD→USD override has the state-code it needs.
+    const resolved = await resolveEventFields(it, venueTz, url);
+    counts[resolved.tag] = (counts[resolved.tag] || 0) + 1;
+    if (!resolved.start_at) continue;
+    const start = new Date(resolved.start_at);
+    const end = resolved.end_at ? new Date(resolved.end_at) : null;
+    if (Number.isNaN(+start)) continue;
+
     const key = `${it.name}|${start.toISOString()}|${lat},${lng}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -188,11 +443,32 @@ async function scrapeOneSource(url) {
       location: { lat, lng },
       location_name: it.location?.name || '',
       capacity,
+      // Price triple. Either all three fields are non-null (free shows
+      // as 0/0/USD, fixed shows as N/N/CCC, range shows as L/H/CCC) or
+      // all three are null. The migration's CHECK enforces the same
+      // "both set or neither set" invariant at the DB level.
+      price_min: resolved.price_min,
+      price_max: resolved.price_max,
+      price_currency: resolved.price_currency,
       // The original listing page — ingest-scraped stores it as source_url and
       // the event-detail screen links to it in place of a host.
       source_url: it.url ? String(it.url).trim() : null,
     });
+    if (resolved.price_min !== null) {
+      priceCount++;
+      if (resolved.price_min === 0 && resolved.price_max === 0) freeCount++;
+    }
     if (events.length >= MAX_PER_SOURCE) break;
+  }
+  // Surface the resolution mix in CI logs (only the non-zero buckets, so
+  // the common "all listing" case stays a one-liner).
+  const tagSummary = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([tag, n]) => `${tag}:${n}`)
+    .join(' ');
+  if (tagSummary) console.log(`    time-resolution: ${tagSummary}`);
+  if (events.length > 0) {
+    console.log(`    price: ${priceCount}/${events.length} with prices (${freeCount} free)`);
   }
   return events;
 }
@@ -302,7 +578,15 @@ async function main() {
   if (DRY_RUN) {
     // No credentials needed — just show what would be ingested.
     for (const e of events) {
-      console.log(`• ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name}`);
+      // Compact price token: "$10-$25" / "$15" / "FREE" / "—".
+      const p = e.price_min == null
+        ? '—'
+        : (e.price_min === 0 && e.price_max === 0)
+          ? 'FREE'
+          : (e.price_min === e.price_max)
+            ? `$${e.price_min}`
+            : `$${e.price_min}-$${e.price_max}`;
+      console.log(`• ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name} | ${p}`);
     }
     console.log(`DRY_RUN: ${events.length} event(s) would be ingested (nothing POSTed).`);
     return;

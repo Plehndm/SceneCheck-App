@@ -25,6 +25,25 @@ serve(async (req: Request) => {
       return errorResponse("location must have valid lat and lng");
     }
 
+    // Price validation mirrors the migration 00040 CHECK constraint so
+    // a malformed body errors with a 400 + clear message instead of a
+    // 500 Postgres violation. Either all three fields null (default —
+    // host didn't specify a price) or all three set with non-negative
+    // bounds and max >= min.
+    const priceMin: number | null = body.price_min ?? null;
+    const priceMax: number | null = body.price_max ?? null;
+    const priceCurrency: string | null = body.price_currency ?? null;
+    if ((priceMin === null) !== (priceMax === null)) {
+      return errorResponse("price_min and price_max must both be set or both null");
+    }
+    if (priceMin !== null && priceMax !== null) {
+      if (!Number.isFinite(priceMin) || !Number.isFinite(priceMax)) {
+        return errorResponse("price_min and price_max must be numbers");
+      }
+      if (priceMin < 0) return errorResponse("price_min must be >= 0");
+      if (priceMax < priceMin) return errorResponse("price_max must be >= price_min");
+    }
+
     const supabase = createUserClient(req);
     const { lat, lng } = body.location;
 
@@ -40,6 +59,11 @@ serve(async (req: Request) => {
         start_at: body.start_at,
         end_at: body.end_at || null,
         capacity: body.capacity || null,
+        // Optional price triple from the create-event form. Both bounds
+        // 0 = FREE; both equal nonzero = fixed; min < max = range.
+        price_min: priceMin,
+        price_max: priceMax,
+        price_currency: priceCurrency,
         status: "draft",
         source: "user",
         min_subscribers: body.min_subscribers || Math.max(1, Math.ceil((body.capacity || 10) / 5)),

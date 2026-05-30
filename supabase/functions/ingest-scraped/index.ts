@@ -39,22 +39,106 @@ serve(async (req: Request) => {
       return errorResponse("location must have valid lat and lng");
     }
 
+    // Price validation mirrors the migration's CHECK constraint so a
+    // mismatched body errors with a 400 + clear message instead of a
+    // 500 Postgres constraint violation. Both null is fine (the column
+    // default); both set requires non-negative + max >= min.
+    const priceMin: number | null = body.price_min ?? null;
+    const priceMax: number | null = body.price_max ?? null;
+    const priceCurrency: string | null = body.price_currency ?? null;
+    if ((priceMin === null) !== (priceMax === null)) {
+      return errorResponse("price_min and price_max must both be set or both null");
+    }
+    if (priceMin !== null && priceMax !== null) {
+      if (!Number.isFinite(priceMin) || !Number.isFinite(priceMax)) {
+        return errorResponse("price_min and price_max must be numbers");
+      }
+      if (priceMin < 0) return errorResponse("price_min must be >= 0");
+      if (priceMax < priceMin) return errorResponse("price_max must be >= price_min");
+    }
+
     const admin = createAdminClient();
     const { lat, lng } = body.location;
 
     // Dedupe: the daily scraper re-sees the same source events, so skip if a
-    // scraped event with the same title + start already exists (idempotent
-    // re-runs). `.limit(1)` instead of `.maybeSingle()` so pre-existing dupes
-    // don't error here. Title + start_at is a good natural key for these.
-    const { data: dupes } = await admin
-      .from("events")
-      .select("id")
-      .eq("source", "scraped")
-      .eq("title", body.title)
-      .eq("start_at", body.start_at)
-      .limit(1);
-    if (dupes && dupes.length > 0) {
-      return jsonResponse({ event_id: dupes[0].id, deduped: true }, 200);
+    // scraped event with the same identity already exists.
+    //
+    // Identity priority:
+    //   1. source_url  — the partial unique index on events(source_url)
+    //      WHERE source='scraped' (migration 00033) makes this the
+    //      authoritative key. Looking it up here lets us self-heal stale
+    //      fields (notably start_at/end_at) on subsequent scrapes, which
+    //      matters when the scraper switches time-resolution paths (e.g.
+    //      from broken UTC-midnight under date-only JSON-LD to the
+    //      detail-page's real timezone-aware value).
+    //   2. title + start_at — kept as a fallback for FALLBACK_EVENTS in
+    //      the scraper, which have source_url=NULL and are exempt from
+    //      the partial index.
+    type DupeRow = {
+      id: string;
+      start_at: string | null;
+      end_at: string | null;
+      price_min: number | null;
+      price_max: number | null;
+      price_currency: string | null;
+    };
+    let dupeRow: DupeRow | null = null;
+    if (body.source_url) {
+      const { data } = await admin
+        .from("events")
+        .select("id, start_at, end_at, price_min, price_max, price_currency")
+        .eq("source", "scraped")
+        .eq("source_url", body.source_url)
+        .limit(1);
+      if (data && data.length > 0) dupeRow = data[0] as DupeRow;
+    }
+    if (!dupeRow) {
+      const { data } = await admin
+        .from("events")
+        .select("id, start_at, end_at, price_min, price_max, price_currency")
+        .eq("source", "scraped")
+        .eq("title", body.title)
+        .eq("start_at", body.start_at)
+        .limit(1);
+      if (data && data.length > 0) dupeRow = data[0] as DupeRow;
+    }
+    if (dupeRow) {
+      // Self-heal: patch start_at/end_at/price fields in place when the
+      // scraper has since resolved better values for the same source
+      // event. Two cases this covers:
+      //   - Times: the scraper used to write date-only-parsed-as-UTC-
+      //     midnight for Eventbrite listings; the new resolver follows
+      //     the detail page and ships a real PT timestamp instead.
+      //   - Prices: pre-migration-00040 rows have NULL price fields;
+      //     the next scrape populates them.
+      // Without this heal, the dedup short-circuits and the existing
+      // row keeps its old fields forever.
+      const wantStart = body.start_at;
+      const wantEnd: string | null = body.end_at ?? null;
+      const patch: Record<string, unknown> = {};
+      if (dupeRow.start_at !== wantStart) patch.start_at = wantStart;
+      if (dupeRow.end_at !== wantEnd) patch.end_at = wantEnd;
+      // Price comparison uses != (loose) because the DB returns
+      // NUMERIC as JS number (or sometimes string) — coerce both sides.
+      const numEq = (a: unknown, b: unknown): boolean => {
+        if (a === null || b === null) return a === b;
+        return Number(a) === Number(b);
+      };
+      if (!numEq(dupeRow.price_min, priceMin)) patch.price_min = priceMin;
+      if (!numEq(dupeRow.price_max, priceMax)) patch.price_max = priceMax;
+      if ((dupeRow.price_currency ?? null) !== (priceCurrency ?? null)) {
+        patch.price_currency = priceCurrency;
+      }
+      if (Object.keys(patch).length > 0) {
+        const { error: updErr } = await admin
+          .from("events")
+          .update(patch)
+          .eq("id", dupeRow.id);
+        if (updErr) {
+          console.error(`Failed to self-heal scraped event ${dupeRow.id}:`, updErr.message);
+        }
+      }
+      return jsonResponse({ event_id: dupeRow.id, deduped: true }, 200);
     }
 
     // Insert the scraped event
@@ -69,6 +153,12 @@ serve(async (req: Request) => {
         start_at: body.start_at,
         end_at: body.end_at || null,
         capacity: body.capacity || null,
+        // Price triple. Validated above; either all three null or all
+        // three set with max >= min >= 0. The migration's CHECK
+        // constraint enforces the same invariant.
+        price_min: priceMin,
+        price_max: priceMax,
+        price_currency: priceCurrency,
         status: "published", // scraped events go live immediately
         source: "scraped",
         source_url: body.source_url || null, // original listing the scraper pulled from
