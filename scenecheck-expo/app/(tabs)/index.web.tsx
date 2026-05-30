@@ -342,13 +342,30 @@ export default function HomeWeb() {
           >
             Happening near you
           </div>
-          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: t.ink3 }}>
-            {listEvents.length} shown · {!isPresetDist
-              ? `custom ${radius}mi`
-              : radius >= 50
-                ? 'any dist'
-                : `${radius} mi`}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontFamily: FONT.mono, fontSize: 11, color: t.ink3 }}>
+              {listEvents.length} shown · {!isPresetDist
+                ? `custom ${radius}mi`
+                : radius >= 50
+                  ? 'any dist'
+                  : `${radius} mi`}
+            </span>
+            <button
+              onClick={() => router.push('/search?tab=events' as never)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: FONT.mono,
+                fontSize: 10.5,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                color: t.ink3,
+              }}
+            >
+              SEE ALL →
+            </button>
+          </div>
         </div>
         <div style={{ padding: '6px 20px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {listEvents.length === 0 ? (
@@ -661,7 +678,7 @@ function PeopleCarousel({ people }: { people: ReturnType<typeof useSearchPeople>
           People with shared interests
         </div>
         <button
-          onClick={() => router.push('/search' as never)}
+          onClick={() => router.push('/search?tab=people' as never)}
           style={{
             background: 'none',
             border: 'none',

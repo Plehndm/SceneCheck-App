@@ -85,16 +85,22 @@ export default function WebSearchScreen() {
     lng: coords?.longitude,
     radiusM,
   });
-  const events = useMemo(() => {
-    if (!lowered) return allEvents.slice(0, SECTION_LIMIT);
-    return allEvents
-      .filter(e =>
-        e.title.toLowerCase().includes(lowered) ||
-        (e.where ?? '').toLowerCase().includes(lowered) ||
-        (e.interests ?? []).some(i => i.toLowerCase().includes(lowered))
-      )
-      .slice(0, SECTION_LIMIT);
+  // Full discovery-range set matching the query (uncapped) — drives the true
+  // Events tab-count and the dedicated Events section.
+  const matchedEvents = useMemo(() => {
+    if (!lowered) return allEvents;
+    return allEvents.filter(e =>
+      e.title.toLowerCase().includes(lowered) ||
+      (e.where ?? '').toLowerCase().includes(lowered) ||
+      (e.interests ?? []).some(i => i.toLowerCase().includes(lowered))
+    );
   }, [allEvents, lowered]);
+  // The dedicated Events tab shows the full set (matches what the Home/Map feed
+  // loads for the same radius); the 'all' overview shows a capped preview.
+  const events = useMemo(
+    () => (tab === 'events' ? matchedEvents : matchedEvents.slice(0, SECTION_LIMIT)),
+    [matchedEvents, tab],
+  );
 
   const { results: peopleRaw } = useSearchPeople(query);
   const { results: orgsRaw } = useSearchOrgs(query);
@@ -250,8 +256,8 @@ export default function WebSearchScreen() {
             }}
           >
             {([
-              { k: 'all', label: 'All', n: events.length + people.length + orgs.length + interests.length },
-              { k: 'events', label: 'Events', n: events.length },
+              { k: 'all', label: 'All', n: matchedEvents.length + people.length + orgs.length + interests.length },
+              { k: 'events', label: 'Events', n: matchedEvents.length },
               { k: 'people', label: 'People', n: people.length },
               { k: 'orgs', label: 'Organizations', n: orgs.length },
               { k: 'interests', label: 'Interests', n: interests.length },
