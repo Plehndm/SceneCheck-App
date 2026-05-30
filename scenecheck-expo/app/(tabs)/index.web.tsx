@@ -744,8 +744,23 @@ function PeopleCarousel({ people }: { people: ReturnType<typeof useSearchPeople>
             textTransform: 'uppercase',
           }}
         >
-          Friends &amp; nearby
+          People with shared interests
         </div>
+        <button
+          onClick={() => router.push('/search' as never)}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: FONT.mono,
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            color: t.ink3,
+          }}
+        >
+          SEE ALL →
+        </button>
       </div>
       <div
         style={{
