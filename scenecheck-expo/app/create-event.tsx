@@ -50,6 +50,9 @@ function makeEmptyForm(meInterests: readonly string[]): DraftForm {
     minSubs: 3,
     addToCalendar: true,
     autoGroupChat: true,
+    priceMode: 'none',
+    priceMin: '',
+    priceMax: '',
   };
 }
 
@@ -123,6 +126,29 @@ export default function CreateEventScreen() {
       else if (timesInvalid) showToast({ message: 'End time must be after start.', kind: 'error' });
       return;
     }
+    // Derive the price triple from form.priceMode + the optional inputs.
+    // Validation: if priceMode === 'paid', min must parse and max (if
+    // present) must be >= min. Bad inputs short-circuit before the
+    // network call so the host gets a synchronous toast.
+    let priceMin: number | null = null;
+    let priceMax: number | null = null;
+    let priceCurrency: string | null = null;
+    if (form.priceMode === 'free') {
+      priceMin = 0;
+      priceMax = 0;
+      priceCurrency = 'USD';
+    } else if (form.priceMode === 'paid') {
+      const lo = parseFloat(form.priceMin || '');
+      const hi = form.priceMax ? parseFloat(form.priceMax) : lo;
+      if (!Number.isFinite(lo) || lo < 0 || !Number.isFinite(hi) || hi < lo) {
+        showToast({ message: 'Enter a valid ticket price (max must be at least the min).', kind: 'error' });
+        return;
+      }
+      priceMin = Math.round(lo * 100) / 100;
+      priceMax = Math.round(hi * 100) / 100;
+      priceCurrency = 'USD';
+    }
+
     setPublishing(true);
     try {
       // Map the form's display strings to the shape the create-event Edge
@@ -141,6 +167,9 @@ export default function CreateEventScreen() {
         capacity: form.cap,
         min_subscribers: form.minSubs,
         interests: form.interests,
+        price_min: priceMin,
+        price_max: priceMax,
+        price_currency: priceCurrency,
       });
       if (initialDraft) removeDraft(initialDraft.id);
       // FR7.2 — fire-and-forget add-to-calendar side effect. Only fires when
@@ -313,6 +342,71 @@ export default function CreateEventScreen() {
               <SCIcon name="plus" size={14} color={t.ink} />
             </Pressable>
           </View>
+        </Field>
+
+        {/* Ticket price — three-mode toggle so the host can mark an
+            event FREE up front (attendees see the FREE chip on the
+            home rail) or specify a price/range. Default 'none' for
+            backwards-compatible drafts; nothing shows in the app and
+            the column stays NULL. Paid reveals min/max inputs; leaving
+            max blank treats it as fixed-price (max := min on submit). */}
+        <Field label="Ticket price">
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['none', 'free', 'paid'] as const).map(mode => {
+              const active = (form.priceMode ?? 'none') === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  onPress={() => set('priceMode', mode)}
+                  style={({ pressed }) => [{
+                    flex: 1, height: 36,
+                    borderRadius: RADIUS.md,
+                    borderWidth: 1,
+                    borderColor: active ? t.ink : t.line,
+                    backgroundColor: active ? t.ink : t.card,
+                    alignItems: 'center', justifyContent: 'center',
+                  }, pressed && { opacity: 0.85 }]}
+                >
+                  <SCText
+                    variant="mono"
+                    size={11}
+                    weight="600"
+                    color={active ? t.card : t.ink2}
+                  >
+                    {mode === 'none' ? 'NOT SET' : mode === 'free' ? 'FREE' : 'PAID'}
+                  </SCText>
+                </Pressable>
+              );
+            })}
+          </View>
+          {(form.priceMode ?? 'none') === 'paid' && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <View style={{ flex: 1 }}>
+                <SCText variant="mono" size={9} color={t.ink3} style={{ marginBottom: 4 }}>MIN $</SCText>
+                <TextInput
+                  value={form.priceMin ?? ''}
+                  onChangeText={(s) => set('priceMin', s)}
+                  placeholder="10"
+                  placeholderTextColor={t.ink3}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  style={inputStyle(t)}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <SCText variant="mono" size={9} color={t.ink3} style={{ marginBottom: 4 }}>MAX $ (optional)</SCText>
+                <TextInput
+                  value={form.priceMax ?? ''}
+                  onChangeText={(s) => set('priceMax', s)}
+                  placeholder="25"
+                  placeholderTextColor={t.ink3}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  style={inputStyle(t)}
+                />
+              </View>
+            </View>
+          )}
         </Field>
 
         {/* Interests — auto-filled from me.interests on a new event; user

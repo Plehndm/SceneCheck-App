@@ -9,6 +9,7 @@ import { SCText } from './SCText';
 import { SCTag } from './SCTag';
 import { ConflictChip } from './ConflictChip';
 import { whenRange } from '@/lib/date-time';
+import { formatPrice, priceState } from '@/lib/price';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { RADIUS } from '@/theme/tokens';
@@ -82,21 +83,58 @@ export function SCEventCard({ event, joined, showConflict, onPress, meInterests 
 
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingTop: 6, borderTopWidth: 1, borderTopColor: t.line,
+        paddingTop: 6, borderTopWidth: 1, borderTopColor: t.line, gap: 8,
       }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-          <SCText variant="mono" size={11} weight="600">{String(event.attendees)}</SCText>
-          {/* Scraped events frequently arrive with capacity=null (DB) →
-              cap=0 in our domain shape. Treat 0 as "unknown / no
-              listed limit" rather than rendering a misleading "0/0".
-              Matches the events list (app/events.tsx:187) which has
-              the same fallback. */}
-          <SCText variant="mono" size={11} color={t.ink3}>/{event.cap > 0 ? event.cap : 'unk'}</SCText>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+            <SCText variant="mono" size={11} weight="600">{String(event.attendees)}</SCText>
+            {/* Scraped events frequently arrive with capacity=null (DB) →
+                cap=0 in our domain shape. Treat 0 as "unknown / no
+                listed limit" rather than rendering a misleading "0/0".
+                Matches the events list (app/events.tsx:187) which has
+                the same fallback. */}
+            <SCText variant="mono" size={11} color={t.ink3}>/{event.cap > 0 ? event.cap : 'unk'}</SCText>
+          </View>
+          {/* Price chip next to attendees — surfaces "is there a ticket
+              cost?" without making the user open the event. FREE renders
+              with the good/green tone; an explicit dollar amount uses
+              the neutral ink so it doesn't out-shout the JOINED chip. */}
+          <PriceChip event={event} />
         </View>
         {event.interests.slice(0, 1).map(tag => (
           <SCTag key={tag} tag={tag} size="sm" tone="soft" />
         ))}
       </View>
     </Pressable>
+  );
+}
+
+// Compact price chip used on the card's bottom bar. Renders nothing
+// when priceState is 'none' — the event simply has no price information
+// to show. Two visual tones: green-tinted FREE for zero-cost events
+// (positive affordance, surfaces "no ticket needed" at a glance), and a
+// neutral border-only chip for actual money labels.
+function PriceChip({ event }: { event: SCEvent }) {
+  const t = useTokens();
+  const state = priceState(event);
+  const label = formatPrice(event);
+  if (state === 'none' || !label) return null;
+  if (state === 'free') {
+    return (
+      <View style={{
+        backgroundColor: t.good,
+        paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+      }}>
+        <SCText variant="mono" size={9} weight="700" color="white">{label}</SCText>
+      </View>
+    );
+  }
+  return (
+    <View style={{
+      borderWidth: 1, borderColor: t.line,
+      paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999,
+    }}>
+      <SCText variant="mono" size={10} weight="600" color={t.ink2}>{label}</SCText>
+    </View>
   );
 }

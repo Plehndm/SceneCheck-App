@@ -39,6 +39,17 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
   const [where, setWhere] = useState(event.where);
   const [desc, setDesc] = useState(event.desc ?? '');
   const [cap, setCap] = useState(event.cap);
+  // Price-edit local state. `priceMode` controls which input branch the
+  // sheet shows; the actual DB fields are derived from it on save.
+  //   'none'  — no price specified (column nulls), no inputs visible.
+  //   'free'  — host opted in to FREE (column 0/0/USD).
+  //   'paid'  — host entered a price (min/max).
+  // Initialised from the event's current price-column state.
+  const [priceMode, setPriceMode] = useState<'none' | 'free' | 'paid'>(
+    deriveInitialPriceMode(event.priceMin, event.priceMax),
+  );
+  const [priceMinStr, setPriceMinStr] = useState(formatPriceForInput(event.priceMin));
+  const [priceMaxStr, setPriceMaxStr] = useState(formatPriceForInput(event.priceMax));
   const [saving, setSaving] = useState(false);
 
   // Reset local form whenever the sheet (re-)opens onto a different
@@ -51,13 +62,42 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
       setWhere(event.where);
       setDesc(event.desc ?? '');
       setCap(event.cap);
+      setPriceMode(deriveInitialPriceMode(event.priceMin, event.priceMax));
+      setPriceMinStr(formatPriceForInput(event.priceMin));
+      setPriceMaxStr(formatPriceForInput(event.priceMax));
       setSaving(false);
     }
-  }, [visible, event.id, event.title, event.when, event.where, event.desc, event.cap]);
+  }, [visible, event.id, event.title, event.when, event.where, event.desc, event.cap, event.priceMin, event.priceMax]);
 
   const handleSave = async () => {
+    // Derive the price triple from the input mode + strings. We send
+    // explicit null when the host picked 'none' so an existing price
+    // can be cleared, and we validate on the client to avoid a 500
+    // round-trip from the CHECK constraint when the inputs are bad.
+    let priceMin: number | null;
+    let priceMax: number | null;
+    let priceCurrency: string | null;
+    if (priceMode === 'none') {
+      priceMin = null;
+      priceMax = null;
+      priceCurrency = null;
+    } else if (priceMode === 'free') {
+      priceMin = 0;
+      priceMax = 0;
+      priceCurrency = event.priceCurrency ?? 'USD';
+    } else {
+      const lo = parseFloat(priceMinStr);
+      const hi = parseFloat(priceMaxStr || priceMinStr);
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < lo) {
+        showToast({ message: 'Enter a valid price (max must be at least the min).', kind: 'error' });
+        return;
+      }
+      priceMin = Math.round(lo * 100) / 100;
+      priceMax = Math.round(hi * 100) / 100;
+      priceCurrency = event.priceCurrency ?? 'USD';
+    }
     setSaving(true);
-    const patch = { title, where, desc, cap };
+    const patch = { title, where, desc, cap, priceMin, priceMax, priceCurrency };
     try {
       // `when` isn't passed to api.updateEvent — see the api.ts header.
       // It's still part of the override patch below so the local UI
@@ -192,6 +232,71 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
             </View>
           </FormField>
 
+          {/* Ticket price — three-mode toggle (Not specified / Free /
+              Paid). Paid reveals min/max number inputs; leaving max
+              blank treats it as fixed-price (max := min on save). The
+              underlying DB columns require either all-null or
+              consistent low/high, validated again in handleSave before
+              the call. */}
+          <FormField label="Ticket price">
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(['none', 'free', 'paid'] as const).map(mode => {
+                const active = priceMode === mode;
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setPriceMode(mode)}
+                    style={({ pressed }) => [{
+                      flex: 1, height: 36,
+                      borderRadius: RADIUS.md,
+                      borderWidth: 1,
+                      borderColor: active ? t.ink : t.line,
+                      backgroundColor: active ? t.ink : t.card,
+                      alignItems: 'center', justifyContent: 'center',
+                    }, pressed && { opacity: 0.85 }]}
+                  >
+                    <SCText
+                      variant="mono"
+                      size={11}
+                      weight="600"
+                      color={active ? t.card : t.ink2}
+                    >
+                      {mode === 'none' ? 'NOT SET' : mode === 'free' ? 'FREE' : 'PAID'}
+                    </SCText>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {priceMode === 'paid' && (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <SCText variant="mono" size={9} color={t.ink3} style={{ marginBottom: 4 }}>MIN $</SCText>
+                  <TextInput
+                    value={priceMinStr}
+                    onChangeText={setPriceMinStr}
+                    placeholder="10"
+                    placeholderTextColor={t.ink3}
+                    inputMode="decimal"
+                    keyboardType="decimal-pad"
+                    style={inputStyle(t)}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <SCText variant="mono" size={9} color={t.ink3} style={{ marginBottom: 4 }}>MAX $ (optional)</SCText>
+                  <TextInput
+                    value={priceMaxStr}
+                    onChangeText={setPriceMaxStr}
+                    placeholder="25"
+                    placeholderTextColor={t.ink3}
+                    inputMode="decimal"
+                    keyboardType="decimal-pad"
+                    style={inputStyle(t)}
+                  />
+                </View>
+              </View>
+            )}
+          </FormField>
+
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <Pressable
               onPress={onClose}
@@ -222,6 +327,28 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
       </Pressable>
     </Modal>
   );
+}
+
+// Initial 'none' | 'free' | 'paid' input mode derived from the event's
+// current price columns. Mirrors lib/price.priceState but lifted out
+// because the sheet's state initialiser runs before lib/price imports
+// matter for the reducer; keeping it here avoids the circular-import
+// hazard around component imports.
+function deriveInitialPriceMode(
+  min: number | null | undefined,
+  max: number | null | undefined,
+): 'none' | 'free' | 'paid' {
+  if (min == null || max == null) return 'none';
+  if (min === 0 && max === 0) return 'free';
+  return 'paid';
+}
+
+// Seed a TextInput with the event's current price value. Stored as a
+// string (RN TextInput is text-only); integers drop the .00 trailing
+// zeros, fractional values keep two decimals.
+function formatPriceForInput(v: number | null | undefined): string {
+  if (v == null) return '';
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
 }
 
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {

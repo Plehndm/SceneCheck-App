@@ -15,7 +15,8 @@ export type IconName =
   | 'lock' | 'bell' | 'logout' | 'shield' | 'flag' | 'help'
   | 'x' | 'edit' | 'mic' | 'camera' | 'switch'
   | 'user-plus' | 'user-check' | 'clock' | 'lock-open' | 'mail'
-  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon' | 'more' | 'trash' | 'share';
+  | 'rotate-ccw' | 'crosshair' | 'sun' | 'moon' | 'more' | 'trash' | 'share'
+  | 'tag';
 
 interface Props {
   name: IconName;
@@ -108,6 +109,10 @@ export function SCIcon({ name, size = 20, color = 'currentColor' }: Props) {
     case 'share':
       // Feather "share-2" — three nodes (you → two friends).
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="18" cy="5" r="3" {...strokeProps} /><Circle cx="6" cy="12" r="3" {...strokeProps} /><Circle cx="18" cy="19" r="3" {...strokeProps} /><Line x1="8.59" y1="13.51" x2="15.42" y2="17.49" {...strokeProps} /><Line x1="15.41" y1="6.51" x2="8.59" y2="10.49" {...strokeProps} /></Svg>;
+    case 'tag':
+      // Feather "tag" — ticket / price affordance. Used on the event
+      // detail row for ticket price and the SCEventCard price chip.
+      return <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" {...strokeProps} /><Line x1="7" y1="7" x2="7.01" y2="7" {...strokeProps} /></Svg>;
     default:
       return <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="12" r="10" {...strokeProps} /></Svg>;
   }

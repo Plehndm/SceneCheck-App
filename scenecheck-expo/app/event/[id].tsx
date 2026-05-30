@@ -30,6 +30,7 @@ import { api } from '@/lib/api';
 import * as googleCalendar from '@/lib/google-calendar';
 import { SC_CHATS } from '@/data/mocks';
 import { whenRange, parseTime } from '@/lib/date-time';
+import { formatPrice, priceState } from '@/lib/price';
 import { eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { RADIUS } from '@/theme/tokens';
@@ -405,6 +406,20 @@ export default function EventDetailScreen() {
             // Open the Map tab focused on this event (selected + centered).
             onPress={() => router.push(`/(tabs)/map?focus=${e.id}` as never)}
           />
+          {/* Price row, only when the event has explicit pricing. FREE
+              shows the literal label so users can see at a glance whether
+              there's a ticket cost without scanning the description; a
+              fixed/range number shows the dollar amounts. priceState
+              returns 'none' for events without price data — hides the
+              row entirely so the user-created path (which doesn't yet
+              expose a price input) doesn't show an empty affordance. */}
+          {priceState(e) !== 'none' && (
+            <DetailRow
+              icon="tag"
+              k={priceState(e) === 'free' ? 'Free to attend' : 'Ticket price'}
+              v={formatPrice(e) ?? ''}
+            />
+          )}
           {e.sourceUrl ? (
             // Scraped (app-created) events have no host — link to the original
             // listing the info was scraped from instead.

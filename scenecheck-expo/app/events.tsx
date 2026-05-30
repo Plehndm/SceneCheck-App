@@ -21,6 +21,7 @@ import { useLocation } from '@/hooks/useLocation';
 import { isRecommendedFor, eventCategory, EVENT_CATEGORY_LABEL, isAlsoRecommended } from '@/lib/events';
 import { pinColor } from '@/components/Map/types';
 import { whenRange } from '@/lib/date-time';
+import { formatPrice, priceState } from '@/lib/price';
 import { RADIUS } from '@/theme/tokens';
 import type { SCEvent } from '@/types/domain';
 
@@ -186,6 +187,25 @@ export default function EventsListScreen() {
                       {e.attendees}
                       <SCText variant="mono" size={11} color={t.ink3}>/{e.cap > 0 ? e.cap : 'unk'}</SCText>
                     </SCText>
+                    {/* Price chip mirrors SCEventCard so the same event
+                        reads the same on the rail and the list. FREE
+                        gets the green pill; paid gets the neutral
+                        outline so it doesn't compete with JOINED. */}
+                    {priceState(e) === 'free' ? (
+                      <View style={{
+                        backgroundColor: t.good,
+                        paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,
+                      }}>
+                        <SCText variant="mono" size={9} weight="700" color="white">FREE</SCText>
+                      </View>
+                    ) : priceState(e) !== 'none' ? (
+                      <View style={{
+                        borderWidth: 1, borderColor: t.line,
+                        paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999,
+                      }}>
+                        <SCText variant="mono" size={10} weight="600" color={t.ink2}>{formatPrice(e)}</SCText>
+                      </View>
+                    ) : null}
                     {e.interests.slice(0, 2).map(tag => (
                       <SCTag key={tag} tag={tag} size="sm" tone="soft" />
                     ))}

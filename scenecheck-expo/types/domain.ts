@@ -71,6 +71,15 @@ export interface SCEvent {
   // scraped from. The event-detail screen links to it in place of a host.
   // Absent for user-created events and mock fixtures.
   sourceUrl?: string;
+  // Ticket price range. All three fields are either ALL null (price not
+  // specified — hides the affordance) or ALL set. priceMin = priceMax = 0
+  // renders as FREE. priceMin = priceMax > 0 renders as "$N". priceMin <
+  // priceMax renders as "$min–$max". Currency NULL is treated as USD
+  // (matches the migration column comment and lib/price.formatPrice).
+  // The DB CHECK constraint (migration 00040) enforces the same invariant.
+  priceMin?: number | null;
+  priceMax?: number | null;
+  priceCurrency?: string | null;
 }
 
 export interface PastEvent {
@@ -180,6 +189,14 @@ export interface DraftForm {
   minSubs: number;
   addToCalendar: boolean;
   autoGroupChat: boolean;
+  // Ticket price. `priceMode === 'none'` (default for legacy drafts that
+  // pre-date this field) leaves the columns NULL and hides the price
+  // affordance. 'free' stamps 0/0. 'paid' uses the priceMin/priceMax
+  // inputs. Optional so older saved drafts stay valid; the create
+  // screen treats missing as 'none' on load.
+  priceMode?: 'none' | 'free' | 'paid';
+  priceMin?: string;
+  priceMax?: string;
 }
 
 export interface Draft {

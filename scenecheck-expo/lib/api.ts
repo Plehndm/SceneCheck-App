@@ -94,8 +94,25 @@ interface EventRow {
   source_url?: string | null;
   creator_id: string | null;
   capacity: number | null;
+  // Migration 00040: nullable price triple. Either all three NULL
+  // (price not specified) or all three set. Number arrives as a JS
+  // number from supabase-js (NUMERIC → number); string is tolerated
+  // because Postgres NUMERIC can come through as a string in edge
+  // cases (very large values, certain client versions).
+  price_min: number | string | null;
+  price_max: number | string | null;
+  price_currency: string | null;
   subscriber_count: number | null;
   event_interests?: { interest_id?: { name?: string } | null; name?: string }[];
+}
+
+// NUMERIC columns can arrive as either number or string from supabase-js.
+// Normalise to number | null so the rest of the app doesn't have to
+// branch — and so `priceMin === 0` reliably compares as a number.
+function num(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent {
@@ -129,6 +146,11 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
     x: 0.5,
     y: 0.5,
     sourceUrl: row.source_url ?? undefined,
+    // Price triple — pass null through (lib/price.priceState reads
+    // null as "not specified" and hides the affordance).
+    priceMin: num(row.price_min),
+    priceMax: num(row.price_max),
+    priceCurrency: row.price_currency,
   };
 }
 
@@ -567,7 +589,19 @@ export const api = {
   // doesn't persist to the DB time columns.
   async updateEvent(
     eventId: string,
-    patch: { title?: string; where?: string; cap?: number; desc?: string },
+    patch: {
+      title?: string;
+      where?: string;
+      cap?: number;
+      desc?: string;
+      // Price triple — accept either side undefined to leave the column
+      // alone, or null to clear it. The DB CHECK constraint (00040)
+      // requires "both set or both null", so the caller is expected to
+      // send all three (or none) together.
+      priceMin?: number | null;
+      priceMax?: number | null;
+      priceCurrency?: string | null;
+    },
   ) {
     if (isMock()) return patch;
     const dbPatch: Record<string, unknown> = {};
@@ -575,6 +609,9 @@ export const api = {
     if (patch.where !== undefined) dbPatch.location_name = patch.where;
     if (patch.cap !== undefined) dbPatch.capacity = patch.cap;
     if (patch.desc !== undefined) dbPatch.description = patch.desc;
+    if (patch.priceMin !== undefined) dbPatch.price_min = patch.priceMin;
+    if (patch.priceMax !== undefined) dbPatch.price_max = patch.priceMax;
+    if (patch.priceCurrency !== undefined) dbPatch.price_currency = patch.priceCurrency;
     if (Object.keys(dbPatch).length === 0) return patch;
     const sb = requireClient();
     const { error } = await sb.from('events')
