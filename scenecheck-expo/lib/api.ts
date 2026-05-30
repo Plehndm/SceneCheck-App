@@ -117,11 +117,17 @@ function num(v: number | string | null | undefined): number | null {
 
 function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent {
   const creatorMockId = row.creator_id ? toMockId(row.creator_id) : null;
+  // FR4.4 — Default non-creator, non-scraped rows to 'other' (neutral
+  // "NEARBY EVENT" accent) rather than 'friend'. The previous fallback
+  // labelled every stranger's event as "FRIEND HOSTING" on the web map's
+  // friend bucket. Restoring a real 'friend' kind needs an
+  // `is_friend_creator` flag on the `rank_events_query` RPC (join
+  // friendships server-side) so the bucket reflects an actual relationship.
   const kind: SCEvent['kind'] = row.source === 'scraped'
     ? 'recommended'
     : row.creator_id === currentUserId
       ? 'yours'
-      : 'friend'; // simplified — accurate version needs the friendship table
+      : 'other';
   return {
     id: toMockId(row.id),
     kind,
@@ -891,6 +897,17 @@ export const api = {
       .or(`and(from_id.eq.${me},to_id.eq.${other}),and(from_id.eq.${other},to_id.eq.${me})`);
     if (error) throw error;
     return { ok: true };
+  },
+
+  // Cancel a pending OUTGOING friend request. Semantically distinct from
+  // `removeFriend` (which drops an accepted friendship): cancelling means
+  // the recipient never saw the row, vs unfriending which they did. Today
+  // both go through the same DELETE because the pending row is just an
+  // unflipped friendship; if the schema ever splits pending/accepted into
+  // separate tables, this alias is the seam where the implementation
+  // changes — call sites already capture intent.
+  async cancelFriendRequest(otherUserId: string) {
+    return this.removeFriend(otherUserId);
   },
 
   // Fetch the caller's accepted friends as full profile rows. In

@@ -39,6 +39,11 @@ export interface Tweaks {
   hostEditDelete: boolean;
   failureStates: boolean;
   helpTooltips: boolean;
+  // Wave B1 / C1 carry-over — controls whether the WebMap renders the
+  // full rich-pin hover card (true, default) or the compact mini-tip
+  // (false). Surfaced under Settings → Appearance → Map on web. Read at
+  // call sites in app/(tabs)/index.web.tsx and app/(tabs)/map.web.tsx.
+  richPinHover: boolean;
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -51,6 +56,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   hostEditDelete: true,
   failureStates: true,
   helpTooltips: true,
+  richPinHover: true,
 };
 
 export interface NotifPrefs {
@@ -117,11 +123,25 @@ interface State {
   palette: PaletteName;
   mode: Mode;
   tweaks: Tweaks;
+  // Web-only desktop chrome controls. `railStyle` picks how the left
+  // navigation rail behaves in the web build (wide = always-labeled,
+  // icons = icon-only with tooltips, hover = collapsed and expands on
+  // hover). `activeAccount` is the Instagram-style "acting identity"
+  // selector — id of the currently-acting profile (personal or one of
+  // the user's managed org pages). Both fields persist so a reload
+  // doesn't reset the user's chosen rail mode or active page. They are
+  // intentionally part of the main store (not a separate slice) because
+  // they are read by shell + nav components that already pull from
+  // useStore.
+  railStyle: 'wide' | 'icons' | 'hover';
+  activeAccount: string;
   setPalette: (p: PaletteName) => void;
   setMode: (m: Mode) => void;
   toggleMode: () => void;
   setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void;
   resetTweaks: () => void;
+  setRailStyle: (v: 'wide' | 'icons' | 'hover') => void;
+  setActiveAccount: (v: string) => void;
 
   // ── events ──
   joined: Set<string>;
@@ -221,11 +241,17 @@ export const useStore = create<State>()(
       palette: 'sunset',
       mode: 'light',
       tweaks: DEFAULT_TWEAKS,
+      // Web shell defaults. `hover` keeps the rail thin so screen real
+      // estate stays maximal; `me` matches the seed personal profile.
+      railStyle: 'hover',
+      activeAccount: 'me',
       setPalette: (p) => set({ palette: p }),
       setMode: (m) => set({ mode: m }),
       toggleMode: () => set(s => ({ mode: s.mode === 'light' ? 'dark' : 'light' })),
       setTweak: (key, value) => set(s => ({ tweaks: { ...s.tweaks, [key]: value } })),
       resetTweaks: () => set({ tweaks: DEFAULT_TWEAKS }),
+      setRailStyle: (v) => set({ railStyle: v }),
+      setActiveAccount: (v) => set({ activeAccount: v }),
 
       // ── events ──
       joined: isMockSeed ? new Set(['e1']) : new Set<string>(),
@@ -432,6 +458,8 @@ export const useStore = create<State>()(
         palette: s.palette,
         mode: s.mode,
         tweaks: s.tweaks,
+        railStyle: s.railStyle,
+        activeAccount: s.activeAccount,
         joined: Array.from(s.joined),
         friends: Array.from(s.friends),
         outgoingRequests: Array.from(s.outgoingRequests),

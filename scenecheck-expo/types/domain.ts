@@ -3,11 +3,16 @@
 // into these shapes (mock-mode returns them directly).
 
 // EventKind drives the bucket the event lands in for color + label. The
-// classifier in lib/events.ts (eventCategory) only ever produces these
-// values, so there's no `'org'` ghost variant: an org-hosted event the user
-// has no interest match for is `'recommended'` if it matches an interest,
-// otherwise `'other'` (assigned via the classifier — kept off this union).
-export type EventKind = 'yours' | 'friend' | 'recommended';
+// classifier in lib/events.ts (eventCategory) produces these values plus
+// 'other' for an event that isn't yours/friend/recommended. `'other'` used
+// to be off this union (assigned only by the classifier), but
+// `transformEventRow` now also uses it as the conservative fallback when
+// the RPC can't tell us whether the creator is a friend — see review item
+// M-01. The proper server-side fix is an `is_friend_creator` flag from
+// `rank_events_query` so we can stamp `'friend'` only when the join says
+// so; until then a fallback of `'other'` is safer than mislabelling every
+// stranger's event as "FRIEND HOSTING".
+export type EventKind = 'yours' | 'friend' | 'recommended' | 'other';
 export type Visibility = 'public' | 'private';
 export type AccountType = 'person' | 'org';
 
