@@ -120,8 +120,11 @@ export default function RootLayout() {
           as modals so the user can dismiss to return. */}
       <Stack.Screen name="auth/sign-in" />
       <Stack.Screen name="auth/reset-password" />
-      <Stack.Screen name="auth/sign-up" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="auth/forgot-password" options={{ presentation: 'modal' }} />
+      {/* On web the auth screens are a full-bleed two-pane brand/form layout
+          (web/WebAuth), so sign-up + forgot render as full pages; native keeps
+          the slide-up modal. */}
+      <Stack.Screen name="auth/sign-up" options={{ presentation: Platform.OS === 'web' ? 'card' : 'modal' }} />
+      <Stack.Screen name="auth/forgot-password" options={{ presentation: Platform.OS === 'web' ? 'card' : 'modal' }} />
       {/* FR1.3 onboarding picker — outside the (tabs) group so the
           AuthGate inside the tabs layout doesn't loop the user back here
           the moment they finish picking. Presented as a card so it
