@@ -19,6 +19,7 @@ import { useChats } from '@/hooks/useChats';
 import { api } from '@/lib/api';
 import {
   SC_VISIBLE_PERSON_BY_ID,
+  SC_VISIBLE_PEOPLE,
   SC_ACCOUNT_BY_ID,
   SC_EVENT_BY_ID,
 } from '@/data/mocks';
@@ -27,48 +28,103 @@ import { WebAvatar } from './WebAvatar';
 import { WebIcon } from './WebIcon';
 import { WebTip } from './WebTip';
 
+const NAMES_BEFORE_PLUS = 2;
+
+/**
+ * "Alice, Bob +3" formatter ported from the native chat tab so non-event
+ * group chats (kind: 'dm' with multiple members) get a readable title
+ * instead of falling through to the generic "Direct message" label.
+ */
+function namesTitle(members: { name?: string | null }[]): string {
+  if (members.length === 0) return '';
+  const names = members.map(m => m.name?.trim() || 'Someone');
+  if (names.length === 1) return names[0];
+  if (names.length <= NAMES_BEFORE_PLUS + 1) return names.join(', ');
+  const head = names.slice(0, NAMES_BEFORE_PLUS).join(', ');
+  return `${head} +${names.length - NAMES_BEFORE_PLUS}`;
+}
+
+/**
+ * Up to two member-shaped objects to render as the row avatar(s).
+ * Same priority order as native (`app/(tabs)/chat.tsx:chatAvatars`):
+ *  1. live `c.members` from the chat_members ⨝ profiles embed,
+ *  2. SC_ACCOUNT_BY_ID for DMs in mock mode,
+ *  3. event host + a representative attendee for mock event chats.
+ *
+ * Returns 0-2 entries. The render mapping below is:
+ *   0 → muted placeholder circle (uses `WebAvatar person={null}`)
+ *   1 → single WebAvatar (DM/event look)
+ *   2 → Instagram-style stack (front offset bottom-right with a
+ *       surface-colored ring so it visually separates)
+ */
+function chatAvatars(c: Chat, mock: boolean): ChatMember[] {
+  if (c.members && c.members.length > 0) return c.members.slice(0, 2);
+  if (!mock) return [];
+  if (c.kind === 'dm' && c.personId) {
+    const p = SC_ACCOUNT_BY_ID[c.personId];
+    return p ? [{ id: p.id, name: p.name, picture: p.picture, type: p.type }] : [];
+  }
+  if (c.kind === 'event' && c.eventId) {
+    const ev = SC_EVENT_BY_ID[c.eventId];
+    if (!ev) return [];
+    const out: ChatMember[] = [];
+    if (ev.hostId) {
+      const host = SC_ACCOUNT_BY_ID[ev.hostId];
+      if (host) out.push({ id: host.id, name: host.name, picture: host.picture, type: host.type });
+    }
+    const second = SC_VISIBLE_PEOPLE.find(p => p.id !== ev.hostId);
+    if (second) out.push({ id: second.id, name: second.name, picture: second.picture, type: second.type });
+    return out;
+  }
+  return [];
+}
+
 interface ChatMeta {
   /** Primary line — display name shown on the row. */
   title: string;
-  /** Avatar subject. DM = the other person; event = host (org). */
-  person: ChatMember | null;
-  /** Secondary caption (event note or @handle). */
+  /** Avatar subjects (0-2). Renders as single avatar or stacked pair. */
+  avatars: ChatMember[];
+  /** Secondary caption (event note, member count, or @handle). */
   sub: string;
 }
 
 /**
- * Resolve the avatar + label pair for a chat row. Mirrors the
- * prototype's `wChatMeta` (web-screens-c.jsx) but uses live `chat`
- * fields where available — falling back to SC_* fixtures in mock mode
- * — so the same component renders correctly under both modes.
+ * Resolve the title + avatar(s) for a chat row. Now matches the native
+ * chat tab's three-way split: event chats use the event title and stack
+ * the host + a member; DMs (one other) use the person's name and a
+ * single avatar; non-event group chats (kind: 'dm' with multiple
+ * members) build "Alice, Bob +N" from the member names and stack two
+ * member avatars.
  *
- * Mock-leak inventory: every SC_* read is gated by `api.isMock()` so
- * that a live UUID can never accidentally hit a fixture entry. Live
- * mode already populates `c.title` + `c.members` from the joined
- * `chats` query, so the fallbacks are defensive only.
+ * Mock-leak inventory: every SC_* read is gated by `api.isMock()`.
  */
 function wChatMeta(c: Chat): ChatMeta {
   const mock = api.isMock();
+  const avatars = chatAvatars(c, mock);
   if (c.kind === 'event') {
     const ev = mock && c.eventId ? SC_EVENT_BY_ID[c.eventId] : undefined;
+    const memberCount = c.members?.length ?? 0;
     return {
       title: c.title || ev?.title || 'Event chat',
-      // Real-data chat members are the only safe source here; the
-      // previous host-fixture fallback only worked in mock mode and
-      // silently returned null for live UUIDs.
-      person: c.members?.[0] ?? null,
-      sub: 'Event group chat',
+      avatars,
+      sub: memberCount > 0
+        ? `Event group · ${memberCount} member${memberCount === 1 ? '' : 's'}`
+        : 'Event group chat',
     };
   }
-  // DM: live mode carries the other-side display on c.title + c.members;
-  // mock mode looks up SC_VISIBLE_PERSON_BY_ID (or SC_ACCOUNT_BY_ID for
-  // accounts not currently visible — e.g. blocked) so the row still
-  // renders a name even if the person is filtered from the feed.
+  const otherCount = c.members?.length ?? 0;
+  if (otherCount > 1) {
+    return {
+      title: namesTitle(c.members ?? []) || c.title || 'Group chat',
+      avatars,
+      sub: `Group chat · ${otherCount} members`,
+    };
+  }
   const member = c.members?.[0] ?? null;
   if (member) {
     return {
-      title: c.title ?? member.name ?? 'Direct message',
-      person: member,
+      title: c.title || member.name || 'Direct message',
+      avatars,
       sub: 'Direct message',
     };
   }
@@ -77,7 +133,7 @@ function wChatMeta(c: Chat): ChatMeta {
     : null;
   return {
     title: c.title ?? p?.name ?? 'Direct message',
-    person: p ? { id: p.id, name: p.name, picture: p.picture, type: p.type } : null,
+    avatars: p ? [{ id: p.id, name: p.name, picture: p.picture, type: p.type }] : [],
     sub: p ? `@${p.username ?? ''}` : 'Direct message',
   };
 }
@@ -204,15 +260,65 @@ export function WebChatList({ activeChatId = null }: Props) {
                   color: t.ink,
                 }}
               >
-                <div style={{ position: 'relative' }}>
-                  <WebAvatar
-                    person={meta.person}
-                    size={48}
-                    // Event chats use the org-style square; DM keeps the
-                    // circle. The square + dark fill match the design
-                    // (which mirrors org avatars elsewhere in the app).
-                    square={c.kind === 'event'}
-                  />
+                {/* Avatar(s) — 0, 1, or 2 per chatAvatars(). Event chats
+                    render the host (when known) as a square org-style
+                    avatar; non-event group chats stack two member faces
+                    Instagram-style; DMs use a single circle. The
+                    people-icon overlay is always shown on event chats
+                    so the kind is visible even when avatars are unknown. */}
+                <div
+                  style={{
+                    position: 'relative',
+                    width: 48,
+                    height: 48,
+                    flexShrink: 0,
+                  }}
+                >
+                  {meta.avatars.length === 0 ? (
+                    <WebAvatar
+                      person={null}
+                      size={48}
+                      square={c.kind === 'event'}
+                    />
+                  ) : meta.avatars.length === 1 ? (
+                    <WebAvatar
+                      person={meta.avatars[0]}
+                      size={48}
+                      square={c.kind === 'event'}
+                    />
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                        }}
+                      >
+                        <WebAvatar
+                          person={meta.avatars[0]}
+                          size={34}
+                          square={c.kind === 'event'}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          right: 0,
+                          padding: 2,
+                          borderRadius: c.kind === 'event' ? 10 : '50%',
+                          background: t.surface,
+                        }}
+                      >
+                        <WebAvatar
+                          person={meta.avatars[1]}
+                          size={32}
+                          square={c.kind === 'event'}
+                        />
+                      </div>
+                    </>
+                  )}
                   {c.kind === 'event' && (
                     <div
                       style={{
@@ -228,6 +334,7 @@ export function WebChatList({ activeChatId = null }: Props) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        zIndex: 1,
                       }}
                     >
                       <WebIcon name="people" size={9} color="white" />

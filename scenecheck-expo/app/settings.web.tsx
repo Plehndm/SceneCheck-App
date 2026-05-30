@@ -21,6 +21,9 @@ import { WebSettingsSection } from '@/web/WebSettingsSection';
 import { WebToggleRow } from '@/web/WebToggleRow';
 import { WebButton } from '@/web/WebButton';
 import { WebIcon, type WebIconName } from '@/web/WebIcon';
+import { ChangeEmailSheet } from '@/components/ChangeEmailSheet';
+import { ChangePasswordSheet } from '@/components/ChangePasswordSheet';
+import { useState } from 'react';
 
 interface NotifRow {
   k: keyof ReturnType<typeof useStore.getState>['notifPrefs'];
@@ -67,6 +70,11 @@ export default function SettingsWeb() {
   const blocked = useStore(s => s.blocked);
   const sessionEmail = useStore(s => s.session?.email);
   const showConfirm = useStore(s => s.showConfirm);
+
+  // Account-edit sheets — RN modal via react-native-web. The same
+  // components the native settings screen uses; no parallel web shim.
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const showToast = useStore(s => s.showToast);
 
   // Inline summary chips — derived once per render. Reading from store
@@ -84,30 +92,9 @@ export default function SettingsWeb() {
   const railLabel =
     RAIL_OPTIONS.find(o => o.k === railStyle)?.label ?? 'Hover';
 
-  const handleSignOut = () => {
-    showConfirm({
-      title: 'Sign out?',
-      body: 'You can sign back in any time.',
-      confirmLabel: 'SIGN OUT',
-      tone: 'danger',
-      icon: 'logout',
-      onConfirm: async () => {
-        try {
-          await api.signOut();
-          showToast({
-            message: api.isMock() ? 'Signed out (mock).' : 'Signed out.',
-            kind: 'info',
-          });
-          router.replace('/auth/sign-in' as never);
-        } catch (e) {
-          showToast({
-            message: e instanceof Error ? e.message : 'Sign-out failed.',
-            kind: 'error',
-          });
-        }
-      },
-    });
-  };
+  // Sign-out moved to the WebRail account switcher (bottom-left) so
+  // it's reachable from every screen, not buried inside a collapsed
+  // Settings section. See web/WebRail.tsx handleSignOut.
 
   return (
     <div
@@ -476,16 +463,60 @@ export default function SettingsWeb() {
           </WebSettingsSection>
 
           {/* ── Help & feedback ─────────────────────── */}
-          <WebSettingsSection title="Help & feedback" icon="help">
-            <SettingsLink
-              icon="help"
-              label="Help & feedback"
-              value="Send a note"
-              onClick={() => router.push('/settings/help' as never)}
-            />
+          {/* Rows inlined here (mirrors the native /settings/help screen)
+              so the desktop user doesn't have to navigate to a separate
+              page for what's effectively a small list of links. The four
+              actions are kept exactly in sync with `app/settings/help.tsx`
+              so behavior matches across platforms. */}
+          <WebSettingsSection
+            title="Help & feedback"
+            summary="4 quick links"
+            icon="help"
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <SettingsLink
+                icon="help"
+                label="Replay onboarding"
+                value="Re-pick the interests we use to rank events for you"
+                onClick={() => router.push('/onboarding/interests' as never)}
+              />
+              <SettingsLink
+                icon="mail"
+                label="Email support"
+                value="support@scenecheck.app"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.href = 'mailto:support@scenecheck.app';
+                  }
+                }}
+              />
+              <SettingsLink
+                icon="lock"
+                label="Privacy policy"
+                value="How SceneCheck handles your data"
+                onClick={() => router.push('/settings/privacy' as never)}
+              />
+              <SettingsLink
+                icon="flag"
+                label="Report a bug"
+                value="github.com/Plehndm/SceneCheck-App/issues"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.open(
+                      'https://github.com/Plehndm/SceneCheck-App/issues',
+                      '_blank',
+                      'noopener,noreferrer',
+                    );
+                  }
+                }}
+              />
+            </div>
           </WebSettingsSection>
 
           {/* ── Account ─────────────────────────────── */}
+          {/* Sign-out lives on the rail's account switcher (bottom-left
+              of the WebShell) so it's reachable from every screen, not
+              buried inside a collapsed Settings section. */}
           <WebSettingsSection
             title="Account"
             summary={sessionEmail || 'Mock session'}
@@ -496,21 +527,14 @@ export default function SettingsWeb() {
                 icon="mail"
                 label="Email"
                 value={sessionEmail || 'Not signed in'}
-                // L-04 — the row previously navigated to `/settings` (its
-                // own page), which read as broken. Native opens a
-                // `ChangeEmailSheet` bottom sheet; the web mirror hasn't
-                // been built yet, so disable the row with a tooltip
-                // until then. `onClick` is required by the type but is
-                // never invoked because `disabled` short-circuits.
-                onClick={() => {}}
-                disabled
-                disabledHint="Change-email flow coming soon — sign out + back in to update."
+                onClick={() => setEmailOpen(true)}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                <WebButton tone="ghost" icon="logout" onClick={handleSignOut}>
-                  Sign out
-                </WebButton>
-              </div>
+              <SettingsLink
+                icon="lock"
+                label="Password"
+                value="Change your sign-in password"
+                onClick={() => setPwOpen(true)}
+              />
             </div>
           </WebSettingsSection>
 
@@ -527,6 +551,9 @@ export default function SettingsWeb() {
           </div>
         </div>
       </div>
+
+      <ChangeEmailSheet visible={emailOpen} onClose={() => setEmailOpen(false)} />
+      <ChangePasswordSheet visible={pwOpen} onClose={() => setPwOpen(false)} />
     </div>
   );
 }

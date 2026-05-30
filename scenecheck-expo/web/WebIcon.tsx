@@ -21,7 +21,7 @@ export type WebIconName =
   | 'switch' | 'user-plus' | 'user-check' | 'mail'
   | 'zoom-in' | 'zoom-out' | 'crosshair' | 'sun' | 'moon'
   | 'grid' | 'list' | 'sliders' | 'heart' | 'sparkles' | 'flag'
-  | 'help' | 'more' | 'arrow-up-right' | 'filter' | 'camera';
+  | 'help' | 'more' | 'arrow-up-right' | 'filter' | 'camera' | 'tag';
 
 interface Props {
   name: WebIconName | string;
@@ -74,6 +74,7 @@ export function WebIcon({
     case 'chevron-down': return <svg {...p}><polyline points="6 9 12 15 18 9"/></svg>;
     case 'chevron-up': return <svg {...p}><polyline points="18 15 12 9 6 15"/></svg>;
     case 'globe': return <svg {...p}><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>;
+    case 'tag': return <svg {...p}><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
     case 'lock': return <svg {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>;
     case 'bell': return <svg {...p}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>;
     case 'logout': return <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;

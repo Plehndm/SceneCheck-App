@@ -17,8 +17,8 @@
 // primitives), so the entire tree is desktop-DOM and inherits the
 // WebShell scale transform from app/_layout.tsx.
 
-import { useState } from 'react';
-import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
 import { useStore } from '@/store/useStore';
@@ -41,6 +41,7 @@ import { WebStars } from '@/web/WebStars';
 import { WebEventListCard } from '@/web/WebEventListCard';
 import { WebPersonRow } from '@/web/WebPersonRow';
 import { WebOrgRow } from '@/web/WebOrgRow';
+import { EditProfileSheet } from '@/components/EditProfileSheet';
 import { SC_ACCOUNT_BY_ID, SC_ME } from '@/data/mocks';
 import type { SCEvent } from '@/types/domain';
 
@@ -71,7 +72,29 @@ export default function ProfileWeb() {
   // toast + UNDO grace match every other web caller.
   const onJoin = useJoinEventHandler();
 
-  const [tab, setTab] = useState<Tab>('hosting');
+  // The rail's Friends / Following pills push `/profile?tab=...` so the
+  // social graph opens in the same sticky-left-card layout as Hosting /
+  // Joined / Drafts / Reviews. We also re-sync if the user navigates
+  // from the rail again while already on the Profile tab (URL changes
+  // without unmounting the screen).
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const initialTab: Tab =
+    params.tab === 'friends' || params.tab === 'following' ||
+    params.tab === 'joined' || params.tab === 'drafts' ||
+    params.tab === 'reviews' || params.tab === 'hosting'
+      ? params.tab
+      : 'hosting';
+  const [tab, setTab] = useState<Tab>(initialTab);
+  useEffect(() => {
+    if (
+      params.tab === 'friends' || params.tab === 'following' ||
+      params.tab === 'joined' || params.tab === 'drafts' ||
+      params.tab === 'reviews' || params.tab === 'hosting'
+    ) {
+      setTab(params.tab);
+    }
+  }, [params.tab]);
+  const [editOpen, setEditOpen] = useState(false);
 
   // Live-derived; matches the live "events you've joined" / ratings calls
   // the native sibling renders.
@@ -249,7 +272,7 @@ export default function ProfileWeb() {
                 size="md"
                 icon="edit"
                 style={{ flex: 1 }}
-                onClick={() => router.push('/settings' as never)}
+                onClick={() => setEditOpen(true)}
               >
                 Edit profile
               </WebButton>
@@ -440,10 +463,31 @@ export default function ProfileWeb() {
           )}
 
           {tab === 'friends' && (
-            <PersonGrid
-              people={friends}
-              empty="No friends yet — send a request from someone's profile or the suggestions in Discover."
-            />
+            <>
+              {/* Find more friends button — the rail's Friends pill lands
+                  here, and this is the natural place to send the user to
+                  Discover's People section if their friends list is sparse. */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginBottom: 12,
+                }}
+              >
+                <WebButton
+                  tone="primary"
+                  size="sm"
+                  icon="user-plus"
+                  onClick={() => router.push('/search?tab=people' as never)}
+                >
+                  Find more friends
+                </WebButton>
+              </div>
+              <PersonGrid
+                people={friends}
+                empty="No friends yet — tap Find more friends to browse Discover."
+              />
+            </>
           )}
 
           {tab === 'following' && (
@@ -473,6 +517,10 @@ export default function ProfileWeb() {
           {tab === 'reviews' && <ReviewsList ratings={ratings} />}
         </div>
       </div>
+      <EditProfileSheet
+        visible={editOpen}
+        onClose={() => setEditOpen(false)}
+      />
     </div>
   );
 }

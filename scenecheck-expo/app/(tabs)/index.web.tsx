@@ -153,10 +153,16 @@ export default function HomeWeb() {
   }, []);
 
   return (
+    // `position: absolute; inset: 0` so the home layout fills its
+    // positioned WebShell ancestor regardless of any intermediate
+    // react-native-web View that might collapse during route transitions
+    // (same fix as map.web.tsx — `height: 100%` was working in the steady
+    // state but flaking on first mount and after the rail expanded).
     <div
       style={{
+        position: 'absolute',
+        inset: 0,
         display: 'flex',
-        height: '100%',
         minHeight: 0,
         background: t.surface,
         color: t.ink,
@@ -412,7 +418,10 @@ export default function HomeWeb() {
             SEE ALL →
           </button>
         </div>
-        <div style={{ padding: '4px 20px 28px' }}>
+        {/* Bottom padding kept minimal so the right column doesn't grow
+            a visible whitespace tail under the people list — the
+            scrollable area handles any overflow itself. */}
+        <div style={{ padding: '4px 20px 8px' }}>
           <div
             style={{
               background: t.card,

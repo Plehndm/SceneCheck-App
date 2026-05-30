@@ -511,9 +511,7 @@ export default function CreateEventWeb() {
                 form={form}
                 onChange={(patch) => setForm(f => ({ ...f, ...patch }))}
                 account={account}
-                accountList={accountList}
                 accountPic={accountPic}
-                onSwitchAccount={setActiveAccount}
               />
             )}
             {step === 2 && (
@@ -721,105 +719,59 @@ function BasicsStep({
   form,
   onChange,
   account,
-  accountList,
   accountPic,
-  onSwitchAccount,
 }: StepChangeProps & {
   account: Account;
-  accountList: Account[];
   accountPic: string | null;
-  onSwitchAccount: (id: string) => void;
 }) {
   const t = useTokens();
-  const [switcherOpen, setSwitcherOpen] = useState(false);
   return (
     <>
       <SectionHeader title="Basics" sub="Tell people what this event is and who's hosting." />
+      {/* Posting-as: read-only display of the signed-in account.
+          Multi-account hosting (managed orgs) isn't hydrated for web
+          yet, so we tell the user to sign in as the other account
+          instead of exposing a switcher that does nothing in live mode.
+          When `useUserOrgs` lands this can become a real switcher. */}
       <Field label="Posting as">
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={() => setSwitcherOpen(v => !v)}
-            aria-expanded={switcherOpen}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '10px 14px',
-              background: t.card,
-              border: `1px solid ${t.line}`,
-              borderRadius: 14,
-              cursor: 'pointer',
-              color: t.ink,
-              width: 'fit-content',
-              fontFamily: 'inherit',
-            }}
-          >
-            <WebAvatar person={{ ...account, picture: accountPic }} size={36} />
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{account.name}</div>
-              <div
-                style={{
-                  fontFamily: FONT.mono,
-                  fontSize: 10,
-                  color: t.ink3,
-                }}
-              >
-                {account.handle} · click to switch
-              </div>
-            </div>
-            <WebIcon name="chevron-down" size={14} color={t.ink3} />
-          </button>
-          {switcherOpen && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 14px',
+            background: t.card,
+            border: `1px solid ${t.line}`,
+            borderRadius: 14,
+            color: t.ink,
+            width: 'fit-content',
+          }}
+        >
+          <WebAvatar person={{ ...account, picture: accountPic }} size={36} />
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{account.name}</div>
             <div
-              role="menu"
               style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                left: 0,
-                zIndex: 20,
-                background: t.card,
-                border: `1px solid ${t.line}`,
-                borderRadius: 14,
-                padding: 6,
-                minWidth: 240,
-                boxShadow: '0 18px 40px -16px rgba(0,0,0,0.35)',
+                fontFamily: FONT.mono,
+                fontSize: 10,
+                color: t.ink3,
               }}
             >
-              {accountList.map(a => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => {
-                    onSwitchAccount(a.id);
-                    setSwitcherOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    background: a.id === account.id ? t.subtle : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: t.ink,
-                    textAlign: 'left',
-                  }}
-                >
-                  <WebAvatar person={a} size={28} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</div>
-                    <div style={{ fontFamily: FONT.mono, fontSize: 10, color: t.ink3 }}>
-                      {a.handle}
-                    </div>
-                  </div>
-                  {a.id === account.id && <WebIcon name="check" size={14} color={t.primary} />}
-                </button>
-              ))}
+              {account.handle}
             </div>
-          )}
+          </div>
+        </div>
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: t.ink3,
+            lineHeight: 1.5,
+            maxWidth: 520,
+          }}
+        >
+          Want to post under a different account? Sign out and sign back in as
+          that account, then come back here to create the event.
         </div>
       </Field>
 

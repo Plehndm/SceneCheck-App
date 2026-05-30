@@ -34,6 +34,11 @@
 // renders a compact WMapMiniTip, which has no JOIN button. The mini
 // tip never gets pointer events — it's purely informational.
 
+// Leaflet positioning CSS — injected as a runtime <style> tag from a
+// JS-embedded string. Side-effect import; no exports consumed. See
+// `web/leafletCss.ts` for why we don't import the .css file directly.
+import './leafletCss';
+
 import {
   useCallback,
   useEffect,
@@ -84,6 +89,14 @@ export interface WebMapProps {
   height?: number | string;
   /** Initial discovery radius circle (meters); also used to pick the zoom. */
   radiusM?: number;
+  /**
+   * Pan + zoom the map to these coords when they change (e.g. an event's
+   * "Where" fact deep-links to `/map?focus=<id>`). Pair with `activeId`
+   * to also highlight the pin + open its hover card. Distinct from the
+   * one-time `you` center so focusing never moves the "you are here"
+   * pulse or the discovery circle.
+   */
+  centerOn?: LatLngLike | null;
   style?: CSSProperties;
 }
 
@@ -105,6 +118,7 @@ export function WebMap({
   online = true,
   height = '100%',
   radiusM,
+  centerOn,
   style,
 }: WebMapProps) {
   const t = useTokens();
@@ -119,34 +133,65 @@ export function WebMap({
   // into the leaflet instance via the `whenReady` ref to drive zoom +
   // pan controls from our own buttons.
   const [Leaflet, setLeaflet] = useState<typeof import('react-leaflet') | null>(null);
+  // We track the map instance as STATE (not just a ref) so the move/
+  // zoom subscription effect below re-runs when the map becomes
+  // available. With a plain ref the effect would run while
+  // `mapRef.current` was still null (the ref callback fires AFTER
+  // react-leaflet mounts MapContainer, which is AFTER the dynamic
+  // import resolves), bail early, and never subscribe — leaving pins
+  // stuck on their initial projection and "disappearing" the moment
+  // the user panned or zoomed.
+  const [mapInstance, setMapInstance] = useState<import('leaflet').Map | null>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      import('react-leaflet'),
-      // `leaflet/dist/leaflet.css` is already loaded by Map.web.impl,
-      // but it's idempotent so loading it here too is fine for the
-      // standalone case where this component is used outside the home
-      // tab (Wave B1 callers always render alongside the leaflet
-      // implementation anyway).
-      import('leaflet/dist/leaflet.css'),
-    ])
-      .then(([rl]) => { if (!cancelled) setLeaflet(rl); })
+    // CSS is now bundled at module load (top-level static import above)
+    // so leaflet has its positioning rules before any tile container is
+    // created. The dynamic CSS approaches we tried before either raced
+    // tile creation (pins clustered at 0,0) or shipped a CDN dependency.
+    import('react-leaflet')
+      .then(rl => { if (!cancelled) setLeaflet(rl); })
       .catch(() => { /* SSR / network — render the chrome without tiles */ });
     return () => { cancelled = true; };
   }, []);
 
-  // ResizeObserver to keep pin overlay coordinates aligned.
+  // ResizeObserver to keep pin overlay coordinates aligned AND nudge
+  // leaflet to re-measure. Without `invalidateSize()`, the MapContainer
+  // caches the dimensions from its very first paint — if the wrapper
+  // was 0×0 at mount (flex chain not yet measured, route transition
+  // mid-flight, etc.), every pin projects to (0,0) and the whole map
+  // looks "condensed into a single point". Calling invalidateSize
+  // whenever the wrapper resizes also fixes the case where the rail
+  // expands/collapses and shifts the available width.
   useEffect(() => {
     if (!wrapRef.current) return;
     const ro = new ResizeObserver((entries) => {
       const r = entries[0].contentRect;
       setBox({ w: r.width, h: r.height });
+      if (mapRef.current && r.width > 0 && r.height > 0) {
+        try { mapRef.current.invalidateSize(); } catch { /* not yet ready */ }
+      }
     });
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
   }, []);
+
+  // First-mount invalidate. Leaflet attaches the tile container during
+  // its own internal effect, which can run before (a) our wrapper has
+  // its real measurement and (b) mapRef.current has been populated by
+  // react-leaflet's ref callback. We fire `invalidateSize()` at a
+  // small ramp of delays so at least one tick lands AFTER both
+  // happen, regardless of route-transition timing or first-paint
+  // jank. Each call is cheap and idempotent on a healthy container.
+  useEffect(() => {
+    if (!Leaflet) return;
+    const tick = () => {
+      try { mapRef.current?.invalidateSize(); } catch { /* not yet ready */ }
+    };
+    const ids = [0, 50, 200, 500, 1000].map(d => setTimeout(tick, d));
+    return () => ids.forEach(clearTimeout);
+  }, [Leaflet]);
 
   // Center the map on `you` (or the UCI fall-back when nothing else).
   const center = useMemo(() => {
@@ -157,15 +202,30 @@ export function WebMap({
   // Pin pixel positions are recomputed every render off the leaflet
   // projection so they pan/zoom in lockstep with the tiles. We trigger
   // a re-render on map move via a counter so the projection lookups
-  // stay live.
+  // stay live. Depends on `mapInstance` (state, not the ref) so the
+  // subscription wires up the moment the map is actually ready.
   const [, bumpProj] = useState(0);
   useEffect(() => {
-    if (!Leaflet || !mapRef.current) return;
-    const m = mapRef.current;
+    if (!mapInstance) return;
+    const m = mapInstance;
     const tick = () => bumpProj(n => n + 1);
     m.on('move zoom moveend zoomend resize', tick);
     return () => { m.off('move zoom moveend zoomend resize', tick); };
-  }, [Leaflet]);
+  }, [mapInstance]);
+
+  // Focus pan — when `centerOn` changes, fly the map to it and zoom in
+  // enough that the pin sits comfortably in view. Guarded on
+  // `mapInstance` (state, not the ref) so it waits for leaflet to mount.
+  // Never zooms *out*: if the user is already closer we keep their zoom.
+  useEffect(() => {
+    if (!centerOn || !mapInstance) return;
+    try {
+      mapInstance.setView(
+        [centerOn.latitude, centerOn.longitude],
+        Math.max(mapInstance.getZoom(), 15),
+      );
+    } catch { /* map not ready — the next centerOn change retries */ }
+  }, [centerOn, mapInstance]);
 
   // Compute pin (x,y) by projecting the event's lat/lng to container
   // pixel space. When the map isn't ready yet we fall back to the
@@ -247,6 +307,18 @@ export function WebMap({
         height,
         overflow: 'hidden',
         background: t.mapLand,
+        // `isolation: isolate` creates a new stacking context so
+        // leaflet's internal panes (z-index 200 for tiles, 400 for
+        // overlays, 600 for markers, 700 for popups, 1000 for controls)
+        // stay inside this wrapper. Without it, leaflet's high
+        // internal z-indices leak up to the document's root stacking
+        // context and cover sibling chrome like the floating search
+        // bar, the rail, slide-over overlays, etc. The wrapper itself
+        // sits at the default z-index 0 against its siblings, so the
+        // search bar (z-index 45) and hover card (z-index 30) layer
+        // above the map as designed.
+        isolation: 'isolate',
+        zIndex: 0,
         ...style,
       }}
     >
@@ -263,7 +335,14 @@ export function WebMap({
           boxZoom
           keyboard
           zoomControl={false}
-          ref={(instance: import('leaflet').Map | null) => { mapRef.current = instance; }}
+          ref={(instance: import('leaflet').Map | null) => {
+            mapRef.current = instance;
+            // Setting state here triggers the move/zoom subscription
+            // effect to re-run with the real map (see comment on
+            // `mapInstance` above). Idempotent: setState is a no-op when
+            // the value is the same reference.
+            setMapInstance(instance);
+          }}
         >
           <Leaflet.TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -470,7 +549,13 @@ export function WebMap({
           left: 16,
           bottom: 16,
           display: 'flex',
-          alignItems: 'stretch',
+          // Center the two cells against each other so the LIVE chip and
+          // the legend dots share a vertical centerline. (The LIVE cell is
+          // wrapped in a WebTip inline-flex span while the legend is a bare
+          // flex child; under `stretch` that nesting left the LIVE content
+          // sitting low. Centering both — with the divider explicitly
+          // stretched below — keeps them aligned regardless of the wrapper.)
+          alignItems: 'center',
           background: `color-mix(in oklab, ${t.card} 88%, transparent)`,
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
@@ -492,7 +577,6 @@ export function WebMap({
               alignItems: 'center',
               gap: 9,
               padding: '9px 14px',
-              height: '100%',
               background: online ? 'transparent' : `color-mix(in oklab, ${t.warn} 20%, transparent)`,
             }}
           >
@@ -520,9 +604,15 @@ export function WebMap({
             </span>
             <span
               style={{
+                // Match the legend's text styling exactly (FONT.mono,
+                // 11px, 0.04em letter-spacing, ink2 weight) so the LIVE
+                // text and the legend labels share a single baseline +
+                // visual weight. The previous 10.5px + 0.1em + bold made
+                // the LIVE side look offset above the legend dots even
+                // though `alignItems: center` was set on both halves.
                 fontFamily: FONT.mono,
-                fontSize: 10.5,
-                letterSpacing: '0.1em',
+                fontSize: 11,
+                letterSpacing: '0.04em',
                 fontWeight: 600,
                 color: online ? t.ink : '#B83A28',
                 whiteSpace: 'nowrap',
@@ -532,7 +622,7 @@ export function WebMap({
             </span>
           </div>
         </WebTip>
-        <div style={{ width: 1, background: t.line }} />
+        <div style={{ width: 1, alignSelf: 'stretch', background: t.line }} />
         <div style={{ display: 'flex', gap: 13, alignItems: 'center', padding: '9px 14px' }}>
           <WebLegendDot color={t.primary} label="Yours" />
           <WebLegendDot color={t.accentFriend} label="Friends" />
@@ -795,6 +885,10 @@ function WebLegendDot({ color, label }: { color: string; label: string }) {
         gap: 6,
         fontFamily: FONT.mono,
         fontSize: 11,
+        // Match the LIVE chip's `fontWeight: 600` so legend labels +
+        // LIVE text render at the same weight (and therefore the same
+        // optical baseline + perceived height across the divider).
+        fontWeight: 600,
         color: t.ink2,
         letterSpacing: '0.04em',
       }}

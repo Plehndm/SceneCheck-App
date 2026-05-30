@@ -8,7 +8,11 @@
 //   - <MapContainer> doesn't accept eventHandlers directly; the proper
 //     pattern is a child component that uses useMapEvents().
 
-import 'leaflet/dist/leaflet.css';
+// Leaflet positioning CSS — injected as a runtime <style> tag from a
+// JS-embedded string (side-effect import). See `web/leafletCss.ts`
+// for why we don't import the .css file directly.
+import '@/web/leafletCss';
+
 import { MapContainer, TileLayer, CircleMarker, Tooltip, Circle, useMap, useMapEvents } from 'react-leaflet';
 import { useEffect } from 'react';
 import { View, type ViewStyle, type StyleProp } from 'react-native';
@@ -51,7 +55,20 @@ export function Map({
       // Non-interactive preview: let clicks fall through to the parent
       // Pressable that opens the full Map tab.
       pointerEvents={interactive ? 'auto' : 'none'}
-      style={[{ width: '100%' as const, height: 300, overflow: 'hidden' as const }, style as StyleProp<ViewStyle>]}
+      style={[
+        // `isolation: isolate` (in CSS) keeps leaflet's high internal
+        // z-indices contained — same reason as the comment on
+        // `web/WebMap.tsx`. RNW translates the View style object to a
+        // div style; raw CSS keys like `isolation` pass through fine.
+        {
+          width: '100%' as const,
+          height: 300,
+          overflow: 'hidden' as const,
+          isolation: 'isolate',
+          zIndex: 0,
+        },
+        style as StyleProp<ViewStyle>,
+      ]}
     >
       <MapContainer
         center={[center.latitude, center.longitude]}

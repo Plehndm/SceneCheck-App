@@ -27,6 +27,7 @@ import { useRatings } from '@/hooks/useRatings';
 import { useJoinEventHandler } from '@/hooks/useJoinEventHandler';
 import { useStore } from '@/store/useStore';
 import { whenRange, parseTime } from '@/lib/date-time';
+import { formatPrice, priceState } from '@/lib/price';
 import * as googleCalendar from '@/lib/google-calendar';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
@@ -296,14 +297,23 @@ export default function EventDetailWeb() {
             }}
           >
             <Fact icon="clock" label="When" value={whenRange(event)} />
-            <Fact icon="pin" label="Where" value={event.where} />
+            {/* Where → open the Map tab focused on this event (selected +
+                centered), mirroring native `app/event/[id].tsx`. */}
+            <Fact
+              icon="pin"
+              label="Where"
+              value={event.where || 'See listing'}
+              onClick={() => router.push(`/(tabs)/map?focus=${event.id}` as never)}
+            />
             <Fact
               icon="people"
               label="Going"
+              // capUnknown (scraped, no listed capacity) shows "N/unk going"
+              // — matches native so the unknown cap reads the same on both.
               value={
-                event.cap > 0
-                  ? `${goingCount} of ${event.cap} spots`
-                  : `${goingCount} joined`
+                capUnknown
+                  ? `${goingCount}/unk going`
+                  : `${goingCount} of ${event.cap} spots`
               }
             />
             <Fact
@@ -311,6 +321,26 @@ export default function EventDetailWeb() {
               label="Host rating"
               value={event.rating != null ? `${event.rating.toFixed(1)} ★` : 'New host'}
             />
+            {/* Price — only when the event carries explicit pricing.
+                priceState returns 'none' for events with no price data
+                (hides the affordance); 'free' shows the FREE label. */}
+            {priceState(event) !== 'none' && (
+              <Fact
+                icon="tag"
+                label={priceState(event) === 'free' ? 'Free to attend' : 'Ticket price'}
+                value={formatPrice(event) ?? ''}
+              />
+            )}
+            {/* Scraped events have no host — link to the original listing
+                the info was pulled from, same as native. */}
+            {event.sourceUrl && (
+              <Fact
+                icon="globe"
+                label="Scraped event"
+                value="View original listing →"
+                onClick={() => window.open(event.sourceUrl!, '_blank', 'noopener,noreferrer')}
+              />
+            )}
           </div>
 
           {event.desc && (
@@ -484,28 +514,27 @@ function Fact({
   icon,
   label,
   value,
+  onClick,
 }: {
   icon: WebIconName;
   label: string;
   value: string;
+  // When set the fact becomes an interactive button (location → map,
+  // scraped event → original listing), tinted with the primary accent
+  // so the affordance reads as tappable — same signal the native
+  // `DetailRow.onPress` carries (primary text + chevron).
+  onClick?: () => void;
 }) {
   const t = useTokens();
-  return (
-    <div
-      style={{
-        background: t.card,
-        border: `1px solid ${t.line}`,
-        borderRadius: 14,
-        padding: 14,
-      }}
-    >
+  const inner = (
+    <>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 7,
           marginBottom: 7,
-          color: t.ink3,
+          color: onClick ? t.primary : t.ink3,
         }}
       >
         <WebIcon name={icon} size={15} />
@@ -517,13 +546,37 @@ function Fact({
           fontSize: 14.5,
           fontWeight: 700,
           lineHeight: 1.2,
-          color: t.ink,
+          color: onClick ? t.primary : t.ink,
         }}
       >
         {value}
       </div>
-    </div>
+    </>
   );
+  const base = {
+    background: t.card,
+    border: `1px solid ${onClick ? t.primarySoft : t.line}`,
+    borderRadius: 14,
+    padding: 14,
+  } as const;
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          ...base,
+          cursor: 'pointer',
+          textAlign: 'left',
+          display: 'block',
+          width: '100%',
+        }}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div style={base}>{inner}</div>;
 }
 
 function LabelCap({ children }: { children: React.ReactNode }) {

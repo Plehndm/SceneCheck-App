@@ -91,6 +91,47 @@ export function WebShell({ children }: Props) {
                     ? 'create'
                     : 'home';
 
+  // Auth + onboarding routes render WITHOUT the shell chrome — no rail,
+  // no surface card, no activity panel. AuthGate redirects to
+  // /auth/sign-in when there's no session; without this branch the
+  // sign-in screen would render *inside* the home content area while
+  // the rail stayed visible, which matches nothing about the native
+  // sign-out experience (native auth screens are full-screen card
+  // routes that replace the (tabs) group entirely).
+  const isAuthRoute =
+    pathname?.startsWith('/auth') || pathname?.startsWith('/onboarding');
+
+  if (isAuthRoute) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          background: t.pageBg,
+          backgroundImage: `radial-gradient(1200px 700px at 15% 8%, ${t.pageGlow1} 0%, transparent 62%), radial-gradient(1100px 900px at 92% 95%, ${t.pageGlow2} 0%, transparent 62%)`,
+          color: t.ink,
+          fontFamily: FONT.body,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {children}
+        </div>
+        <ToastHost />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -100,14 +141,24 @@ export function WebShell({ children }: Props) {
         flexDirection: 'row',
         background: t.pageBg,
         // Two-glow radial wash, same as the prototype. Kept on the
-        // outer surface because the rail's dark control bar covers the
-        // top-left glow anyway and the content area will paint over
-        // the bottom-right; the glows only show through the slim gaps
-        // around slide-overs.
+        // outer surface so the slim gap between the rail/content card
+        // and the viewport edges (created by the padding below) lets
+        // the warm page background show through.
         backgroundImage: `radial-gradient(1200px 700px at 15% 8%, ${t.pageGlow1} 0%, transparent 62%), radial-gradient(1100px 900px at 92% 95%, ${t.pageGlow2} 0%, transparent 62%)`,
         color: t.ink,
         fontFamily: FONT.body,
         overflow: 'hidden',
+        // Inset the rail + content card from the viewport edges so the
+        // dark rail and the surface card both float on the page
+        // background instead of bleeding flush to the browser chrome.
+        // The gap also makes the floating search bar feel less crowded.
+        // Asymmetric: a deeper top inset drops the content card (and rail)
+        // away from the very top of the window so the floating search bar
+        // / page headers don't crowd the browser chrome; less
+        // padding-bottom so the surface card still extends close to the
+        // viewport bottom.
+        padding: '26px 12px 6px',
+        gap: 12,
       }}
     >
       <WebRail
@@ -115,6 +166,9 @@ export function WebShell({ children }: Props) {
         activePanel={activity ? 'activity' : null}
         onPanel={() => setActivity(o => !o)}
         badges={badges}
+        // Round the rail's outer corners so the inset gap reads
+        // intentionally (matches the rounded surface card on the right).
+        style={{ borderRadius: 18 }}
       />
       {/* Main content area. Must be a flex column with an explicit
           height: react-native-web's NativeStackView uses `flex: 1`
@@ -134,6 +188,8 @@ export function WebShell({ children }: Props) {
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          borderRadius: 18,
+          boxShadow: '0 12px 32px -18px rgba(0,0,0,0.25)',
         }}
       >
         {children}

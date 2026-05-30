@@ -85,12 +85,16 @@ interface Props {
 }
 
 // Default route handler: maps a rail route to an expo-router URL.
+// Friends + Following point at the Profile tab so the user sees their
+// social graph in the same sticky-left-card / tabbed-right layout that
+// hosts Hosting / Joined / Drafts / Reviews — instead of a bare list
+// page. The `?tab=` param is read by `(tabs)/profile.web.tsx`.
 const ROUTE_MAP: Record<RailRoute, string> = {
   home: '/',
   search: '/search',
   chat: '/chat',
-  friends: '/my-friends',
-  following: '/my-following',
+  friends: '/profile?tab=friends',
+  following: '/profile?tab=following',
   profile: '/profile',
   settings: '/settings',
   create: '/create-event',
@@ -212,9 +216,37 @@ export function WebRail({
   const orgPictures = useStore(s => s.orgPictures);
   const me = useStore(s => s.me);
   const session = useStore(s => s.session);
+  const showConfirm = useStore(s => s.showConfirm);
+  const showToast = useStore(s => s.showToast);
 
   const [railHover, setRailHover] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  const handleSignOut = () => {
+    setSwitcherOpen(false);
+    showConfirm({
+      title: 'Sign out?',
+      body: 'You can sign back in any time.',
+      confirmLabel: 'SIGN OUT',
+      tone: 'danger',
+      icon: 'logout',
+      onConfirm: async () => {
+        try {
+          await api.signOut();
+          showToast({
+            message: api.isMock() ? 'Signed out (mock).' : 'Signed out.',
+            kind: 'info',
+          });
+          router.replace('/auth/sign-in' as never);
+        } catch (e) {
+          showToast({
+            message: e instanceof Error ? e.message : 'Sign-out failed.',
+            kind: 'error',
+          });
+        }
+      },
+    });
+  };
   // Refs for the switcher trigger + popover. Used by the focus trap so
   // Tab cycles inside the menu while it's open and focus returns to the
   // trigger on close. (WCAG 2.1 SC 2.1.2, SC 2.4.3.)
@@ -339,6 +371,13 @@ export function WebRail({
           desc: 'Organizations you follow',
           route: 'following',
         },
+        {
+          key: 'profile',
+          icon: 'profile',
+          label: 'Profile',
+          desc: 'Your hosted & joined events, friends & reviews',
+          route: 'profile',
+        },
       ],
     },
   ];
@@ -359,7 +398,13 @@ export function WebRail({
         borderRight: `1px solid ${RAIL_LINE}`,
         display: 'flex',
         flexDirection: 'column',
-        padding: '20px 14px 16px',
+        // Deep bottom padding lifts the Settings + account/profile chip
+        // cluster well up the bar, clear of the rail's bottom edge — on
+        // short viewports a small inset left it close enough to the window
+        // bottom to risk being clipped. Pairs with `minHeight: 0` on the
+        // nav scroll area below: the nav list shrinks/scrolls to absorb the
+        // reclaimed space, so the cluster sits higher without overflowing.
+        padding: '20px 14px 96px',
         transition: 'width 220ms cubic-bezier(.4, 0, .2, 1)',
         position: 'relative',
         zIndex: 60,
@@ -500,6 +545,15 @@ export function WebRail({
       <div
         style={{
           flex: 1,
+          // `minHeight: 0` lets this scroll area actually shrink below its
+          // content height inside the rail's flex column. Without it the
+          // default `min-height: auto` keeps the nav items at full height,
+          // so on short viewports the whole column overflows downward and
+          // pushes the Settings + account/profile cluster off the bottom of
+          // the screen (the cut-off the rail's bottom padding couldn't fix).
+          // With it, the nav list scrolls internally and the bottom cluster
+          // stays pinned in view.
+          minHeight: 0,
           overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
@@ -648,7 +702,9 @@ export function WebRail({
                     {account.handle}
                   </div>
                 </div>
-                <WebIcon name="switch" size={16} color={RAIL_INK_2} />
+                {/* Rotate/switch icon removed — the account chip now opens
+                    a popover with full account list + Sign out, so a
+                    rotate affordance reads as redundant chrome. */}
               </>
             )}
           </button>
@@ -764,6 +820,35 @@ export function WebRail({
               }}
             >
               <WebIcon name="profile" size={16} /> View my profile
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleSignOut}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '9px 10px',
+                borderRadius: 12,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'transparent',
+                // Use the primary ink color so the row is legible on the
+                // popover's card-colored bg (the previous `t.warn` was
+                // too faint against the warm card surface to read as a
+                // proper action). The logout icon below still conveys
+                // the destructive intent.
+                color: t.ink,
+                fontFamily: FONT.mono,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <WebIcon name="logout" size={16} /> Sign out
             </button>
           </div>
         )}

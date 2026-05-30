@@ -36,19 +36,28 @@ import { WebOrgRow } from '@/web/WebOrgRow';
 
 const SECTION_LIMIT = 8;
 
+type Tab = 'all' | 'events' | 'people' | 'orgs' | 'interests';
+const TABS: Tab[] = ['all', 'events', 'people', 'orgs', 'interests'];
+
 export default function WebSearchScreen() {
   const t = useTokens();
-  const params = useLocalSearchParams<{ q?: string }>();
+  const params = useLocalSearchParams<{ q?: string; tab?: string }>();
   const initialQ = typeof params.q === 'string' ? params.q : '';
+  const initialTab: Tab = TABS.includes(params.tab as Tab) ? (params.tab as Tab) : 'all';
   const [query, setQuery] = useState(initialQ);
-  // Keep the URL in sync as the user types so the search is bookmarkable
-  // and the autocomplete fallback on Home (router.push('/search?q=...'))
-  // hydrates this screen at the right initial query.
+  const [tab, setTab] = useState<Tab>(initialTab);
+  // Keep the URL in sync as the user types or switches tabs so the
+  // search is bookmarkable and the rail/profile deep-links
+  // (router.push('/search?tab=people')) hydrate this screen with the
+  // right initial section selected.
   useEffect(() => {
-    if ((params.q ?? '') === query) return;
-    router.setParams({ q: query || undefined } as never);
+    if ((params.q ?? '') === query && (params.tab ?? 'all') === tab) return;
+    router.setParams({
+      q: query || undefined,
+      tab: tab === 'all' ? undefined : tab,
+    } as never);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, tab]);
 
   const lowered = query.trim().toLowerCase();
   const meId = useStore(s => s.me.id);
@@ -224,60 +233,129 @@ export default function WebSearchScreen() {
               </button>
             )}
           </div>
-        </div>
 
-        {/* Sections */}
-        <WebDiscSection
-          title="Events"
-          count={events.length}
-          loading={eventsLoading}
-          emptyText="No matching events nearby."
-        >
-          <div style={eventGridStyle}>
-            {events.map(e => (
-              <WebEventListCard
-                key={e.id}
-                event={e}
-                joined={joined.has(e.id)}
-                onJoin={() => onJoin(e)}
-                onOpen={() => router.push(`/event/${e.id}` as never)}
-              />
-            ))}
-          </div>
-        </WebDiscSection>
-
-        <WebDiscSection title="People" count={people.length} emptyText="No matching people.">
-          <div style={peopleGridStyle}>
-            {people.map(p => (
-              <WebPersonRow key={p.id} person={p} message />
-            ))}
-          </div>
-        </WebDiscSection>
-
-        <WebDiscSection title="Organizations" count={orgs.length} emptyText="No matching orgs.">
-          <div style={peopleGridStyle}>
-            {orgs.map(o => (
-              <WebOrgRow key={o.id} org={o} showBio={false} />
-            ))}
-          </div>
-        </WebDiscSection>
-
-        <WebDiscSection title="Interests" count={interests.length} emptyText="No matching tags.">
-          <div style={tagsRowStyle}>
-            {interests.map(i => {
-              const subscribed = meInterests.includes(i.tag);
+          {/* Tab strip — filters which section is visible. Counts are
+              shown inline so the user knows what each tab will reveal
+              before they switch. Tab state is mirrored to the URL
+              (?tab=…) so deep-links from the rail and from the
+              profile's "Find more friends" button land on the right
+              section. */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              marginTop: 14,
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+            }}
+          >
+            {([
+              { k: 'all', label: 'All', n: events.length + people.length + orgs.length + interests.length },
+              { k: 'events', label: 'Events', n: events.length },
+              { k: 'people', label: 'People', n: people.length },
+              { k: 'orgs', label: 'Organizations', n: orgs.length },
+              { k: 'interests', label: 'Interests', n: interests.length },
+            ] as { k: Tab; label: string; n: number }[]).map(c => {
+              const on = tab === c.k;
               return (
-                <WebTag
-                  key={i.tag}
-                  tag={i.tag}
-                  size="lg"
-                  tone={subscribed ? 'primary' : 'soft'}
-                  onClick={() => router.push(`/interests/${encodeURIComponent(i.tag)}` as never)}
-                />
+                <button
+                  key={c.k}
+                  type="button"
+                  onClick={() => setTab(c.k)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 999,
+                    border: `1px solid ${on ? t.ink : t.line}`,
+                    background: on ? t.ink : t.card,
+                    color: on ? t.surface : t.ink,
+                    cursor: 'pointer',
+                    fontFamily: FONT.mono,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {c.label}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      opacity: 0.6,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {c.n}
+                  </span>
+                </button>
               );
             })}
           </div>
-        </WebDiscSection>
+        </div>
+
+        {/* Sections — each renders only when the active tab includes it. */}
+        {(tab === 'all' || tab === 'events') && (
+          <WebDiscSection
+            title="Events"
+            count={events.length}
+            loading={eventsLoading}
+            emptyText="No matching events nearby."
+          >
+            <div style={eventGridStyle}>
+              {events.map(e => (
+                <WebEventListCard
+                  key={e.id}
+                  event={e}
+                  joined={joined.has(e.id)}
+                  onJoin={() => onJoin(e)}
+                  onOpen={() => router.push(`/event/${e.id}` as never)}
+                />
+              ))}
+            </div>
+          </WebDiscSection>
+        )}
+
+        {(tab === 'all' || tab === 'people') && (
+          <WebDiscSection title="People" count={people.length} emptyText="No matching people.">
+            <div style={peopleGridStyle}>
+              {people.map(p => (
+                <WebPersonRow key={p.id} person={p} message />
+              ))}
+            </div>
+          </WebDiscSection>
+        )}
+
+        {(tab === 'all' || tab === 'orgs') && (
+          <WebDiscSection title="Organizations" count={orgs.length} emptyText="No matching orgs.">
+            <div style={peopleGridStyle}>
+              {orgs.map(o => (
+                <WebOrgRow key={o.id} org={o} showBio={false} />
+              ))}
+            </div>
+          </WebDiscSection>
+        )}
+
+        {(tab === 'all' || tab === 'interests') && (
+          <WebDiscSection title="Interests" count={interests.length} emptyText="No matching tags.">
+            <div style={tagsRowStyle}>
+              {interests.map(i => {
+                const subscribed = meInterests.includes(i.tag);
+                return (
+                  <WebTag
+                    key={i.tag}
+                    tag={i.tag}
+                    size="lg"
+                    tone={subscribed ? 'primary' : 'soft'}
+                    onClick={() => router.push(`/interests/${encodeURIComponent(i.tag)}` as never)}
+                  />
+                );
+              })}
+            </div>
+          </WebDiscSection>
+        )}
       </div>
     </div>
   );

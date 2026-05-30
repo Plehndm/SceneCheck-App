@@ -12,7 +12,8 @@ import { FONT } from '@/theme/tokens';
 import type { Account } from '@/types/domain';
 import { WebAvatar } from './WebAvatar';
 import { WebFriendButton } from './WebFriendButton';
-import { WebButton } from './WebButton';
+import { WebIcon } from './WebIcon';
+import { WebTip } from './WebTip';
 
 interface Props {
   person: Account;
@@ -84,19 +85,33 @@ export function WebPersonRow({
         </div>
       </div>
       {message && (
-        <WebButton
-          tone="ghost"
-          size="sm"
-          icon="chat"
-          onClick={(e) => {
-            e.stopPropagation();
-            // Open (or create) a DM. We route into the new-chat helper
-            // route — the chat-thread create-on-send path lives there.
-            router.push(`/new-chat?to=${person.id}` as never);
-          }}
-        >
-          Message
-        </WebButton>
+        <WebTip title="Message" desc={`Send a message to ${person.name}`} side="top">
+          <button
+            type="button"
+            aria-label={`Message ${person.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Open (or create) a DM. We route into the new-chat helper
+              // route — the chat-thread create-on-send path lives there.
+              router.push(`/new-chat?to=${person.id}` as never);
+            }}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              background: t.card,
+              border: `1px solid ${t.line}`,
+              color: t.ink,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <WebIcon name="chat" size={15} />
+          </button>
+        </WebTip>
       )}
       {friend && <WebFriendButton personId={person.id} size="sm" />}
     </div>

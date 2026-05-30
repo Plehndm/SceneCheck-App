@@ -4,6 +4,7 @@
 // that's testable and SSR-safe.
 
 import { View, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { SCText } from './SCText';
@@ -14,11 +15,19 @@ export function ToastHost() {
   const t = useTokens();
   const toasts = useStore(s => s.toasts);
   const dismiss = useStore(s => s.dismissToast);
+  // Push the stack below any device status bar / notch so a banner
+  // doesn't collide with system chrome. On web the inset is 0.
+  const insets = useSafeAreaInsets();
   if (toasts.length === 0) return null;
   return (
     <View
       style={{
-        position: 'absolute', left: 12, right: 12, bottom: 120,
+        // Anchor to the TOP of the viewport — standard banner placement,
+        // matches the user's mental model from every other app's
+        // notification stack. Was `bottom: 120` which read as
+        // "middle-ish" on shorter screens and hugged the bottom on
+        // taller ones.
+        position: 'absolute', left: 12, right: 12, top: insets.top + 12,
         gap: 8, zIndex: 90,
         pointerEvents: 'box-none',
       }}

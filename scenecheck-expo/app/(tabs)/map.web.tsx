@@ -9,13 +9,14 @@
 // the Home tab + Settings + Map agree on radius and the recommended
 // chip stays in sync with `subscribedInterests`.
 
-import { useCallback, useMemo, useState } from 'react';
-import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
 import { useEvents } from '@/hooks/useEvents';
 import { useLocation } from '@/hooks/useLocation';
+import { eventLatLng, type LatLng } from '@/components/Map/types';
 import { useOnline } from '@/web/useOnline';
 import { api } from '@/lib/api';
 import { MILES_TO_METERS } from '@/lib/units';
@@ -60,6 +61,22 @@ export default function MapWeb() {
   const [filter, setFilter] = useState<KindFilter>('all');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [centerOn, setCenterOn] = useState<LatLng | null>(null);
+
+  // Arriving from an event's "Where" fact (/(tabs)/map?focus=<id>): select
+  // that event (highlight its pin + open the hover card via activeId) and
+  // pan the map to it. Mirrors native `app/(tabs)/map.tsx`. We consume the
+  // param afterwards so a later tab visit doesn't re-center on a stale id.
+  const params = useLocalSearchParams<{ focus?: string }>();
+  useEffect(() => {
+    const fid = params.focus;
+    if (!fid) return;
+    const ev = events.find(e => e.id === fid);
+    if (!ev) return; // events may still be loading — retry on the next run
+    setHoveredId(ev.id);
+    setCenterOn(eventLatLng(ev));
+    router.setParams({ focus: '' });
+  }, [params.focus, events]);
 
   const isPresetDist = (DISTANCES as readonly number[]).includes(radius);
   const distLabel = !isPresetDist
@@ -121,10 +138,16 @@ export default function MapWeb() {
   }, []);
 
   return (
+    // `position: absolute; inset: 0` bypasses any flex-chain weirdness
+    // and guarantees the map screen fills its positioned WebShell ancestor.
+    // The previous `height: 100%` was working in theory but fell over when
+    // an intermediate react-native-web View collapsed to 0 height during
+    // route transitions, which is what caused the map to render as a tiny
+    // square in the corner.
     <div
       style={{
-        position: 'relative',
-        height: '100%',
+        position: 'absolute',
+        inset: 0,
         background: t.surface,
         color: t.ink,
         fontFamily: FONT.body,
@@ -141,6 +164,7 @@ export default function MapWeb() {
         richHover={tweaks?.richPinHover ?? true}
         online={online}
         radiusM={radiusM}
+        centerOn={centerOn}
       />
 
       {/*
