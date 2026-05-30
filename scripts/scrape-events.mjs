@@ -59,27 +59,52 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = SCRAPE_FETCH_TIME
   finally { clearTimeout(t); }
 }
 
-// Scan several nearby cities so the feed isn't all one place. Override the whole
-// set with a comma-separated EVENTS_SOURCE_URLS, or the legacy single
-// EVENTS_SOURCE_URL. Any Eventbrite "/d/<state>--<city>/events/" page works.
+// Scan a wide range of SoCal cities so the feed isn't all one place. Two
+// clusters: Orange County (the app's anchor) + Los Angeles County (the
+// adjacent metro most users still drive to). Override the whole set with
+// a comma-separated EVENTS_SOURCE_URLS, or the legacy single
+// EVENTS_SOURCE_URL. Any Eventbrite "/d/<state>--<city>/events/" page
+// works.
 const DEFAULT_SOURCES = [
+  // OC cluster
   'https://www.eventbrite.com/d/ca--irvine/events/',
   'https://www.eventbrite.com/d/ca--santa-ana/events/',
   'https://www.eventbrite.com/d/ca--costa-mesa/events/',
   'https://www.eventbrite.com/d/ca--newport-beach/events/',
   'https://www.eventbrite.com/d/ca--anaheim/events/',
   'https://www.eventbrite.com/d/ca--huntington-beach/events/',
+  'https://www.eventbrite.com/d/ca--fullerton/events/',
+  'https://www.eventbrite.com/d/ca--garden-grove/events/',
+  // LA cluster
+  'https://www.eventbrite.com/d/ca--los-angeles/events/',
+  'https://www.eventbrite.com/d/ca--long-beach/events/',
+  'https://www.eventbrite.com/d/ca--pasadena/events/',
+  'https://www.eventbrite.com/d/ca--santa-monica/events/',
+  'https://www.eventbrite.com/d/ca--west-hollywood/events/',
+  'https://www.eventbrite.com/d/ca--burbank/events/',
 ];
 const SOURCE_URLS = (process.env.EVENTS_SOURCE_URLS || process.env.EVENTS_SOURCE_URL || DEFAULT_SOURCES.join(','))
   .split(',').map((s) => s.trim()).filter(Boolean);
-const MAX_EVENTS = Number(process.env.MAX_EVENTS || 40);   // cap so one run can't flood the table
+// Raised from 40 → 120 alongside the LA expansion so the wider source set
+// can actually deliver more events into the feed instead of being clipped
+// by the global cap. With 14 default sources, that's ~9 events per city
+// before the per-source cap bites — enough to give each city visible
+// representation without one busy listing flooding the rest out.
+const MAX_EVENTS = Number(process.env.MAX_EVENTS || 120);
 // Per-city cap so one busy city can't crowd the rest out before the global cap.
 const MAX_PER_SOURCE = Math.max(1, Number(process.env.MAX_PER_SOURCE || Math.ceil(MAX_EVENTS / SOURCE_URLS.length)));
 
-// Used ONLY when the live source returns nothing — e.g. Eventbrite served a
-// bot-check page to the CI runner's datacenter IP. Real Irvine coordinates +
-// interest keywords in the description so auto-tagging still matches. Keeps the
-// FR6 pipeline demonstrably working regardless of the live source's bot defenses.
+// Used ONLY by DRY_RUN when the live source returns nothing — e.g.
+// Eventbrite served a bot-check page to the runner's datacenter IP.
+// Real Irvine coordinates + interest keywords in the description so
+// auto-tagging behaviour is still demonstrable in the local DRY_RUN.
+//
+// In LIVE mode an empty live result no longer falls back to POSTing
+// these — every CI run would have written a fresh copy under a drifting
+// start_at and NULL source_url (dedup miss on both keys), which left
+// the feed cluttered with multiple "Beginner Bouldering Night" etc.
+// rows. Migration 00042 cleans the legacy dupes; the live path now
+// exits with code 2 and no ingest.
 const FALLBACK_EVENTS = [
   { title: 'Beginner Bouldering Night', description: 'Intro climbing and bouldering meetup for all levels.', location: { lat: 33.6846, lng: -117.8265 }, location_name: 'Irvine', price_min: 0, price_max: 0, price_currency: 'USD' },
   { title: 'Aldrich Park Morning Run', description: 'Easy 5k running group, all paces, coffee after.', location: { lat: 33.6461, lng: -117.8427 }, location_name: 'Aldrich Park, UCI', price_min: 0, price_max: 0, price_currency: 'USD' },
@@ -559,20 +584,31 @@ async function main() {
   }
 
   console.log(`Scraped ${events.length} event(s) across ${SOURCE_URLS.length} source(s).`);
+
+  // Zero-event fallback: the live source returned nothing (bot-check page
+  // from the CI IP, markup change, etc.). FALLBACK_EVENTS exists to keep
+  // the DRY_RUN demo working so the scraper can be inspected locally
+  // without credentials, but we DO NOT POST these to live anymore — the
+  // fixture rows used to drift between CI runs (start_at = Date.now()
+  // + N days, source_url = NULL → dedup miss on both keys), which left
+  // the home feed cluttered with duplicate copies of "Beginner Bouldering
+  // Night" / "Aldrich Park Morning Run" / "Common Room Coffee Meetup".
+  // Migration 00042 cleans up the existing dupes; the live skip below
+  // prevents new ones.
   if (events.length === 0) {
-    // Live source returned nothing / errored (bot-check page from the CI IP, or
-    // changed markup). Fall back to seed events so the ingest path still runs —
-    // loudly, so it's clear in the log this isn't live data.
-    console.warn('No parseable events from the live source (bot-check / markup change / fetch error). ' +
-      'Falling back to seed events so the ingest path still runs.');
-    console.warn('NOTICE: ingest used fallback seed events; live sources returned 0 results.');
+    console.warn('No parseable events from the live source (bot-check / markup change / fetch error).');
     // M8: surface a degraded run in CI without hard-failing the workflow.
-    // process.exitCode = 2 lets the rest of the run complete (we still want
-    // the ingest path exercised) and surfaces as a non-zero exit in the Actions
-    // log — distinct from a successful 0 and a hard-fail 1. Set BEFORE the
-    // ingest loop so a successful ingest of the seed rows doesn't reset it.
+    // process.exitCode = 2 is distinct from a successful 0 and a hard-fail
+    // 1, so the GitHub Actions log shows the pipeline ran but produced
+    // nothing live-worthy.
     process.exitCode = 2;
-    events = FALLBACK_EVENTS;
+    if (DRY_RUN) {
+      console.warn('DRY_RUN: showing FALLBACK_EVENTS fixtures for pipeline inspection (NOT what would ingest).');
+      events = FALLBACK_EVENTS;
+    } else {
+      console.warn('Skipping ingest — fixture seed events are no longer POSTed to live to avoid duplicate buildup.');
+      return;
+    }
   }
 
   if (DRY_RUN) {
