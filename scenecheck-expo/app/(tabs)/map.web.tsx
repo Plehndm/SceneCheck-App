@@ -15,6 +15,7 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
 import { useEvents } from '@/hooks/useEvents';
+import { useOptimisticAttendees } from '@/hooks/useOptimisticAttendees';
 import { useLocation } from '@/hooks/useLocation';
 import { eventLatLng, type LatLng } from '@/components/Map/types';
 import { useOnline } from '@/web/useOnline';
@@ -58,6 +59,10 @@ export default function MapWeb() {
     return s;
   }, [joined, pendingLeave]);
 
+  // Optimistic attendee counts so the hover-card count (+ unknown-cap stripe)
+  // move the instant the viewer joins/leaves, not on the next refetch.
+  const { displayEvents, markToggled } = useOptimisticAttendees(events, effectiveJoined);
+
   const [filter, setFilter] = useState<KindFilter>('all');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -93,16 +98,17 @@ export default function MapWeb() {
     recommended: events.filter(e => wIsRecommended(e, subscribedInterests)).length,
   }), [events, subscribedInterests]);
 
-  const listEvents = useMemo(() => events.filter(e => {
+  const listEvents = useMemo(() => displayEvents.filter(e => {
     if (filter === 'all') return true;
     if (filter === 'recommended') return wIsRecommended(e, subscribedInterests);
     return e.kind === filter;
-  }), [events, filter, subscribedInterests]);
+  }), [displayEvents, filter, subscribedInterests]);
 
   const onJoin = useCallback(async (id: string) => {
     const e = events.find(x => x.id === id);
     if (!e) return;
     const isJoined = effectiveJoined.has(id);
+    markToggled(id); // snapshot pre-toggle membership for the optimistic count
     if (isJoined) {
       schedulePendingLeave(id);
       showToast({
@@ -131,7 +137,7 @@ export default function MapWeb() {
         });
       }
     }
-  }, [events, effectiveJoined, schedulePendingLeave, cancelPendingLeave, showToast, joinEventStore]);
+  }, [events, effectiveJoined, markToggled, schedulePendingLeave, cancelPendingLeave, showToast, joinEventStore]);
 
   const goEvent = useCallback((id: string) => {
     router.push(`/event/${id}` as never);

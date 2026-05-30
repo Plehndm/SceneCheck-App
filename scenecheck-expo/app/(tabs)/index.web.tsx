@@ -28,6 +28,7 @@ import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
 import { useEvents } from '@/hooks/useEvents';
+import { useOptimisticAttendees } from '@/hooks/useOptimisticAttendees';
 import { useLocation } from '@/hooks/useLocation';
 import { useSearchPeople } from '@/hooks/useSearch';
 import { useDateCityLabel } from '@/hooks/useDateCityLabel';
@@ -87,6 +88,10 @@ export default function HomeWeb() {
     return s;
   }, [joined, pendingLeave]);
 
+  // Optimistic attendee counts so the count (+ the unknown-cap stripe) move
+  // the instant the viewer joins/leaves, not on the next refetch.
+  const { displayEvents, markToggled } = useOptimisticAttendees(events, effectiveJoined);
+
   // ── filter chip + hover sync ────────────────────────────
   const [filter, setFilter] = useState<KindFilter>('all');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -107,17 +112,20 @@ export default function HomeWeb() {
     recommended: events.filter(e => wIsRecommended(e, subscribedInterests)).length,
   }), [events, subscribedInterests]);
 
-  const listEvents = useMemo(() => events.filter(e => {
+  // Filter the optimistically-adjusted events so the cards + map hover cards
+  // show the live count. Kind/interest filtering is unaffected by the overlay.
+  const listEvents = useMemo(() => displayEvents.filter(e => {
     if (filter === 'all') return true;
     if (filter === 'recommended') return wIsRecommended(e, subscribedInterests);
     return e.kind === filter;
-  }), [events, filter, subscribedInterests]);
+  }), [displayEvents, filter, subscribedInterests]);
 
   // ── join (optimistic + commit), matches the event detail flow ──
   const onJoin = useCallback(async (id: string) => {
     const e = events.find(x => x.id === id);
     if (!e) return;
     const isJoined = effectiveJoined.has(id);
+    markToggled(id); // snapshot pre-toggle membership for the optimistic count
     if (isJoined) {
       schedulePendingLeave(id);
       showToast({
@@ -146,7 +154,7 @@ export default function HomeWeb() {
         });
       }
     }
-  }, [events, effectiveJoined, schedulePendingLeave, cancelPendingLeave, showToast, joinEventStore]);
+  }, [events, effectiveJoined, markToggled, schedulePendingLeave, cancelPendingLeave, showToast, joinEventStore]);
 
   const goEvent = useCallback((id: string) => {
     router.push(`/event/${id}` as never);
