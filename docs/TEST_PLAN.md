@@ -1928,6 +1928,41 @@ semantics are unchanged.
 
 ---
 
+### 2.67 Desktop web build + friend/own map events, event-detail parity, edit-notify fix (post-§2.66 delta)
+
+_Captured 2026-05-30 alongside `docs/PROGRESS_SNAPSHOT.md` §74._
+
+A large body of web-facing work: the desktop web build (`scenecheck-expo/web/`
++ `*.web.tsx`), surfacing friend/own events on the web map (migration `00043`
++ `transformEventRow`), web event-detail routing parity, a latent
+event-update trigger fix (`00044`), a seed-time refresh (`00045`), and rail /
+shell layout fixes. Per the testing strategy these land **outside** the Jest
+suite — for the same reasons already documented: web-only UI pulls
+react-native-web DOM + react-leaflet (which is exactly why `Map.web.tsx` is
+excluded from coverage, §2.2 / Part 3 Q2), and SQL migrations need a Postgres
+container (pgTAP/Deno), not jsdom. So the work adds no new Jest tests; it's
+guarded by the unchanged 426/426 suite over the shared logic it touches, by
+`tsc`, and by manual/live verification.
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| `lib/api.ts` `transformEventRow` `is_friend_creator → kind:'friend'` | `tests/unit/api-mock.test.ts`, `tests/unit/events.test.ts` (unchanged, green) | The new branch is additive — the flag is optional and absent on direct table selects, so it defaults to `'other'` and mock-mode fixtures + existing `eventCategory`/`pinColor` assertions are unaffected. The RPC's PostGIS + friendship join runs server-side and is verified live, not in Jest. |
+| Migrations `00043` (rank friend/own), `00044` (notify_event_updated `array_append`), `00045` (seed time refresh) | Live verification via `supabase db push` | `00044` was confirmed by the push that previously failed with `malformed array literal (SQLSTATE 22P02)` now applying cleanly, and an event UPDATE no longer crashing. No DB in the Jest environment, so these follow the existing migration-testing path (Part 3 lists pgTAP/Deno as the next addition). |
+| `app/event/[id].web.tsx` parity (Where→map, price, scraped listing, N/unk) | `tsc` clean; `tests/unit/price.test.ts`, `tests/unit/date-time.test.ts` (shared helpers, green) | The web overlay itself is a react-native-web DOM surface (outside Jest), but the `lib/price` `priceState`/`formatPrice` and `lib/date-time` helpers it renders keep their existing unit coverage. |
+| `app/(tabs)/map.web.tsx` `?focus` + `web/WebMap.tsx` `centerOn`, `web/WebIcon.tsx` `tag` glyph, `web/WebRail.tsx` (Profile nav, `alignSelf:'stretch'` overflow fix, `minHeight:0`, top inset), `web/WebShell.tsx` (top inset) | `tsc` clean; jest 426/426 | Web-only chrome — outside the Jest suite. Verified on the deployed web build (the rail-overflow root cause + fix were confirmed against a live screenshot). |
+
+**Delivered count:** jest 426 / 426 (no new tests — web UI + SQL migrations
+are outside the Jest environment); `tsc` clean; lint at the 7-problem baseline.
+
+**What this section deliberately does NOT do:** add Jest tests for the leaflet
+web map, the rail/shell layout, or the `rank_events_query` RPC — they need a
+real browser (Playwright) or a Postgres container (pgTAP/Deno) respectively,
+both already flagged as the highest-value future additions in Part 3. The
+migrations were verified by applying them to the hosted project; the web map +
+event-detail parity were verified on the deployed build.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

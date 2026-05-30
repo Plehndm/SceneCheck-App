@@ -111,6 +111,8 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-30 | **Onboarding tour replay wired.** The Help & feedback row labelled "How SceneCheck works" called an inline handler that just toasted *"Welcome tour replay coming soon"* — the walkthrough it promised was never built. Replaced the dead handler with a real route entry pointing at `/onboarding/interests` (the post-signup picker built for FR1.3), and relabelled the row to **"Replay onboarding"** / "Re-pick the interests we use to rank events for you" so the affordance matches what it actually does. `api.markOnboarded` is idempotent and additive — re-picking interests adds to the existing set rather than wiping it — so the row is safe to invoke from settings without a confirmation gate. Regression test added (`router.push` assertion). 426/426; `tsc` clean. See §71. |
 | 2026-05-30 | **Wider scrape (LA cluster) + skip fixture POSTs + dupe cleanup (migration 00042).** Three related changes. **(1) Wider sources:** `DEFAULT_SOURCES` expanded 6 OC cities → **14 cities** (8 OC + 6 LA: los-angeles, long-beach, pasadena, santa-monica, west-hollywood, burbank). **(2) Cap bump:** `MAX_EVENTS` default 40 → **120** so the wider source set can actually deliver more events instead of getting clipped. **(3) Skip fixture POSTs:** `FALLBACK_EVENTS` (Beginner Bouldering Night / Aldrich Park Morning Run / Common Room Coffee Meetup) used to POST whenever Eventbrite returned 0 events, but the fixtures had drifting `start_at` + NULL `source_url` so dedup missed on both keys — multi-week buildup left 4× each title in the feed. Live mode now logs the empty result + exits with code 2 + skips the POST entirely; DRY_RUN still surfaces the fixtures for local inspection. Migration `00042_cleanup_fallback_scraped.sql` deletes every scraped row with `source_url IS NULL` (the fixture bloat + any pre-source_url-tracking-era stragglers). Live run after the changes: 120 events scraped, 103 new + 17 self-healed, 0 failed; LA cluster contributed visibly (Studio 420 West Hollywood, LA Independent Beer Fest, Santa Monica USA Kick Off, Pasadena Award-winning Rose de Chine, …). 426/426; `tsc` clean. See §72. |
 | 2026-05-30 | **Events nearby honors user coords + radius; default bumped 5 → 10 mi.** Two related discovery-pipeline fixes. **(1) Coords + radius wire-up:** `app/(tabs)/index.tsx` (Home rail) was passing `radiusM` but not coords — `fetchEvents` fell back to `DEFAULT_REGION` (Irvine) instead of the user's actual location. `app/events.tsx` (the "HAPPENING NEAR YOU" full list) was calling `useEvents()` with **no arguments at all**, so BOTH coords and radius defaulted (Irvine + 5mi hardcoded). After the LA-cluster scrape landed 100+ events across OC + LA, the `rank_events_query` RPC's `ST_DWithin` only saw the ~5mi bubble around Irvine — anything further was filtered at the DB. Both screens now match the Map tab's pattern (`useEvents({ lat, lng, radiusM })` from `useLocation` + `useStore(s => s.radius)`). **(2) Default radius bump:** `store.radius` and `DEFAULT_RADIUS_M` (`components/Map/types.ts`) both bumped 5 → 10 mi (8047 → 16093 m) so a fresh install surfaces events from the full anchor metro instead of a tight Irvine bubble. `api.fetchEvents` fallback now references `DEFAULT_RADIUS_M` instead of inlining 8047. Test fixtures updated (`test-utils`, `unit/store`, `unit/map-types`, `screens/map-tab`); slider range stays 0.5–50 mi. 426/426; `tsc` clean. See §73. |
+| 2026-05-30 | **Desktop web build — full large-screen parity surface (`scenecheck-expo/web/` + `*.web.tsx`).** A dedicated desktop web experience landed across nine commits: platform-branched `_layout`s + a `WebShell` (fixed full-viewport chrome, two-glow background) wrapping an Instagram-style left **rail** and the route content; a library of shared web atoms under `web/`; a desktop **map** (react-leaflet over OSM via `Map.web.impl` + a JS-injected `leafletCss`) with rich pin hover cards, search autocomplete, and a filter popover; a two-pane **chat** (realtime, announcements, retry, edited); a sticky-left **profile** with five slide-over overlays + secondary lists; a **create-event** wizard with live preview and a **settings** screen with inline summaries; and a four-section **discover/search** + activity panel + notifications feed. Overlay routes use `presentation:'transparentModal'` on web so they slide over via `WebSlideOver` instead of replacing the page. See §74. |
+| 2026-05-30 | **Friend/own events on the web map + event-detail routing parity + edit-notify trigger fix (migrations 00043–00045) + rail/shell layout.** `rank_events_query` (`00043`) now returns `is_friend_creator` (an accepted-friendship `EXISTS`) so friend-hosted events bucket as `kind:'friend'` (coloured) instead of grey `other`, and its filter widened to `status='published' OR creator_id = p_user_id` so a creator always sees their own events — drafts included; `transformEventRow` consumes the flag. Migration `00044` fixes a latent crash in `notify_event_updated` (`text[] || 'literal'` resolved as `anyarray || anyarray` → "malformed array literal") by switching to `array_append` — this had silently broken **every** event edit/UPDATE that touched a tracked column. Migration `00045` re-stamps the 9 seeded events to upcoming `now()`-relative times so the other-account/org-hosted events stop being filtered out by `rank_events_query`'s `start_at > now()-2h` window. Web **event detail** reached native parity: clickable **Where → `/map?focus=<id>`**, a ticket-price fact, a scraped **"view original listing"** link, and the **N/unk** unknown-capacity display; `map.web` reads `?focus` to select + pan to an event and `WebMap` gained a `centerOn` prop that imperatively re-centres leaflet. **Layout:** added **Profile** to the rail's middle nav; fixed the rail overflowing off the bottom of the window (`alignSelf:'stretch'` instead of `height:'100%'`, so its bottom padding actually lifts the Settings/account cluster) + `minHeight:0` on the nav scroll area; re-centred the LIVE chip with the legend; and halved the top insets on the rail + `WebShell`. 426/426; `tsc` clean; migrations applied to the hosted project. See §74. |
 
 ### Current layout
 
@@ -4534,7 +4536,132 @@ baseline.
 
 ---
 
-## 74. How to re-snapshot this file
+## 74. Desktop web build + friend/own map events, event-detail parity, edit-notify fix (migrations 00043–00045)
+
+_Last updated: 2026-05-30_
+
+Two bodies of work, both web-facing.
+
+### 74.1 Desktop web build (`scenecheck-expo/web/` + `*.web.tsx`)
+
+The app gained a dedicated large-screen web experience (the native screens
+stay untouched — Metro picks the `.web.tsx` / `.native.tsx` variant). It
+landed as a sequence of focused commits:
+
+- **Foundation** — platform-branched `_layout`s and a `WebShell` that paints
+  the fixed full-viewport chrome (two radial-gradient glows over the cream
+  `pageBg`) and lays out an Instagram-style left **`WebRail`** beside the
+  route content. A library of shared web atoms lives under `web/`
+  (`WebAvatar`, `WebTag`, `WebTip`, `WebIcon`, `WebStars`, `WebJoinButton`,
+  `WebSlideOver`, …). Auth/onboarding routes render without the shell chrome.
+- **Home + map** — a desktop map (`WebMap` wrapping `Map.web.impl`,
+  react-leaflet over OSM tiles, with `leafletCss` injected at runtime as a
+  `<style>` so Metro never serves the CSS as a classic script) with rich pin
+  hover cards, a "you are here" pulse, zoom/recenter controls, a LIVE/OFFLINE
+  chip + legend, search autocomplete, and a filter popover.
+- **Two-pane chat** — realtime messages, announcements, optimistic send +
+  retry, and edited-message rendering.
+- **Profile** — a sticky-left profile card with five slide-over overlays and
+  the secondary lists (friends / following / hosting / joined / reviews).
+- **Create-event + settings** — a create-event wizard with a live preview
+  pane, and a settings screen with inline summaries.
+- **Discover** — a four-section search, an activity slide-over panel, and a
+  notifications feed.
+
+Overlay routes (event, profile, attendees, interests, ratings) are flipped to
+`presentation:'transparentModal'` on web in `app/_layout.tsx` so they slide
+over the current screen via `WebSlideOver` instead of replacing it; the
+route's existence is the open state. The web `ToastHost` renders inside
+`WebShell` so toasts land in the shell's coordinate space.
+
+### 74.2 Friend + own events on the map (migration 00043 + `transformEventRow`)
+
+Two gaps kept friend- and user-hosted events off the web map:
+
+- `rank_events_query` returned `creator_id` but no relationship flag, so
+  `transformEventRow` (lib/api.ts) bucketed every non-own, non-scraped row as
+  `'other'` (grey "NEARBY" pin) — the "Friends" filter was always empty.
+  Migration `00043` adds an `is_friend_creator` column (an `EXISTS` against
+  accepted `friendships`); the transform now emits `kind:'friend'`. Direct
+  table selects (`getEventById` / `fetchEventsByHost`) don't carry the flag,
+  so those paths still fall through to `'other'` exactly as before.
+- User-created events start life as `status='draft'` and only publish once
+  `subscriber_count >= min_subscribers`, but the RPC filtered
+  `status='published'` — so a host never saw their own freshly-created event
+  (a chicken-and-egg dead end). `00043` widens the predicate to
+  `status='published' OR creator_id = p_user_id`, so a creator always sees
+  their own events (drafts included) while everyone else still only sees
+  published ones.
+
+`00043` `DROP`s before `CREATE` because adding a column to the `RETURNS TABLE`
+changes the function's return type, which `CREATE OR REPLACE` alone rejects.
+
+### 74.3 `notify_event_updated` array crash (migration 00044)
+
+The FR10.2 trigger from `00032` built its changed-columns array with
+`v_changed_fields := v_changed_fields || 'start_at'`. With a `text[]` on the
+left and a bare unknown-type literal on the right, Postgres resolves `||` to
+`anyarray || anyarray` and tries to parse `'start_at'` as an array literal —
+throwing `malformed array literal: "start_at" (SQLSTATE 22P02)` at runtime.
+`CREATE OR REPLACE FUNCTION` never executes the body, so the bug sat latent
+since `00032`; it fires on any `UPDATE` that changes a tracked column — i.e.
+the host "edit event" flow **and** any maintenance UPDATE (it's what initially
+blocked the `00045` push below). `00044` switches to `array_append(...)`
+(unambiguously `anyarray + element`); the existing trigger keeps pointing at
+the swapped-in function.
+
+### 74.4 Seed event-time refresh (migration 00045)
+
+The 9 events seeded by `seed-hosted.sql` use `now()`-relative times, but those
+only recompute when the seed is re-run. On a project seeded a while ago they
+drift into the past and `rank_events_query`'s `start_at > now()-2h` window
+drops them — including the events reassigned to mock hosts in
+`seed-hosted-social.sql` (Maya's Morning Ride, the Cooking Club's Dumpling
+Night, TopOut's climbing nights, Sasha's run, Theo's yoga). `00045` re-stamps
+each seeded event to the same upcoming offset (time window only — `creator_id`
+and `status` untouched), WHERE-scoped to the fixed seed UUIDs so it no-ops on a
+DB without those rows.
+
+### 74.5 Web event-detail routing parity (`app/event/[id].web.tsx`)
+
+Brought the web overlay to parity with native `app/event/[id].tsx`:
+
+- **Where** is now a button that routes to `/(tabs)/map?focus=<id>` (select +
+  centre the pin); `map.web` reads the `?focus` param to highlight + pan and
+  then consumes it, and `WebMap` gained a `centerOn` prop that imperatively
+  `setView`s leaflet (never zooming out).
+- A **ticket-price** fact (via `lib/price` `priceState`/`formatPrice`), hidden
+  when no price data.
+- A scraped **"view original listing →"** fact linking `sourceUrl`.
+- **N/unk going** for unknown-capacity (scraped) events.
+- The host row was already a profile link. Added a `tag` glyph to `WebIcon`.
+
+### 74.6 Rail + shell layout fixes (`WebRail` / `WebShell`)
+
+- Added a **Profile** entry to the rail's middle nav group (alongside the
+  account chip at the bottom).
+- **Rail overflow fix:** the rail used `height:'100%'`, which resolved to the
+  full `100vh` while the shell row offsets it down by its top inset — so the
+  rail ran off the bottom of the window (clipped), swallowing its bottom
+  padding and pinning the Settings/account cluster to the edge no matter how
+  much padding was added (it read as an "external override"). Switched to
+  `alignSelf:'stretch'`, which sizes the rail to the shell row's content box,
+  so the bottom padding now genuinely lifts the cluster. Paired with
+  `minHeight:0` on the nav scroll area so the nav list shrinks/scrolls instead
+  of overflowing.
+- The LIVE chip + legend were re-centred against each other
+  (`alignItems:'center'` + a stretched divider).
+- Halved the top insets so both surfaces sit closer to the top of the window
+  (rail `20→10px`, `WebShell` `26→13px`).
+
+**Verification:** TSC clean, jest 426/426 (these are web-layout + SQL-migration
+changes; like the rest of `web/` + the migrations they're outside the Jest
+suite — see TEST_PLAN §2.67). Migrations `00043`–`00045` applied to the hosted
+project via `supabase db push`.
+
+---
+
+## 75. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
