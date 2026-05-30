@@ -21,7 +21,7 @@
 import type { CSSProperties, MouseEvent } from 'react';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
-import type { SCEvent } from '@/types/domain';
+import type { Account, SCEvent } from '@/types/domain';
 import { whenRange } from '@/lib/date-time';
 import { useStore } from '@/store/useStore';
 import { wHostAccount, wKindMeta } from './kind';
@@ -37,6 +37,10 @@ interface Props {
   onOpen: (id: string) => void;
   onJoin: (id: string) => void;
   onHover?: (id: string | null) => void;
+  /** Optional hostId → Account map so the card can show the host avatar
+   *  (e.g. the create-event live preview seeds the posting account). When
+   *  empty the card falls back to the denormalized `event.host` name. */
+  hostLookup?: Record<string, Account>;
   style?: CSSProperties;
 }
 
@@ -47,15 +51,15 @@ export function WebEventListCard({
   onOpen,
   onJoin,
   onHover,
+  hostLookup,
   style,
 }: Props) {
   const t = useTokens();
   const subscribedInterests = useStore(s => s.subscribedInterests);
   const { accent, label } = wKindMeta(event, t, subscribedInterests);
-  // No screen-level host lookup is plumbed through here yet; cards
-  // fall back to the denormalized `event.host` string below when the
-  // lookup is empty. A future change can pass a batched profile map.
-  const host = wHostAccount(event, {});
+  // Resolve the host account from the provided lookup so the avatar renders;
+  // falls back to the denormalized `event.host` string when none is seeded.
+  const host = wHostAccount(event, hostLookup ?? {});
 
   return (
     <div

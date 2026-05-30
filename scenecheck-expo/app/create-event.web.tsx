@@ -29,6 +29,8 @@ import { FONT } from '@/theme/tokens';
 import { useStore } from '@/store/useStore';
 import { useInterests } from '@/hooks/useInterests';
 import { useLocation } from '@/hooks/useLocation';
+import { DEFAULT_REGION } from '@/components/Map/types';
+import { suggestPlaces, type PlaceSuggestion } from '@/lib/geocode';
 import { api } from '@/lib/api';
 import * as googleCalendar from '@/lib/google-calendar';
 import { timeToMin, fmtDate, friendlyToISO, whenRange } from '@/lib/date-time';
@@ -526,6 +528,8 @@ export default function CreateEventWeb() {
                     lng: coords.longitude,
                   }))
                 }
+                nearLat={coords?.latitude ?? DEFAULT_REGION.latitude}
+                nearLng={coords?.longitude ?? DEFAULT_REGION.longitude}
               />
             )}
             {step === 3 && (
@@ -628,6 +632,9 @@ export default function CreateEventWeb() {
               onOpen={() => {}}
               onJoin={() => {}}
               onHover={() => {}}
+              // Seed the posting account so the preview's host row shows the
+              // profile picture (matches the "Posting as" field above).
+              hostLookup={{ [account.id]: { ...account, picture: accountPic } }}
             />
             {form.lat != null && form.lng != null ? (
               <div
@@ -809,8 +816,45 @@ function WhenWhereStep({
   onChange,
   timesInvalid,
   onUseMyLocation,
-}: StepChangeProps & { timesInvalid: boolean; onUseMyLocation: () => void }) {
+  nearLat,
+  nearLng,
+}: StepChangeProps & {
+  timesInvalid: boolean;
+  onUseMyLocation: () => void;
+  nearLat: number;
+  nearLng: number;
+}) {
   const t = useTokens();
+  // Location autocomplete (OpenStreetMap Nominatim, biased to the host's
+  // location). Typing ≥3 chars debounces a search; picking a result fills the
+  // location name AND the lat/lng, which the right-pane map preview reflects.
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  // Set when WE change the text (selecting a suggestion) so the debounced
+  // effect skips one run and the dropdown doesn't immediately reopen.
+  const skipNext = useRef(false);
+
+  useEffect(() => {
+    if (skipNext.current) { skipNext.current = false; return; }
+    const q = form.location.trim();
+    if (q.length < 3) { setSuggestions([]); setOpen(false); return; }
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      const res = await suggestPlaces(q, { latitude: nearLat, longitude: nearLng });
+      if (cancelled) return;
+      setSuggestions(res);
+      setOpen(res.length > 0);
+    }, 350);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [form.location, nearLat, nearLng]);
+
+  const pick = (s: PlaceSuggestion) => {
+    skipNext.current = true;
+    setOpen(false);
+    setSuggestions([]);
+    onChange({ location: s.label, lat: s.lat, lng: s.lng });
+  };
+
   return (
     <>
       <SectionHeader title="When & Where" sub="Date, times, and where folks should show up." />
@@ -867,16 +911,17 @@ function WhenWhereStep({
         </div>
       )}
 
-      <Field label="Location name">
+      <Field label="Location" hint="Start typing — we’ll suggest places near you.">
         <div style={{ position: 'relative' }}>
           <span
             style={{
               position: 'absolute',
               left: 14,
-              top: '50%',
+              top: 24,
               transform: 'translateY(-50%)',
               color: t.ink3,
               pointerEvents: 'none',
+              zIndex: 1,
             }}
           >
             <WebIcon name="pin" size={16} />
@@ -884,9 +929,56 @@ function WhenWhereStep({
           <input
             value={form.location}
             onChange={(e) => onChange({ location: e.target.value })}
-            placeholder="Anteater Plaza → Back Bay"
+            onFocus={() => { if (suggestions.length) setOpen(true); }}
+            // Delay close so a suggestion's onMouseDown registers first.
+            onBlur={() => setTimeout(() => setOpen(false), 120)}
+            placeholder="Search an address or place…"
             style={{ ...inputStyle(t), paddingLeft: 40 }}
           />
+          {open && suggestions.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 'calc(100% + 6px)',
+                zIndex: 30,
+                background: t.card,
+                border: `1px solid ${t.line}`,
+                borderRadius: 12,
+                boxShadow: '0 18px 40px -14px rgba(0,0,0,0.35)',
+                overflow: 'hidden',
+              }}
+            >
+              {suggestions.map((s, i) => (
+                <button
+                  key={`${s.lat},${s.lng},${i}`}
+                  type="button"
+                  // onMouseDown (not onClick) so it fires before the input's
+                  // onBlur closes the dropdown.
+                  onMouseDown={(e) => { e.preventDefault(); pick(s); }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 9,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderTop: i === 0 ? 'none' : `1px solid ${t.line}`,
+                    cursor: 'pointer',
+                    color: t.ink,
+                  }}
+                >
+                  <span style={{ color: t.ink3, marginTop: 1, flexShrink: 0, display: 'flex' }}>
+                    <WebIcon name="pin" size={14} />
+                  </span>
+                  <span style={{ fontSize: 12.5, lineHeight: 1.35 }}>{s.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </Field>
 
@@ -920,8 +1012,8 @@ function WhenWhereStep({
             lineHeight: 1.5,
           }}
         >
-          Typed-address geocoding is coming soon — for now the host&rsquo;s pinned coordinates (or
-          their device location) anchor the event on the map.
+          Pick a suggestion above to drop the pin, or use your current location. The map preview
+          updates to wherever the pin is set.
         </div>
       </Field>
     </>
