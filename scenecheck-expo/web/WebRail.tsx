@@ -392,7 +392,15 @@ export function WebRail({
       style={{
         width: expanded ? 248 : 78,
         flexShrink: 0,
-        height: '100%',
+        // Size to the shell row's content box via stretch — NOT height:100%.
+        // The row insets its children with top/bottom padding, but height:100%
+        // resolved to the full viewport height, so the rail started below the
+        // top inset and its bottom (plus most of the bottom padding) hung off
+        // the bottom of the screen, clipped. That's why bumping the bottom
+        // padding never visibly moved the Settings/account cluster — the extra
+        // space was below the fold. `alignSelf: stretch` sizes the rail to the
+        // visible area, so the bottom padding now actually lifts the cluster.
+        alignSelf: 'stretch',
         background: RAIL_BG,
         color: RAIL_INK,
         borderRight: `1px solid ${RAIL_LINE}`,
@@ -404,7 +412,7 @@ export function WebRail({
         // bottom to risk being clipped. Pairs with `minHeight: 0` on the
         // nav scroll area below: the nav list shrinks/scrolls to absorb the
         // reclaimed space, so the cluster sits higher without overflowing.
-        padding: '20px 14px 96px',
+        padding: '10px 14px 96px',
         transition: 'width 220ms cubic-bezier(.4, 0, .2, 1)',
         position: 'relative',
         zIndex: 60,

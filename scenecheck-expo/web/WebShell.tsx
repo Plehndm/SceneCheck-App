@@ -157,7 +157,7 @@ export function WebShell({ children }: Props) {
         // / page headers don't crowd the browser chrome; less
         // padding-bottom so the surface card still extends close to the
         // viewport bottom.
-        padding: '26px 12px 6px',
+        padding: '13px 12px 6px',
         gap: 12,
       }}
     >
