@@ -1,0 +1,284 @@
+// Search / Discover (web) — 4-section layout.
+//
+// Centered max-720 column. Top: a sticky search bar bound to the URL
+// `?q=` param so links like "browse #climbing" can deep-link from the
+// rail or other screens. Below: four sections (Events / People /
+// Organizations / Interests), each in a WebDiscSection wrapper.
+//
+// Reuses the existing hooks (no new wiring): useEvents (client-side
+// filtered by query), useSearchPeople + useSearchOrgs (server-filtered),
+// useInterests (server-filtered). Mock-mode (lib/supabase null) is
+// supported by every one of these hooks already.
+//
+// Falls back to a "Recommended for you" mode when the query is empty:
+// shows the top N from each section (people/orgs/interests come from
+// the unfiltered hook calls; events come from the user's discovery
+// radius via useEvents).
+
+import { useMemo, useState, useEffect, type CSSProperties } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useTokens } from '@/theme/ThemeProvider';
+import { FONT } from '@/theme/tokens';
+import { useStore } from '@/store/useStore';
+import { useEvents } from '@/hooks/useEvents';
+import { useSearchPeople, useSearchOrgs } from '@/hooks/useSearch';
+import { useInterests } from '@/hooks/useInterests';
+import { useLocation } from '@/hooks/useLocation';
+import { useJoinEventHandler } from '@/hooks/useJoinEventHandler';
+import { excludeSelf } from '@/lib/people';
+import { MILES_TO_METERS } from '@/lib/units';
+import { WebIcon } from '@/web/WebIcon';
+import { WebTag } from '@/web/WebTag';
+import { WebDiscSection } from '@/web/WebDiscSection';
+import { WebEventListCard } from '@/web/WebEventListCard';
+import { WebPersonRow } from '@/web/WebPersonRow';
+import { WebOrgRow } from '@/web/WebOrgRow';
+
+const SECTION_LIMIT = 8;
+
+export default function WebSearchScreen() {
+  const t = useTokens();
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initialQ = typeof params.q === 'string' ? params.q : '';
+  const [query, setQuery] = useState(initialQ);
+  // Keep the URL in sync as the user types so the search is bookmarkable
+  // and the autocomplete fallback on Home (router.push('/search?q=...'))
+  // hydrates this screen at the right initial query.
+  useEffect(() => {
+    if ((params.q ?? '') === query) return;
+    router.setParams({ q: query || undefined } as never);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const lowered = query.trim().toLowerCase();
+  const meId = useStore(s => s.me.id);
+  // Pull the stable Set reference from the store and derive the array
+  // in a memo. Returning `Array.from(...)` directly from the selector
+  // produces a new array reference per render, which Zustand's
+  // useSyncExternalStore adapter treats as "changed" → infinite render.
+  const subscribedInterests = useStore(s => s.subscribedInterests);
+  const meInterests = useMemo(
+    () => Array.from(subscribedInterests),
+    [subscribedInterests],
+  );
+  const joined = useStore(s => s.joined);
+  // Routed through the shared hook so optimistic-commit + waitlist
+  // toast + UNDO grace match every other web caller.
+  const onJoin = useJoinEventHandler();
+  const radiusMiles = useStore(s => s.radius);
+  const { coords } = useLocation();
+
+  // Events: server returns the radius-cut set; we sub-filter by query
+  // client-side (same pattern as the native search.tsx).
+  const radiusM = Math.round(radiusMiles * MILES_TO_METERS);
+  const { events: allEvents, loading: eventsLoading } = useEvents({
+    lat: coords?.latitude,
+    lng: coords?.longitude,
+    radiusM,
+  });
+  const events = useMemo(() => {
+    if (!lowered) return allEvents.slice(0, SECTION_LIMIT);
+    return allEvents
+      .filter(e =>
+        e.title.toLowerCase().includes(lowered) ||
+        (e.where ?? '').toLowerCase().includes(lowered) ||
+        (e.interests ?? []).some(i => i.toLowerCase().includes(lowered))
+      )
+      .slice(0, SECTION_LIMIT);
+  }, [allEvents, lowered]);
+
+  const { results: peopleRaw } = useSearchPeople(query);
+  const { results: orgsRaw } = useSearchOrgs(query);
+  // useInterests returns Interest rows (`tag` + subscriberCount etc.);
+  // we cap to a comfortable per-section ceiling. With an empty query
+  // the hook returns the top suggested set per its existing implementation.
+  const { interests: interestsRaw } = useInterests(query);
+
+  const people = useMemo(() => {
+    const v = excludeSelf(peopleRaw, meId);
+    return (lowered ? v : v.slice(0, SECTION_LIMIT)).slice(0, SECTION_LIMIT);
+  }, [peopleRaw, lowered, meId]);
+
+  const orgs = useMemo(() => {
+    return (lowered ? orgsRaw : orgsRaw.slice(0, SECTION_LIMIT)).slice(0, SECTION_LIMIT);
+  }, [orgsRaw, lowered]);
+
+  const interests = useMemo(() => {
+    return (interestsRaw ?? []).slice(0, SECTION_LIMIT * 2);
+  }, [interestsRaw]);
+
+  const eventGridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 14,
+  };
+  const peopleGridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 12,
+  };
+  const tagsRowStyle: CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'auto',
+        background: t.surface,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 880,
+          margin: '0 auto',
+          padding: '40px 32px 80px',
+        }}
+      >
+        {/* Header */}
+        <div style={{ marginBottom: 22 }}>
+          <div
+            style={{
+              fontFamily: FONT.display,
+              fontWeight: 800,
+              fontSize: 36,
+              letterSpacing: '-0.045em',
+              color: t.ink,
+              lineHeight: 1.05,
+            }}
+          >
+            Discover
+          </div>
+          <div
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 11,
+              color: t.ink3,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              marginTop: 6,
+            }}
+          >
+            {lowered ? `Results for “${query}”` : 'Events, people, organizations + interests'}
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 5,
+            background: t.surface,
+            paddingBottom: 18,
+            marginBottom: 6,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: t.card,
+              border: `1px solid ${t.line}`,
+              borderRadius: 14,
+              padding: '0 16px',
+              height: 52,
+              boxShadow: '0 12px 24px -18px rgba(0,0,0,0.18)',
+            }}
+          >
+            <WebIcon name="search" size={18} color={t.ink3} />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search events, people, orgs, interests…"
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontFamily: FONT.body,
+                fontSize: 15,
+                color: t.ink,
+                height: '100%',
+              }}
+            />
+            {query.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Clear"
+                style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  background: t.subtle, border: 'none',
+                  cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: t.ink2,
+                }}
+              >
+                <WebIcon name="x" size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Sections */}
+        <WebDiscSection
+          title="Events"
+          count={events.length}
+          loading={eventsLoading}
+          emptyText="No matching events nearby."
+        >
+          <div style={eventGridStyle}>
+            {events.map(e => (
+              <WebEventListCard
+                key={e.id}
+                event={e}
+                joined={joined.has(e.id)}
+                onJoin={() => onJoin(e)}
+                onOpen={() => router.push(`/event/${e.id}` as never)}
+              />
+            ))}
+          </div>
+        </WebDiscSection>
+
+        <WebDiscSection title="People" count={people.length} emptyText="No matching people.">
+          <div style={peopleGridStyle}>
+            {people.map(p => (
+              <WebPersonRow key={p.id} person={p} message />
+            ))}
+          </div>
+        </WebDiscSection>
+
+        <WebDiscSection title="Organizations" count={orgs.length} emptyText="No matching orgs.">
+          <div style={peopleGridStyle}>
+            {orgs.map(o => (
+              <WebOrgRow key={o.id} org={o} showBio={false} />
+            ))}
+          </div>
+        </WebDiscSection>
+
+        <WebDiscSection title="Interests" count={interests.length} emptyText="No matching tags.">
+          <div style={tagsRowStyle}>
+            {interests.map(i => {
+              const subscribed = meInterests.includes(i.tag);
+              return (
+                <WebTag
+                  key={i.tag}
+                  tag={i.tag}
+                  size="lg"
+                  tone={subscribed ? 'primary' : 'soft'}
+                  onClick={() => router.push(`/interests/${encodeURIComponent(i.tag)}` as never)}
+                />
+              );
+            })}
+          </div>
+        </WebDiscSection>
+      </div>
+    </div>
+  );
+}
