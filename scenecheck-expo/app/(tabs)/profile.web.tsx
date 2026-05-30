@@ -404,7 +404,10 @@ export default function ProfileWeb() {
               gap: 4,
               borderBottom: `1px solid ${t.line}`,
               marginBottom: 22,
-              overflowX: 'auto',
+              // The tab selectors wrap onto a second row when they don't fit
+              // rather than getting their own horizontal scrollbar — only the
+              // rendered tab content scrolls (via the screen's own overflowY).
+              flexWrap: 'wrap',
             }}
           >
             {visibleTabs.map(x => {

@@ -21,6 +21,19 @@ export function WebCapBar({ attendees, cap, style }: Props) {
   const capUnknown = cap <= 0;
   const pct = Math.max(0, Math.min(1, capUnknown ? 0 : attendees / cap));
   const nearFull = !capUnknown && pct > 0.85;
+  // Unknown capacity has no fill ratio, but the bar should still telegraph
+  // "people are going" when there are attendees — otherwise an unknown-cap
+  // event with a crowd reads identically to an empty one. Render a diagonal
+  // striped (indeterminate / "no limit") fill across the track in that case;
+  // a known cap keeps the normal proportional fill.
+  const fill: CSSProperties = capUnknown
+    ? (attendees > 0
+        ? {
+            width: '100%',
+            background: `repeating-linear-gradient(45deg, ${t.good} 0 5px, color-mix(in oklab, ${t.good} 42%, transparent) 5px 10px)`,
+          }
+        : { width: '0%' })
+    : { width: `${pct * 100}%`, background: nearFull ? t.warn : t.good };
   return (
     <div
       style={{
@@ -42,10 +55,9 @@ export function WebCapBar({ attendees, cap, style }: Props) {
       >
         <div
           style={{
-            width: `${pct * 100}%`,
             height: '100%',
             borderRadius: 999,
-            background: nearFull ? t.warn : t.good,
+            ...fill,
           }}
         />
       </div>
