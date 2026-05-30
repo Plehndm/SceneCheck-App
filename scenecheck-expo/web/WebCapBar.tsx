@@ -15,8 +15,12 @@ interface Props {
 
 export function WebCapBar({ attendees, cap, style }: Props) {
   const t = useTokens();
-  const pct = Math.max(0, Math.min(1, cap > 0 ? attendees / cap : 0));
-  const nearFull = pct > 0.85;
+  // cap <= 0 = unknown / unlisted capacity (typically scraped events). Show
+  // "N/unk" — same signal the native + web event detail use — and leave the
+  // bar neutral since there's no meaningful fill ratio to draw.
+  const capUnknown = cap <= 0;
+  const pct = Math.max(0, Math.min(1, capUnknown ? 0 : attendees / cap));
+  const nearFull = !capUnknown && pct > 0.85;
   return (
     <div
       style={{
@@ -54,7 +58,7 @@ export function WebCapBar({ attendees, cap, style }: Props) {
         }}
       >
         {attendees}
-        <span style={{ color: t.ink3 }}>/{cap}</span>
+        <span style={{ color: t.ink3 }}>/{capUnknown ? 'unk' : cap}</span>
       </span>
     </div>
   );
