@@ -1774,6 +1774,160 @@ defence-in-depth, and the redirect was visually verified on device.
 
 ---
 
+### 2.61 Eventbrite time correctness + ticket price columns (post-§2.60 delta)
+
+_Captured 2026-05-29 alongside `docs/PROGRESS_SNAPSHOT.md` §68._
+
+Two related fixes in the FR6 scraper pipeline + a new DB column for ticket
+prices. Single combined commit (`59e5bfd`) because the changes touched the
+same files in tightly coupled ways.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scripts/scrape-time.mjs` (new) | `scripts/scrape-time.test.mjs` (new, 23 `node:test` cases) | `isDateOnly` accepts `"2026-05-29"`, rejects full datetimes; `hasTimezone` handles `Z` suffix + offsets, careful with the date-hyphen; `timezoneFromSourceUrl` maps US-50 state codes to IANA; `extractFullJsonLdTimestamp` returns the first datetime containing `T` (skips date-only stragglers); `timezoneOffsetMinutes` reports PDT (-420) / PST (-480) / EDT (-240) / UTC (0); `dateOnlyToVenueLocalNoonIso` anchors to noon-in-tz (May 29 PDT → `2026-05-29T19:00:00Z`, July 4 EDT → `2026-07-04T16:00:00Z`). |
+| `scripts/scrape-price.mjs` (new) | `scripts/scrape-price.test.mjs` (new, 18 `node:test` cases) | `parsePriceNumber` tolerates `"33.85"` / `"33.85 USD"` / `"$33.85"` / number / null / negative-rejection; `isUsSourceUrl` matches `/d/ca--…` and rejects `/d/on--…` (Ontario) + non-Eventbrite URLs; `normaliseCurrency` validates ISO-4217 shape (3 letters); `extractPriceFromOffers` reads `AggregateOffer` low/high, single `Offer.price` as both bounds, reduces tiered Offer arrays to overall min/max, overrides CAD→USD on US listings (the BEIS Warehouse Sale Eventbrite bug), defaults currency to USD when missing, rounds to 2 decimals. |
+| `scripts/scrape-events.mjs` (rewired) | _Smoke-verified via DRY_RUN against the live BEIS Warehouse Sale page; per-source `time-resolution: detail:N` + `price: M/N with prices (K free)` log lines_ | The four time-resolution paths (`listing` / `detail` / `noon-fallback` / `naive-localized`) classify correctly; price is extracted from listing first, detail-page second; one detail-page round-trip serves both needs; source-listing URL (not per-event detail URL) is threaded to `extractPriceFromOffers` so the CAD→USD override has the state-code it needs. |
+| `supabase/migrations/00040_events_price.sql` (new) | _SQL — manually verified against hosted DB_ | New `price_min` / `price_max` / `price_currency` columns; CHECK enforces "both set or neither set" + non-negative + max ≥ min. |
+| `supabase/functions/ingest-scraped/index.ts` | _Edge Function — verified via live ingest_ | Source-URL-keyed dedup (with title+start_at fallback for FALLBACK_EVENTS); self-heal patches start_at/end_at AND price triple in place when stored values differ from incoming; 400 + clear message on price-shape mismatch (instead of 500 Postgres CHECK violation). |
+| `supabase/functions/create-event/index.ts` | _Edge Function — verified via in-app create flow_ | Price triple validation mirrors the migration's CHECK; both-null is the accept-default for hosts who don't set a price. |
+| `.github/workflows/ci.yml` | _CI step exercised on push_ | `scraper-tests` job runs both `scrape-time.test.mjs` + `scrape-price.test.mjs` via `node --test`. |
+
+**Delivered count:** jest 412 / 412 (no Jest surface for these — the unit
+work lives in `node:test` and the Edge Function changes were verified
+manually against the hosted DB); `node --test scripts/*.test.mjs`
+**41 / 41**; `tsc` clean.
+
+**Live verification:** BEIS Warehouse Sale corrected from showing
+"5/28/2026 5:00 PM PDT" (wrong day + fictional time, the UTC-midnight bug)
+to "5/29/2026 2:00 PM PDT" (matches Eventbrite). Scrape ingested 40 events
+with prices populated (10 FREE / 10 paid, range from `$9.74` fixed to
+`$0–$268.61`).
+
+**What this section deliberately does NOT do:** add jest coverage of the
+SQL migration or the Edge Function self-heal path — those live outside the
+Expo jest harness. The Deno suite covers the JS-side `interest-matching`
+analyzer; the migrations + Edge Function changes were verified manually
+against the hosted DB after `npx supabase db push` + redeploy.
+
+---
+
+### 2.62 Ticket price UI rendering (post-§2.61 delta)
+
+_Captured 2026-05-29 alongside `docs/PROGRESS_SNAPSHOT.md` §69._
+
+Surfaces the new price triple end-to-end so users can see ticket cost
+without scanning the description.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/lib/price.ts` (new) | `tests/unit/price.test.ts` (new, 13 cases) | `priceState` returns `'none'` for nulls, `'free'` for 0/0, `'fixed'` for equal nonzero, `'range'` for min < max (including the tiered `0 < max` case). `formatPrice` returns null for unspecified, `'FREE'` for free, `'$15'` / `'$33.85–$44.52'` for USD, `'€12'` / `'CA$20–CA$40'` / `'¥500'` for non-USD, `'XYZ 15'` for unknown ISO codes, defaults null currency to USD, strips integer trailing zeros but preserves cents. |
+| `scenecheck-expo/components/SCEventCard.tsx`, `app/events.tsx`, `app/event/[id].tsx` | Jest 425/425 (existing screen tests cover the renders) | Price chip renders on rail card + list row when `priceState !== 'none'`; FREE uses green pill, paid uses neutral outline; "Ticket price" DetailRow on detail screen uses the new `tag` icon. |
+| `scenecheck-expo/components/EditEventSheet.tsx`, `app/create-event.tsx` | Jest 425/425 (existing edit + create tests pass with the new fields) | Three-mode toggle (NOT SET / FREE / PAID) drives a derived price triple on save; PAID with MAX blank treats as fixed-price; client-side validation rejects max < min before the round-trip. |
+| `scenecheck-expo/types/domain.ts`, `lib/api.ts` | Jest 425/425 | `SCEvent` + `DraftForm` carry the price fields; `transformEventRow` maps NUMERIC columns through `num()` so supabase-js's NUMERIC-as-string-in-edge-cases doesn't break the `=== 0` free check; `updateEvent` accepts a price patch shape. |
+
+**Delivered count:** jest 425 / 425 (412 baseline + 13 new in
+`tests/unit/price.test.ts`); `tsc` clean; lint at the 7-problem baseline.
+
+**What this section deliberately does NOT do:** add screenshot/visual
+regression for the chip colours — the colour tokens live in
+`theme/tokens.ts` and have their own coverage; the chip is a structural
+addition that the screen tests verify rendering of, but the precise
+green/outline picks are visual and verified on device.
+
+---
+
+### 2.63 Legacy date-only-UTC scraped rows cleanup (post-§2.62 delta)
+
+_Captured 2026-05-29 alongside `docs/PROGRESS_SNAPSHOT.md` §70._
+
+One-shot SQL cleanup for the rows the FR6 scraper landed before the
+time-fix + price-column work. Migration only — no app surface.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `supabase/migrations/00041_cleanup_legacy_scraped.sql` (new) | _SQL — manually verified against hosted DB_ | `DELETE FROM events WHERE source='scraped' AND price_min IS NULL AND start_at::time = '00:00:00'`; DO block surfaces the count via `RAISE NOTICE`. FK cascades verified before the delete (event_interests / event_subscriptions / event_waitlist / ratings cascade; chats.event_id + reports.target_event_id set-null). |
+
+**Delivered count:** jest 425 / 425 (no change — migration-only);
+`tsc` clean.
+
+**What this section deliberately does NOT do:** add an assertion of the
+exact deleted count — the count depends on how many legacy rows happen to
+exist in the hosted DB at apply-time, which is environment-specific. The
+DO block's `RAISE NOTICE` surfaces the count to whoever runs the migration.
+
+---
+
+### 2.64 Onboarding tour replay wired to /onboarding/interests (post-§2.63 delta)
+
+_Captured 2026-05-30 alongside `docs/PROGRESS_SNAPSHOT.md` §71._
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/app/settings/help.tsx` | `tests/screens/settings-subscreens.test.tsx` (+1 regression test) | "Replay onboarding" row renders with the new label (old label "How SceneCheck works" no longer present); tapping the row fires `router.push('/onboarding/interests')` (was previously the dead `'Welcome tour replay coming soon'` toast). |
+
+**Delivered count:** jest 426 / 426 (425 + 1 regression); `tsc` clean.
+
+**What this section deliberately does NOT do:** assert the downstream
+flow (markOnboarded → mirror into store) — that path is covered by the
+existing onboarding screen + api tests added in §2.58.
+
+---
+
+### 2.65 Wider scrape (LA cluster) + fixture-POST skip + dupe cleanup (post-§2.64 delta)
+
+_Captured 2026-05-30 alongside `docs/PROGRESS_SNAPSHOT.md` §72._
+
+Three related changes to the FR6 scraper + a cleanup migration. No new
+Jest surface — the scraper changes are config/constants + an early-return
+in the fallback branch that's exercised by DRY_RUN and live runs but not
+jest.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scripts/scrape-events.mjs` | _Live verification: 120 events across 14 cities, 103 new + 17 healed, 0 failed; per-source counts visible in CI log_ | `DEFAULT_SOURCES` expanded 6 → 14 cities (8 OC + 6 LA); `MAX_EVENTS` default 40 → 120; live mode no longer POSTs `FALLBACK_EVENTS` (exits with code 2 + warn instead); DRY_RUN still surfaces fixtures for local inspection. |
+| `supabase/migrations/00042_cleanup_fallback_scraped.sql` (new) | _SQL — verified live (12 dupes deleted, 0 remaining; total scraped 136 → 124)_ | `DELETE FROM events WHERE source='scraped' AND source_url IS NULL` — broader than "fixture titles" by design, catches the bloat + any pre-source_url-tracking stragglers. `RAISE NOTICE` surfaces the deleted count. |
+
+**Delivered count:** jest 426 / 426 (no change — scraper + migration-only);
+`tsc` clean.
+
+**What this section deliberately does NOT do:** add a jest assertion that
+the live fallback branch skips ingest — the fallback path runs only when
+`scrapeEvents()` returns empty (Eventbrite returned 0 events), which would
+require mocking `fetch` deep enough to make the live wrapping fail
+predictably. The behaviour was verified by:
+- DRY_RUN with `EVENTS_SOURCE_URLS=https://example.invalid` to force an
+  empty list — log shows `Skipping ingest — fixture seed events are no
+  longer POSTed to live to avoid duplicate buildup.` and exit code 2.
+- Post-cleanup count check confirmed 0 fallback rows after the migration
+  + new scrape run.
+
+---
+
+### 2.66 Events nearby honors user coords + radius; default bumped 5 → 10 mi (post-§2.65 delta)
+
+_Captured 2026-05-30 alongside `docs/PROGRESS_SNAPSHOT.md` §73._
+
+Two related fixes in the discovery pipeline. Test fixtures updated where
+the old 5-mile default was hardcoded.
+
+| File changed | Tests | What they assert |
+|---|---|---|
+| `scenecheck-expo/app/(tabs)/index.tsx`, `app/events.tsx` | Jest 426/426 (existing home + events-list screen tests cover the renders) | Both screens pass `lat` + `lng` from `useLocation` + `radiusM` from `useStore(s => s.radius) * MILES_TO_METERS` into `useEvents` so the `rank_events_query` RPC anchors on the user's actual location with their actual preference (matches the Map tab pattern). Previously the home tab passed radius-only and events.tsx passed nothing, both defaulting to Irvine + 5mi. |
+| `scenecheck-expo/store/useStore.ts`, `components/Map/types.ts`, `lib/api.ts` | `tests/unit/store.test.ts`, `tests/unit/map-types.test.ts`, `tests/test-utils.tsx` (all updated) | `store.radius` initialises to 10 (was 5); `DEFAULT_RADIUS_M` constant is 16093m (was 8047m / 5mi); `api.fetchEvents` fallback references `DEFAULT_RADIUS_M` so the constant is the single source of truth. |
+| `scenecheck-expo/tests/screens/map-tab.test.tsx` | (updated chip-tap regression) | The "tapping a radius chip writes the persisted store radius" test asserts the initial state is 10mi (the new default) and taps `25 MI` so the assertion proves a real state change off the new default (previously tapped 10 MI which was the test's expected post-tap value but is now the default — no-op write would still have passed). |
+
+**Delivered count:** jest 426 / 426 (no count change — fixture updates,
+not new tests); `tsc` clean; lint at the 7-problem baseline.
+
+**What this section deliberately does NOT do:** add a test that the
+persisted Zustand radius value survives across mounts at the new 10mi
+default — `zustand/persist` is exercised by its own tests and our store
+already has coverage for the persist/merge round-trip in
+`tests/unit/store.test.ts`. The bump is a default-only change; persistence
+semantics are unchanged.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?

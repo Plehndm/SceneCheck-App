@@ -105,6 +105,12 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-28 | **Map iOS pin-crash saga → custom RN overlay rewrite.** Multi-iteration debugging of an `EXC_BAD_ACCESS` that closed the app after 2-3 pin selections on the Map tab. Tried (in order): drop title/description, imperative `showCallout` via ref, memoize markers + stable refs, upgrade `react-native-maps` to `1.27.2` (couldn't bundle in Expo Go — that package is bundled with the SDK, so a `package.json` bump is a no-op). Device logs proved every JS call landed before each crash — the bug was 100% in the bundled `react-native-maps@1.20.x` native marker pipeline. Settled on a **custom React Native overlay**: `MapView` renders only tiles + the user-location dot + radius `Circle`, **no `<Marker>` children**. Pins are absolute-positioned `<Pressable>` Views projected via in-JS Mercator math against the current region (synchronous, no `pointForCoordinate` round-trips). `onRegionChange` (continuous) tracks the region in state so pins move with the map in real time. Plus a recenter button (`crosshair` icon, bottom-right; targets selected event → user → default in priority) and `onMapPress` wired to clear the focused selection. Pin crash class structurally removed. 412/412; `tsc` clean. See §65. |
 | 2026-05-28 | **Chat row avatars (DM single, group stacked Instagram-style) + non-event group titles.** Chat list rows now lead with avatars: DMs show the other person's, event/group rows show two stacked avatars (back top-left + front bottom-right with a card-coloured ring separating them — same trick Instagram uses). `Chat` type gains optional `members?: ChatMember[]`; `api.getChats` extends its existing `chat_members ⨝ profiles` embed to include `avatar_url` + `account_type` (no extra round-trips). Mock mode falls back to `SC_ACCOUNT_BY_ID` for DMs and host + first visible person for event chats. Non-event group chats (no event title) get a title built from member names: `Alice, Bob +N` truncation past three names. 412/412; `tsc` clean. See §66. |
 | 2026-05-28 | **Polish pass — self-profile redirect, in-app privacy screen, /unk everywhere, edit description, onboarding interest sync.** Six small fixes from rapid bug-report iteration: (1) self-profile redirect on `app/profile/[id].tsx` so navigating to your own user id hands off to `/(tabs)/profile` instead of showing the friend/block UI pointed at yourself, plus belt-and-braces hiding of the action buttons + handler early-returns when `isSelf` is true. (2) New in-app `app/settings/privacy.tsx` replacing the external `scenecheck.app/privacy` link (not our domain — was serving unrelated demo content); bug-report URL corrected to the actual repo. (3) `0/unk` capacity fallback applied to `SCEventCard`, `my-hosting.tsx`, and `profile/[id].tsx` (was only on `events.tsx`). (4) Description editing wired into `EditEventSheet`. (5) Onboarding interest writes now mirror into the local store after the DB write (live-mode branch was missing the mirror, mock branch already had it). 412/412; `tsc` clean. See §67. |
+| 2026-05-29 | **Eventbrite time correctness + ticket price columns (backend).** Two related fixes in the FR6 scraper pipeline + a new DB column. **(1) Time:** Eventbrite listing JSON-LD ships date-only `startDate` ("2026-05-29"), which `new Date()` parses as UTC midnight — a North American user reads this as the *previous day* at 5pm PDT. The scraper now follows the URL to the detail page (which carries the real `"2026-05-29T14:00:00-07:00"`) when the listing value is date-only. New pure helpers in `scripts/scrape-time.mjs` — `isDateOnly` / `hasTimezone`, `timezoneFromSourceUrl` (full US-50 state-code → IANA map), `extractFullJsonLdTimestamp`, `timezoneOffsetMinutes` via `Intl.DateTimeFormat` (DST-aware), `dateOnlyToVenueLocalNoonIso` (fallback when detail unreachable). Path classifier emits per-source `time-resolution: detail:N` log line. **(2) Ingest dedup self-heal:** the old `title + start_at` dedup missed once the scraper corrected times — the INSERT then collided with the `00033` partial unique index on `source_url`. `ingest-scraped` now keys on `source_url` first (falls back to title+start_at for `FALLBACK_EVENTS`), and patches `start_at`/`end_at`/price columns in place when they differ. **(3) Price:** migration `00040_events_price.sql` adds nullable `price_min` / `price_max` / `price_currency` (CHECK: both-set-or-neither, non-negative, max ≥ min). Encoding contract: NULL/NULL = unspecified, 0/0 = FREE, equal nonzero = fixed, min < max = range. `scripts/scrape-price.mjs` extracts from `AggregateOffer`/`Offer`/arrays with a CAD→USD override for US listings (Eventbrite mis-tags some CA events as CAD). `ingest-scraped` + `create-event` validate + persist + extend self-heal. CI workflow `scraper-tests` job now runs both `scrape-time.test.mjs` + `scrape-price.test.mjs` via `node --test`. 23 + 18 = 41 new node:test cases; jest 412/412 (no Jest surface for these); `tsc` clean. See §68. |
+| 2026-05-29 | **Ticket price UI rendering (frontend).** Surfaces the new price triple end-to-end. New `lib/price.ts` — `priceState` (none/free/fixed/range), `formatPrice`, `formatPriceAmount` with currency-symbol map (USD/CAD/EUR/GBP/JPY/AUD/MXN); unknown ISO codes render `XYZ 15`. New `tag` icon in `SCIcon`. Display surfaces: `SCEventCard` gains a `PriceChip` on the bottom bar (FREE = green pill, paid = neutral outline); `app/events.tsx` mirrors the same chip; `app/event/[id].tsx` adds a "Ticket price" `DetailRow` with the tag icon ("Free to attend" for free events). Edit + create flows: `EditEventSheet` and `app/create-event.tsx` get a `NOT SET / FREE / PAID` three-mode toggle; PAID reveals MIN/MAX number inputs (max optional → fixed-price). Plumbing: `SCEvent` + `DraftForm` gain price fields; `EventRow` + `transformEventRow` map them through with a `num()` helper for supabase-js NUMERIC-as-string values; `api.updateEvent` accepts a price patch shape. 425/425 (412 baseline + 13 new); `tsc` clean. See §69. |
+| 2026-05-29 | **Legacy date-only-UTC scraped rows cleanup (migration 00041).** One-shot cleanup for rows the FR6 scraper landed before the time-fix + price-column work. The conjunction `source='scraped' AND price_min IS NULL AND start_at::time = '00:00:00'` reliably fingerprints the legacy class (date-only-parsed-as-UTC-midnight + no price after the latest heal). DO block + `RAISE NOTICE` for the deleted count. FK cascades verified: `event_interests` / `event_subscriptions` / `event_waitlist` / `ratings` are ON DELETE CASCADE; `chats.event_id` and `reports.target_event_id` are ON DELETE SET NULL. No orphan risk; idempotent. See §70. |
+| 2026-05-30 | **Onboarding tour replay wired.** The Help & feedback row labelled "How SceneCheck works" called an inline handler that just toasted *"Welcome tour replay coming soon"* — the walkthrough it promised was never built. Replaced the dead handler with a real route entry pointing at `/onboarding/interests` (the post-signup picker built for FR1.3), and relabelled the row to **"Replay onboarding"** / "Re-pick the interests we use to rank events for you" so the affordance matches what it actually does. `api.markOnboarded` is idempotent and additive — re-picking interests adds to the existing set rather than wiping it — so the row is safe to invoke from settings without a confirmation gate. Regression test added (`router.push` assertion). 426/426; `tsc` clean. See §71. |
+| 2026-05-30 | **Wider scrape (LA cluster) + skip fixture POSTs + dupe cleanup (migration 00042).** Three related changes. **(1) Wider sources:** `DEFAULT_SOURCES` expanded 6 OC cities → **14 cities** (8 OC + 6 LA: los-angeles, long-beach, pasadena, santa-monica, west-hollywood, burbank). **(2) Cap bump:** `MAX_EVENTS` default 40 → **120** so the wider source set can actually deliver more events instead of getting clipped. **(3) Skip fixture POSTs:** `FALLBACK_EVENTS` (Beginner Bouldering Night / Aldrich Park Morning Run / Common Room Coffee Meetup) used to POST whenever Eventbrite returned 0 events, but the fixtures had drifting `start_at` + NULL `source_url` so dedup missed on both keys — multi-week buildup left 4× each title in the feed. Live mode now logs the empty result + exits with code 2 + skips the POST entirely; DRY_RUN still surfaces the fixtures for local inspection. Migration `00042_cleanup_fallback_scraped.sql` deletes every scraped row with `source_url IS NULL` (the fixture bloat + any pre-source_url-tracking-era stragglers). Live run after the changes: 120 events scraped, 103 new + 17 self-healed, 0 failed; LA cluster contributed visibly (Studio 420 West Hollywood, LA Independent Beer Fest, Santa Monica USA Kick Off, Pasadena Award-winning Rose de Chine, …). 426/426; `tsc` clean. See §72. |
+| 2026-05-30 | **Events nearby honors user coords + radius; default bumped 5 → 10 mi.** Two related discovery-pipeline fixes. **(1) Coords + radius wire-up:** `app/(tabs)/index.tsx` (Home rail) was passing `radiusM` but not coords — `fetchEvents` fell back to `DEFAULT_REGION` (Irvine) instead of the user's actual location. `app/events.tsx` (the "HAPPENING NEAR YOU" full list) was calling `useEvents()` with **no arguments at all**, so BOTH coords and radius defaulted (Irvine + 5mi hardcoded). After the LA-cluster scrape landed 100+ events across OC + LA, the `rank_events_query` RPC's `ST_DWithin` only saw the ~5mi bubble around Irvine — anything further was filtered at the DB. Both screens now match the Map tab's pattern (`useEvents({ lat, lng, radiusM })` from `useLocation` + `useStore(s => s.radius)`). **(2) Default radius bump:** `store.radius` and `DEFAULT_RADIUS_M` (`components/Map/types.ts`) both bumped 5 → 10 mi (8047 → 16093 m) so a fresh install surfaces events from the full anchor metro instead of a tight Irvine bubble. `api.fetchEvents` fallback now references `DEFAULT_RADIUS_M` instead of inlining 8047. Test fixtures updated (`test-utils`, `unit/store`, `unit/map-types`, `screens/map-tab`); slider range stays 0.5–50 mi. 426/426; `tsc` clean. See §73. |
 
 ### Current layout
 
@@ -4107,7 +4113,428 @@ the mock branch uses to avoid a circular dependency with `data/mocks`.
 
 ---
 
-## 68. How to re-snapshot this file
+## 68. Eventbrite time correctness + ticket price columns (backend)
+
+_Last updated: 2026-05-29 (shipped to main 2026-05-29)_
+
+Two related fixes in the FR6 scraper pipeline + a new DB column for
+ticket prices. Single combined commit (`59e5bfd`) because the changes
+touched the same files (`scrape-events.mjs`, `ingest-scraped/index.ts`)
+in tightly coupled ways.
+
+**Time correctness — detail-page enrichment**
+
+User report: scraped events showed up on the wrong day at fictional
+times. Investigation: Eventbrite city listings emit JSON-LD with
+`"startDate":"2026-05-29"` — date-only, no time, no offset. Per the
+ECMAScript Date Time String Format spec, date-only ISO strings parse
+as **UTC midnight**, so `new Date("2026-05-29").toISOString()` is
+`"2026-05-29T00:00:00.000Z"`. A California user reads that as **May
+28, 5:00 PM PDT** — wrong day AND fictional time. The detail page for
+each listing carries the real value (`"2026-05-29T14:00:00-07:00"`),
+verified by `curl`-ing both endpoints.
+
+The scraper now follows the URL to the detail page when the listing
+value is date-only. New pure-helper module:
+
+- `scripts/scrape-time.mjs` — `isDateOnly`, `hasTimezone` (handles `Z`
+  suffix OR `±HH:MM` offset, careful with the date-hyphen),
+  `timezoneFromSourceUrl` (full US-50 state-code → IANA map, default
+  `America/Los_Angeles`), `extractFullJsonLdTimestamp` (skips
+  date-only stragglers on detail pages — Eventbrite emits both
+  shapes), `timezoneOffsetMinutes` via `Intl.DateTimeFormat`
+  (DST-aware), `dateOnlyToVenueLocalNoonIso` (fallback when detail
+  fetch fails — anchors the calendar day correctly even if the
+  time-of-day is approximate).
+- `scripts/scrape-time.test.mjs` — 23 `node:test` cases.
+
+`scripts/scrape-events.mjs` rewires the per-event loop. New
+`resolveTimes` (later `resolveEventFields`) classifies four input
+shapes:
+
+1. **`listing`** — full datetime already in JSON-LD, used as-is
+   (richer sources like campus calendars).
+2. **`detail`** — date-only in listing, fetches the event's detail
+   URL and extracts the full timestamp.
+3. **`noon-fallback`** — date-only + detail unreachable, anchors to
+   venue-local noon (day correct, time-of-day a neutral placeholder).
+4. **`naive-localized`** — bare datetime without offset, stamped with
+   the venue's current UTC offset.
+
+Per-source CI log now ends with `time-resolution: detail:5` (or mix)
+so a glance tells you which paths each city used. Detail fetches use
+1 retry (the listing already succeeded) with the same UA-rotation +
+per-request timeout the listing fetch has. `tzOffsetCache` keyed
+`tz|yyyy-mm-dd` avoids re-running `Intl.DateTimeFormat` per event in
+the naive-localized path.
+
+**Ingest dedup self-heal**
+
+The old `title + start_at` dedup missed once the scraper corrected
+times — the new `start_at` wouldn't match the stored one → dedup
+miss → the INSERT then collided with the partial unique index on
+`source_url` from `00033` → 500 error → wrong row stayed. The dedup
+in `ingest-scraped/index.ts` now keys on `source_url` first (falls
+back to title+start_at for `FALLBACK_EVENTS`), and when a dupe is
+found, compares stored `start_at`/`end_at` (later `start_at`/`end_at`/
+price triple) against the incoming values and **self-heals in place**
+when they differ. Existing wrong rows get corrected on the next scrape
+without needing a manual cleanup.
+
+**Ticket price columns**
+
+User request: scraped events have prices listed on Eventbrite but
+weren't shown in the app; hosts had to put price info in the
+description. New migration:
+
+- `supabase/migrations/00040_events_price.sql` — adds nullable
+  `price_min NUMERIC(10,2)`, `price_max NUMERIC(10,2)`,
+  `price_currency TEXT`. CHECK enforces "both set or neither set" +
+  non-negative + max ≥ min. Encoding contract documented in column
+  COMMENTs: NULL/NULL = unspecified, 0/0 = FREE, equal nonzero = fixed
+  price, min < max = range. NUMERIC(10,2) avoids floating-point
+  artifacts.
+
+New scraper helper module:
+
+- `scripts/scrape-price.mjs` — `parsePriceNumber` (Eventbrite-style
+  decimal strings + dollar-prefixed + currency-suffixed tolerated),
+  `isUsSourceUrl` (matches `/d/<state-code>--<city>/` against the full
+  US-50 list), `normaliseCurrency` (ISO-4217 uppercase + validation),
+  `extractPriceFromOffers` accepting Object/Array of
+  `Offer`/`AggregateOffer` with low/high/single-price reduction +
+  CAD→USD override for US listings (Eventbrite has a long-standing
+  bug mis-tagging US events as CAD; verified live on the BEIS
+  Warehouse Sale - Tustin, CA listing).
+- `scripts/scrape-price.test.mjs` — 18 `node:test` cases.
+
+`scripts/scrape-events.mjs` `enrichTimeFromDetailPage` renamed to
+`enrichFromDetailPage`; the single detail-page round-trip now satisfies
+both time and price needs. New `extractJsonLdEventObjects` helper walks
+single top-level `Event` objects (the shape detail pages use), unlike
+the listing-page-only `extractJsonLdEvents`. `resolveEventFields`
+extracts price first from listing-side `offers` (rare for Eventbrite,
+common for richer sources), then via the detail page when missing.
+Source-listing URL is threaded down (not the per-event detail URL) so
+the CAD→USD override has the state-code it needs.
+
+`ingest-scraped/index.ts` and `create-event/index.ts` both validate +
+persist + (in ingest's case) extend self-heal to price columns.
+Validation mirrors the migration's CHECK so a malformed body errors
+with a 400 + clear message instead of a 500 Postgres constraint
+violation.
+
+**CI**
+
+`.github/workflows/ci.yml` — the existing `scraper-tests` job now
+runs both `scrape-time.test.mjs` + `scrape-price.test.mjs` via
+`node --test`.
+
+**Verification:** TSC clean, jest 412/412 (no Jest surface for these),
+`node --test scripts/*.test.mjs` 41/41 (23 time + 18 price), lint at
+the 7-problem baseline. Live verification on the deployed build: BEIS
+Warehouse Sale corrected from displaying "5/28/2026 5:00 PM PDT"
+(wrong) to "5/29/2026 2:00 PM PDT" (matches Eventbrite); scrape
+ingested 40 events with prices populated (10 FREE / 10 paid /
+priced) and timezone-aware `start_at`.
+
+---
+
+## 69. Ticket price UI rendering (frontend)
+
+_Last updated: 2026-05-29 (shipped to main 2026-05-29)_
+
+Surfaces the new price triple end-to-end so users can see ticket cost
+without scanning the description. Single commit (`8a1c17d`); 10 files,
++534 / -13.
+
+**Format helper**
+
+- `lib/price.ts` (new) — `priceState(e)` returns `'none' | 'free' |
+  'fixed' | 'range'`; `formatPrice(e)` returns the display string or
+  null; `formatPriceAmount(n, currency)` for individual amounts.
+  Currency-symbol map covers USD/CAD/EUR/GBP/JPY/AUD/MXN; unknown ISO
+  codes render `XYZ 15` rather than silently dropping the unit. Null
+  currency treated as USD (matches the migration's column comment).
+  Trailing zeros stripped for integers but cents preserved.
+- `tests/unit/price.test.ts` (new) — 13 jest cases covering all
+  branches + currency-symbol fallback + the "starts free" tiered case
+  (`min=0 < max=25` → range, not free).
+
+**Display surfaces**
+
+- `components/SCEventCard.tsx` — new `PriceChip` on the bottom bar
+  next to the attendee count. FREE = green-tinted pill (positive
+  affordance), paid = neutral outline so it doesn't compete with the
+  JOINED chip. Renders nothing for `priceState === 'none'`.
+- `app/events.tsx` — same chip in the full events list rows.
+- `app/event/[id].tsx` — new "Ticket price" `DetailRow` with a new
+  `tag` icon (added to `SCIcon`) under the location row. Label
+  switches to "Free to attend" for free events.
+
+**Edit + create flows**
+
+- `components/EditEventSheet.tsx` — `NOT SET / FREE / PAID` three-mode
+  toggle. PAID reveals MIN/MAX number inputs (leaving MAX blank
+  treats as fixed-price → max := min on save). Client-side validation
+  (max ≥ min ≥ 0) short-circuits before the round-trip. Derive
+  initial mode from current price columns; helper functions hoisted
+  outside the component to avoid the `useEffect` exhaustive-deps
+  warning eslint flagged when they referenced `event` inside.
+- `app/create-event.tsx` — same toggle + inputs in the form;
+  `priceMode` / `priceMin` / `priceMax` added to `DraftForm` so the
+  chosen price persists across saved drafts.
+
+**API plumbing**
+
+- `types/domain.ts` — `SCEvent` gains `priceMin` / `priceMax` /
+  `priceCurrency` (optional null); `DraftForm` gains the input-shape
+  trio (optional for backwards-compat with older drafts).
+- `lib/api.ts` — `EventRow` includes the columns; `transformEventRow`
+  maps them through a small `num()` helper so supabase-js's
+  NUMERIC-as-string-in-edge-cases doesn't break the `=== 0` free
+  check; `updateEvent` accepts a price patch shape.
+
+**Verification:** TSC clean, 425/425 jest (412 baseline + 13 new),
+lint at the 7-problem baseline. Live verification on the deployed
+build: scraped Pan Pacific Swimming Championships displays
+`$33.85–$188.58`, BEIS Warehouse Sale displays `FREE`, capacity-only
+events show the price chip alongside the attendee count.
+
+---
+
+## 70. Legacy date-only-UTC scraped rows cleanup (migration 00041)
+
+_Last updated: 2026-05-29 (shipped to main 2026-05-29)_
+
+One-shot cleanup for rows the FR6 scraper landed before the time-fix
++ price-column work in §68. Two prior bugs left them:
+
+1. **Time bug** — listing JSON-LD's date-only `startDate` parsed as
+   UTC midnight; rows show `T00:00:00+00:00` and display a day early
+   in PT.
+2. **Pre-00040 price** — rows from before the price columns existed
+   have NULL price triples.
+
+The ingest function's self-heal patches both on re-scrape, but only
+when `source_url` still matches. Eventbrite rotates per-event listing
+URLs (the BEIS event's URL changed from `…tickets-1989952932790` to
+`…tickets-1989952934796` between adjacent scrape runs in this
+session), so older rows whose URLs have since changed don't get
+matched — they sit alongside the new correct rows polluting the feed.
+
+`supabase/migrations/00041_cleanup_legacy_scraped.sql` deletes the
+legacy class in one shot:
+
+```sql
+DELETE FROM events
+WHERE source = 'scraped'
+  AND price_min IS NULL
+  AND start_at::time = '00:00:00';
+```
+
+The conjunction is the unique fingerprint of the legacy path:
+`scraped + no price after the latest heal + UTC midnight start_at`.
+A genuine event at exact UTC midnight would have non-null price
+fields (Eventbrite always emits an offer block), so the conjunction
+won't fire on real data.
+
+FK cascades verified: `event_interests` / `event_subscriptions` /
+`event_waitlist` / `ratings` are `ON DELETE CASCADE`;
+`chats.event_id` and `reports.target_event_id` are `ON DELETE SET
+NULL`. No orphan risk, no manual dependent cleanup needed before the
+DELETE.
+
+Idempotent. DO block `RAISE NOTICE`s the deleted count to the
+migration log so the magnitude is visible without a follow-up query.
+
+---
+
+## 71. Onboarding tour replay wired
+
+_Last updated: 2026-05-30 (shipped to main 2026-05-30)_
+
+User report: the "How SceneCheck works" row in Help & feedback
+toasted *"Welcome tour replay coming soon"* and didn't actually do
+anything. Investigation: the inline handler was a TODO from when the
+tour was envisioned but never built; the actual onboarding flow that
+exists is the post-signup `/onboarding/interests` picker (FR1.3, built
+in §64).
+
+Fix (`app/settings/help.tsx`):
+
+- Removed the inline `action: 'replay-tour'` branch from the row
+  type + handler so there's no remaining dead code path.
+- Gave the row a real `route: '/onboarding/interests'` so the
+  handler's existing `router.push(row.route)` branch picks it up.
+- Relabelled to **"Replay onboarding"** / "Re-pick the interests we
+  use to rank events for you" — the old "walkthrough of the main
+  features" copy promised a multi-step tour that was never built, so
+  the label was misleading even if the link had worked.
+
+`api.markOnboarded` is idempotent and additive — re-picking interests
+*adds* to the user's existing set rather than wiping it — so the row
+is safe to invoke from settings without a confirmation gate.
+
+Regression test added (`tests/screens/settings-subscreens.test.tsx`):
+tapping "Replay onboarding" asserts `router.push` fires with
+`/onboarding/interests`. Caught a stale assertion in the same suite
+that still expected the old "How SceneCheck works" label.
+
+**Verification:** TSC clean, jest 426/426 (425 + 1 regression), lint
+at the 7-problem baseline.
+
+---
+
+## 72. Wider scrape (LA cluster) + fixture-POST skip + dupe cleanup (migration 00042)
+
+_Last updated: 2026-05-30 (shipped to main 2026-05-30)_
+
+User report: many duplicate events in the feed (multiple copies of
+"Beginner Bouldering Night" / "Aldrich Park Morning Run" / "Common
+Room Coffee Meetup"); also wanted the scrape widened to LA-area
+cities since Eventbrite cycles per-event URLs and many recent events
+from prior scrapes were no longer reachable for the self-heal path.
+
+**Wider source set**
+
+`scripts/scrape-events.mjs` `DEFAULT_SOURCES` expanded 6 OC cities →
+**14 cities**:
+
+- **OC cluster** (8): irvine, santa-ana, costa-mesa, newport-beach,
+  anaheim, huntington-beach, fullerton, garden-grove
+- **LA cluster** (6): los-angeles, long-beach, pasadena,
+  santa-monica, west-hollywood, burbank
+
+The LA cluster is the adjacent metro most users in the anchor region
+still drive to; including it doubles the discoverable footprint
+without changing any other behaviour.
+
+**Cap bump**
+
+`MAX_EVENTS` default 40 → **120** so the wider source set can
+actually deliver more events into the feed instead of getting clipped
+by the global cap. With 14 sources, that's ~9 events per city before
+the per-source cap bites — enough to give each city visible
+representation without one busy listing flooding the rest out.
+
+**Stop POSTing FALLBACK_EVENTS in live mode**
+
+The fixture array used to be POSTed whenever Eventbrite returned 0
+events (the bot-check page on CI runner IPs being the common cause),
+but the fixtures had:
+
+```js
+start_at = Date.now() + (i + 2) * 86_400_000   // drifts every CI run
+source_url = null                              // exempt from 00033 index
+```
+
+So dedup missed on BOTH keys and every CI fallback inserted a fresh
+copy. Multi-week buildup left the feed with 4× each fixture title.
+
+Live mode now logs the empty result + exits with code 2 (degraded but
+not failed) and skips the POST entirely. DRY_RUN still surfaces the
+fixtures so the scraper can be inspected locally without credentials.
+
+**Cleanup migration**
+
+`supabase/migrations/00042_cleanup_fallback_scraped.sql` deletes
+every scraped row with `source_url IS NULL` — broader than "fixture
+titles" by design, catches the FALLBACK_EVENTS bloat + any
+pre-source_url-tracking-era stragglers that survived 00041 because
+they happened to land on a non-midnight `start_at`. DO block surfaces
+the deleted count. Live verification: 12 dupes removed (4 of each
+fixture title), 0 remaining; total scraped 136 → 124.
+
+**Live scrape after the changes**
+
+120 events scraped across the 14 cities, 103 new + 17 self-healed, 0
+failed. LA cluster contributed visibly: Studio 420 West Hollywood,
+LA Independent Beer Fest, Santa Monica USA Kick Off, Pasadena
+Award-winning Rose de Chine, Music for the Masses Dark 80's New Wave
+Nite [L.A.], MIDTEMPO R&B Rooftop, Cars & Christ Los Angeles, SET
+with JOHN DIGWEED LA, Glow Festival LA, LBC Beach Cleanup, Sports
+Photography with Jace Medina (Long Beach), Global Running Day LB,
+Pasadena: Award-winning Rose de Chine Film Screening, …
+
+**Verification:** TSC clean, jest 426/426, lint at the 7-problem
+baseline.
+
+---
+
+## 73. Events nearby honors user coords + radius; default bumped 5 → 10 mi
+
+_Last updated: 2026-05-30 (shipped to main 2026-05-30)_
+
+User report after §72 landed: the "events nearby" view still only
+showed 19 events even though 124+ were ingested into the DB.
+
+**Coords + radius wire-up**
+
+Investigation traced to two screens not passing what the discovery
+RPC needs:
+
+- `app/(tabs)/index.tsx` (Home rail) was passing `radiusM` but not
+  coords — `fetchEvents` fell back to `DEFAULT_REGION` (Irvine)
+  instead of the user's actual location.
+- `app/events.tsx` (the "HAPPENING NEAR YOU" full list) was calling
+  `useEvents()` with **no arguments at all**, so BOTH coords and
+  radius defaulted (Irvine + 5mi hardcoded inside `fetchEvents`).
+
+After the LA-cluster scrape landed 100+ events across OC + LA, the
+`rank_events_query` RPC's `ST_DWithin` only saw the ~5mi bubble
+around Irvine — anything further (LA cluster, even outer OC) was
+filtered out at the DB.
+
+Both screens now match the Map tab's pattern:
+
+```tsx
+useEvents({
+  lat: coords.latitude,
+  lng: coords.longitude,
+  radiusM: Math.round(radiusMiles * MILES_TO_METERS),
+})
+```
+
+`useLocation()` was already mounted on both screens for the
+date/city label, so the wire-up is a constant-cost change. Home tab
+also normalised `1609.34` magic number → `MILES_TO_METERS` import
+for consistency with Map.
+
+**Default discovery radius bump**
+
+`store.radius` and `DEFAULT_RADIUS_M` (`components/Map/types.ts`)
+both bumped 5 → 10 miles (8047 → 16093 m) so a fresh install
+surfaces events from the full anchor metro instead of a tight Irvine
+bubble that hid most of the ingested feed. 10mi covers Irvine + most
+adjacent OC + the closer half of LA. Users can still pick 1/3/5/10/
+25/50 from the Map tab chips or any value in 0.5–50 via the Settings
+slider — only the new-install default changes.
+
+`api.fetchEvents` fallback now references `DEFAULT_RADIUS_M` instead
+of inlining 8047, so the constant is the single source of truth.
+
+**Test fixtures updated**
+
+- `tests/test-utils.tsx` `resetStore` default
+- `tests/unit/store.test.ts` initial-state shape
+- `tests/unit/map-types.test.ts` default-radius assertion (8047 →
+  16093) + label updated to "10 miles"
+- `tests/screens/map-tab.test.tsx` chip-tap test — was tapping 10 MI
+  (now the default); now taps 25 MI so the assertion proves a real
+  state change off the new default
+
+**Note for existing installs:** the new default only applies on
+fresh install. Existing installs keep whatever radius value is in
+their persisted Zustand state. Drag the slider once (any value) or
+clear app data to pick up the new default on a dev build.
+
+**Verification:** TSC clean, jest 426/426, lint at the 7-problem
+baseline.
+
+---
+
+## 74. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
