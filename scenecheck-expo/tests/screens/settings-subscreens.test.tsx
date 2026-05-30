@@ -2,6 +2,7 @@
 // linked-calendar, blocked, help.
 
 import { fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import LinkedCalendarScreen from '@/app/settings/linked-calendar';
 import BlockedUsersScreen from '@/app/settings/blocked';
 import HelpFeedbackScreen from '@/app/settings/help';
@@ -55,7 +56,10 @@ describe('BlockedUsersScreen', () => {
 describe('HelpFeedbackScreen', () => {
   test('renders every help row label', () => {
     const { getByText } = renderScreen(<HelpFeedbackScreen />);
-    expect(getByText('How SceneCheck works')).toBeTruthy();
+    // First row used to read "How SceneCheck works" with an unwired
+    // action that toasted "coming soon"; now it routes to the actual
+    // onboarding interests picker.
+    expect(getByText('Replay onboarding')).toBeTruthy();
     expect(getByText('Email support')).toBeTruthy();
     expect(getByText('Privacy policy')).toBeTruthy();
     expect(getByText('Report a bug')).toBeTruthy();
@@ -64,5 +68,14 @@ describe('HelpFeedbackScreen', () => {
   test('renders the version line', () => {
     const { getByText } = renderScreen(<HelpFeedbackScreen />);
     expect(getByText(/SceneCheck · v/)).toBeTruthy();
+  });
+
+  test('tapping "Replay onboarding" routes to the interests picker', () => {
+    // Regression: the row used to call an inline action that toasted
+    // "Welcome tour replay coming soon" rather than actually routing.
+    (router.push as jest.Mock).mockClear();
+    const { getByText } = renderScreen(<HelpFeedbackScreen />);
+    fireEvent.press(getByText('Replay onboarding'));
+    expect(router.push).toHaveBeenCalledWith('/onboarding/interests');
   });
 });

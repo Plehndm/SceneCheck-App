@@ -1,5 +1,5 @@
 // Settings → Help & feedback. Quick links to docs, support, and
-// re-playing the welcome tour.
+// replaying the post-signup onboarding (the interests questionnaire).
 
 import { Linking, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
@@ -22,8 +22,16 @@ import { RADIUS } from '@/theme/tokens';
 // describes what SceneCheck does instead. The bug-report URL was
 // also pointing at a non-existent github.com/scenecheck/issues; it
 // now points at the actual repo.
-const ROWS: { icon: IconName; label: string; sub: string; href?: string; route?: string; action?: 'replay-tour' }[] = [
-  { icon: 'help', label: 'How SceneCheck works', sub: 'A walkthrough of the main features', action: 'replay-tour' },
+//
+// "Replay onboarding" sends the user back through /onboarding/interests
+// (the post-signup picker built for FR1.3). markOnboarded is idempotent
+// and additive — re-picking tags adds to the user's existing interests
+// rather than wiping the existing set, so this is safe to invoke from
+// settings without a confirmation gate. The label and subtitle reflect
+// that ("re-pick interests" rather than the older "walkthrough" copy,
+// which implied a multi-step tour we never actually built).
+const ROWS: { icon: IconName; label: string; sub: string; href?: string; route?: string }[] = [
+  { icon: 'help', label: 'Replay onboarding', sub: 'Re-pick the interests we use to rank events for you', route: '/onboarding/interests' },
   { icon: 'mail', label: 'Email support', sub: 'support@scenecheck.app', href: 'mailto:support@scenecheck.app' },
   { icon: 'shield', label: 'Privacy policy', sub: 'How SceneCheck handles your data', route: '/settings/privacy' },
   { icon: 'flag', label: 'Report a bug', sub: 'github.com/Plehndm/SceneCheck-App/issues', href: 'https://github.com/Plehndm/SceneCheck-App/issues' },
@@ -34,11 +42,6 @@ export default function HelpFeedbackScreen() {
   const showToast = useStore(s => s.showToast);
 
   const handlePress = async (row: typeof ROWS[number]) => {
-    if (row.action === 'replay-tour') {
-      // Onboarding tour can be re-enabled here once it's built.
-      showToast({ message: 'Welcome tour replay coming soon.', kind: 'info' });
-      return;
-    }
     if (row.route) {
       router.push(row.route as never);
       return;
