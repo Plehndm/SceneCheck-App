@@ -93,6 +93,10 @@ interface EventRow {
   source: string | null;
   source_url?: string | null;
   creator_id: string | null;
+  // rank_events_query (migration 00043) exposes this so a friend's event
+  // can bucket as kind 'friend'. Absent on the direct table selects
+  // (getEventById / fetchEventsByHost) — treated as false there.
+  is_friend_creator?: boolean | null;
   capacity: number | null;
   // Migration 00040: nullable price triple. Either all three NULL
   // (price not specified) or all three set. Number arrives as a JS
@@ -117,17 +121,20 @@ function num(v: number | string | null | undefined): number | null {
 
 function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent {
   const creatorMockId = row.creator_id ? toMockId(row.creator_id) : null;
-  // FR4.4 — Default non-creator, non-scraped rows to 'other' (neutral
-  // "NEARBY EVENT" accent) rather than 'friend'. The previous fallback
-  // labelled every stranger's event as "FRIEND HOSTING" on the web map's
-  // friend bucket. Restoring a real 'friend' kind needs an
-  // `is_friend_creator` flag on the `rank_events_query` RPC (join
-  // friendships server-side) so the bucket reflects an actual relationship.
+  // FR4.4 pin color-coding. Priority: scraped → 'recommended', your own
+  // → 'yours', an accepted friend's → 'friend', everything else → 'other'
+  // (neutral "NEARBY" accent). The 'friend' branch keys off the
+  // `is_friend_creator` flag that `rank_events_query` (migration 00043)
+  // joins server-side; the direct table selects (getEventById /
+  // fetchEventsByHost) don't carry it, so those paths fall through to
+  // 'other' exactly as before.
   const kind: SCEvent['kind'] = row.source === 'scraped'
     ? 'recommended'
     : row.creator_id === currentUserId
       ? 'yours'
-      : 'other';
+      : row.is_friend_creator
+        ? 'friend'
+        : 'other';
   return {
     id: toMockId(row.id),
     kind,
