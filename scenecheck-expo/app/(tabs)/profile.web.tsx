@@ -35,7 +35,6 @@ import { summarizeRatings } from '@/lib/ratings';
 import { WebAvatar } from '@/web/WebAvatar';
 import { WebButton } from '@/web/WebButton';
 import { WebTag } from '@/web/WebTag';
-import { WebTip } from '@/web/WebTip';
 import { WebIcon } from '@/web/WebIcon';
 import { WebStars } from '@/web/WebStars';
 import { WebEventListCard } from '@/web/WebEventListCard';
@@ -266,61 +265,19 @@ export default function ProfileWeb() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <WebButton
-                tone="dark"
-                size="md"
-                icon="edit"
-                style={{ flex: 1 }}
-                onClick={() => setEditOpen(true)}
-              >
-                Edit profile
-              </WebButton>
-              <WebTip title="Requests" side="top">
-                <button
-                  type="button"
-                  onClick={() => router.push('/requests' as never)}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    border: `1px solid ${t.line}`,
-                    background: t.card,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: t.ink,
-                    position: 'relative',
-                  }}
-                >
-                  <WebIcon name="user-plus" size={17} />
-                  {incomingReq.length > 0 && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: -3,
-                        right: -3,
-                        minWidth: 16,
-                        height: 16,
-                        borderRadius: 999,
-                        background: t.primary,
-                        color: t.primaryInk,
-                        fontFamily: FONT.mono,
-                        fontSize: 9,
-                        fontWeight: 700,
-                        padding: '0 4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {incomingReq.length}
-                    </span>
-                  )}
-                </button>
-              </WebTip>
-            </div>
+            {/* Edit profile spans the row on its own; the friend-requests
+                affordance moved into the Friends tab (opposite "Find more
+                friends") where it reads clearly, instead of an unlabeled
+                icon button here that wasn't obviously "requests". */}
+            <WebButton
+              tone="dark"
+              size="md"
+              icon="edit"
+              style={{ width: '100%' }}
+              onClick={() => setEditOpen(true)}
+            >
+              Edit profile
+            </WebButton>
 
             <div
               style={{
@@ -467,16 +424,26 @@ export default function ProfileWeb() {
 
           {tab === 'friends' && (
             <>
-              {/* Find more friends button — the rail's Friends pill lands
-                  here, and this is the natural place to send the user to
-                  Discover's People section if their friends list is sparse. */}
+              {/* Friend actions as a pair: View requests on the left,
+                  Find more friends on the right. "Find more friends" lands on
+                  Discover's People section (?tab=people) so the friends/people
+                  filter is pre-selected. */}
               <div
                 style={{
                   display: 'flex',
-                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   marginBottom: 12,
                 }}
               >
+                <WebButton
+                  tone="ghost"
+                  size="sm"
+                  icon="user-check"
+                  onClick={() => router.push('/requests' as never)}
+                >
+                  {`View requests${incomingReq.length ? ` · ${incomingReq.length}` : ''}`}
+                </WebButton>
                 <WebButton
                   tone="primary"
                   size="sm"
@@ -494,10 +461,30 @@ export default function ProfileWeb() {
           )}
 
           {tab === 'following' && (
-            <OrgGrid
-              orgs={followed}
-              empty="Not following any organizations yet."
-            />
+            <>
+              {/* Find more organizations lands on Discover's Organizations
+                  section (?tab=orgs) so that filter is pre-selected. */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginBottom: 12,
+                }}
+              >
+                <WebButton
+                  tone="primary"
+                  size="sm"
+                  icon="building"
+                  onClick={() => router.push('/search?tab=orgs' as never)}
+                >
+                  Find more organizations
+                </WebButton>
+              </div>
+              <OrgGrid
+                orgs={followed}
+                empty="Not following any organizations yet."
+              />
+            </>
           )}
 
           {tab === 'drafts' && (
