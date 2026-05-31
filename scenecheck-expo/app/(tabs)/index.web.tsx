@@ -39,6 +39,7 @@ import { excludeSelf } from '@/lib/people';
 import { wIsRecommended } from '@/web/kind';
 import { WebMap } from '@/web/WebMap';
 import { WebEventListCard } from '@/web/WebEventListCard';
+import { WebSkeleton, WebSkeletonCards } from '@/web/WebSkeleton';
 import { WebSearchAutocomplete } from '@/web/WebSearchAutocomplete';
 import { WebAvatar } from '@/web/WebAvatar';
 import { WebIcon } from '@/web/WebIcon';
@@ -76,7 +77,7 @@ export default function HomeWeb() {
     lng: coords?.longitude,
     radiusM,
   });
-  const { results: peopleResults } = useSearchPeople('');
+  const { results: peopleResults, loading: peopleLoading } = useSearchPeople('');
   const peopleNearby = excludeSelf(peopleResults, meId).slice(0, 4);
   const online = useOnline() && !(tweaks?.offline ?? false);
 
@@ -270,7 +271,7 @@ export default function HomeWeb() {
         </div>
 
         {/* People carousel — sits beneath the map, full-width of the left column */}
-        <PeopleCarousel people={peopleNearby} />
+        <PeopleCarousel people={peopleNearby} loading={peopleLoading} />
       </div>
 
       {/* ───────── RIGHT LIST COLUMN ───────── */}
@@ -368,7 +369,11 @@ export default function HomeWeb() {
           </div>
         </div>
         <div style={{ padding: '6px 20px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {listEvents.length === 0 ? (
+          {loading && listEvents.length === 0 ? (
+            // Skeleton cards while the radius feed is still loading — only fall
+            // through to the "Nothing here" empty state once loading settles.
+            <WebSkeletonCards cards={3} />
+          ) : listEvents.length === 0 ? (
             <div
               style={{
                 padding: 24,
@@ -387,7 +392,7 @@ export default function HomeWeb() {
                   marginBottom: 4,
                 }}
               >
-                {loading ? 'Loading events…' : 'Nothing here'}
+                Nothing here
               </div>
               <div style={{ fontSize: 12.5 }}>Try a different filter or search.</div>
             </div>
@@ -644,9 +649,18 @@ function FiltersPopover({
 }
 
 // ── People carousel (bottom of the left/map column) ────────────
-function PeopleCarousel({ people }: { people: ReturnType<typeof useSearchPeople>['results'] }) {
+function PeopleCarousel({
+  people,
+  loading = false,
+}: {
+  people: ReturnType<typeof useSearchPeople>['results'];
+  loading?: boolean;
+}) {
   const t = useTokens();
-  if (!people.length) return null;
+  // While loading show skeleton cards in the same rail; only collapse the
+  // whole carousel once loading settles and there's genuinely no one to show.
+  if (!people.length && !loading) return null;
+  const showSkeletons = loading && !people.length;
   return (
     <div
       style={{
@@ -701,7 +715,30 @@ function PeopleCarousel({ people }: { people: ReturnType<typeof useSearchPeople>
           paddingBottom: 4,
         }}
       >
-        {people.map(p => (
+        {showSkeletons
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  flexShrink: 0,
+                  width: 168,
+                  background: t.card,
+                  border: `1px solid ${t.line}`,
+                  borderRadius: 14,
+                  padding: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <WebSkeleton width={36} height={36} radius={18} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <WebSkeleton width="70%" height={12} />
+                  <WebSkeleton width="45%" height={9} />
+                </div>
+              </div>
+            ))
+          : people.map(p => (
           <button
             key={p.id}
             onClick={() => router.push(`/profile/${p.id}` as never)}

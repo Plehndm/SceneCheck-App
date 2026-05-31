@@ -13,6 +13,7 @@ import { SCButton } from '@/components/SCAddButton';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useFriends } from '@/hooks/useFriends';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { api } from '@/lib/api';
 import { RADIUS } from '@/theme/tokens';
 
@@ -24,7 +25,7 @@ export default function MyFriendsScreen() {
   // useFriends() reads from the Zustand friends Set in mock mode and
   // from `friendships ⨝ profiles` in live mode. `reload()` lets us
   // re-fetch after an unfriend so the list updates without a remount.
-  const { friends: list, reload } = useFriends();
+  const { friends: list, loading, reload } = useFriends();
 
   const handleUnfriend = (id: string, name: string) => {
     showConfirm({
@@ -61,7 +62,9 @@ export default function MyFriendsScreen() {
           {list.length} {list.length === 1 ? 'connection' : 'connections'}
         </SCText>
       </View>
-      {list.length === 0 ? (
+      {loading && list.length === 0 ? (
+        <SCListSkeleton rows={5} />
+      ) : list.length === 0 ? (
         <View style={{ paddingHorizontal: 18 }}>
           <SCCard style={{ padding: 20, alignItems: 'center' }}>
             <SCText size={14} color={t.ink2}>No friends yet</SCText>

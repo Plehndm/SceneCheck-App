@@ -18,6 +18,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { SCTag } from '@/components/SCTag';
 import { SCAvatar } from '@/components/SCAvatar';
 import { SCAddButton } from '@/components/SCAddButton';
+import { SCListSkeleton } from '@/components/SCSkeleton';
 import { EditEventSheet } from '@/components/EditEventSheet';
 import { RateEventSheet } from '@/components/RateEventSheet';
 import { ShareEventSheet } from '@/components/ShareEventSheet';
@@ -84,7 +85,7 @@ export default function EventDetailScreen() {
   // promise resolves. `reload()` is called after a successful host
   // edit so the screen reflects the freshly-written row.
   const mock = api.isMock();
-  const { event: baseEvent, reload: reloadEvent } = useEvent(id);
+  const { event: baseEvent, loading: eventLoading, reload: reloadEvent } = useEvent(id);
   const override = useStore(s => id ? s.eventOverrides[id] : null);
   const isJoined = useStore(s => id ? s.isJoined(id) : false);
   const joinEvent = useStore(s => s.joinEvent);
@@ -104,6 +105,19 @@ export default function EventDetailScreen() {
   // The host's profile, so "Hosted by" can show their name + link to it.
   // (transformEventRow doesn't carry the host's name in live mode.)
   const { profile: host } = useProfile(baseEvent?.hostId ?? undefined);
+
+  // Still fetching (live mode) — show a shape-matched skeleton, not the
+  // "gone" state, so a real event doesn't flash "This event is gone" before
+  // its row resolves. The empty/not-found message below only renders once
+  // loading has settled and the event is still missing.
+  if (!baseEvent && eventLoading) {
+    return (
+      <Screen>
+        <SCTopBar onBack={() => router.back()} />
+        <SCListSkeleton rows={5} />
+      </Screen>
+    );
+  }
 
   if (!baseEvent) {
     return (

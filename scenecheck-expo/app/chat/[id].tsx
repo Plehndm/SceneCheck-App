@@ -13,6 +13,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useChatMessages } from '@/hooks/useChatMessages';
+import { SCMessageSkeleton } from '@/components/SCSkeleton';
 import { useChats } from '@/hooks/useChats';
 import { useEvent } from '@/hooks/useEvent';
 import { api } from '@/lib/api';
@@ -30,7 +31,7 @@ export default function ChatThreadScreen() {
   // useChatMessages owns the message list, the realtime subscription,
   // and the optimistic send / retry path. The legacy UIMessage shape
   // is preserved so the screen below doesn't have to change.
-  const { messages: msgs, send, retry, reload } = useChatMessages(id);
+  const { messages: msgs, loading: msgsLoading, send, retry, reload } = useChatMessages(id);
   // Re-fetch the thread when it regains focus (returning to it) so the latest
   // messages show even if a realtime event was missed — the initial mount
   // already fetches, so skip the first focus to avoid a double fetch.
@@ -187,6 +188,7 @@ export default function ChatThreadScreen() {
           style={{ flex: 1, paddingHorizontal: 14 }}
           contentContainerStyle={{ paddingVertical: 8, gap: 6 }}
         >
+          {msgsLoading && msgs.length === 0 && <SCMessageSkeleton />}
           {msgs.map((m, i) => {
             const showWho = m.from === 'them' && (i === 0 || msgs[i - 1].who !== m.who);
             const isHost = m.from === 'host';

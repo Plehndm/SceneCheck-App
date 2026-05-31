@@ -22,6 +22,7 @@ import { whenRange } from '@/lib/date-time';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
 import { WebSlideOver } from '@/web/WebSlideOver';
+import { WebOverlaySkeleton } from '@/web/WebSkeleton';
 import { WebAvatar } from '@/web/WebAvatar';
 import { WebButton } from '@/web/WebButton';
 import { WebTag } from '@/web/WebTag';
@@ -73,7 +74,7 @@ export default function OtherProfileWeb() {
     if (loading) {
       return (
         <WebSlideOver open onClose={close} width={520} ariaLabel="Loading profile">
-          <div style={{ padding: 40, color: t.ink3 }}>Loading…</div>
+          <WebOverlaySkeleton />
         </WebSlideOver>
       );
     }

@@ -32,6 +32,7 @@ import * as googleCalendar from '@/lib/google-calendar';
 import { api } from '@/lib/api';
 import { SC_ACCOUNT_BY_ID } from '@/data/mocks';
 import { WebSlideOver } from '@/web/WebSlideOver';
+import { WebOverlaySkeleton } from '@/web/WebSkeleton';
 import { WebAvatar } from '@/web/WebAvatar';
 import { WebTag } from '@/web/WebTag';
 import { WebTip } from '@/web/WebTip';
@@ -43,7 +44,7 @@ import { wKindMeta } from '@/web/kind';
 export default function EventDetailWeb() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { event } = useEvent(id);
+  const { event, loading } = useEvent(id);
   const { attendees } = useAttendees(id);
   const { profile: hostProfile } = useProfile(event?.hostId ?? undefined);
   const { ratings } = useRatings(event?.hostId ?? undefined);
@@ -76,6 +77,18 @@ export default function EventDetailWeb() {
     if (end.getTime() < start.getTime()) end.setDate(end.getDate() + 1);
     return end;
   }, [event?.startAt, event?.endTime]);
+
+  // Still fetching (live mode) — show a shape-matched skeleton rather than the
+  // unavailable state, so a real event doesn't flash "isn't available" before
+  // its row resolves. The unavailable message only renders once loading
+  // settles and the event is still missing.
+  if (!event && loading) {
+    return (
+      <WebSlideOver open onClose={close} width={640} ariaLabel="Loading event">
+        <WebOverlaySkeleton />
+      </WebSlideOver>
+    );
+  }
 
   if (!event) {
     return (

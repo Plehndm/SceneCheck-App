@@ -37,6 +37,7 @@ import { WebAvatar } from './WebAvatar';
 import { WebIcon } from './WebIcon';
 import { WebButton } from './WebButton';
 import { WebTip } from './WebTip';
+import { WebMessageSkeleton } from './WebSkeleton';
 
 interface Props {
   chatId: string;
@@ -104,7 +105,7 @@ export function WebChatThread({ chatId }: Props) {
   // owned by useChatMessages, not here).
   const { chats } = useChats();
   const chat = useMemo(() => chats.find(c => c.id === chatId) ?? null, [chats, chatId]);
-  const { messages: msgs, send, retry } = useChatMessages(chatId);
+  const { messages: msgs, loading: msgsLoading, send, retry } = useChatMessages(chatId);
   const { event } = useEvent(chat?.kind === 'event' ? chat.eventId : undefined);
   const showToast = useStore(s => s.showToast);
 
@@ -375,6 +376,7 @@ export function WebChatThread({ chatId }: Props) {
             Beginning of conversation
           </span>
         </div>
+        {msgsLoading && msgs.length === 0 && <WebMessageSkeleton />}
         {msgs.map((m, i) => {
           const mine = m.from === 'host';
           const prev = msgs[i - 1];

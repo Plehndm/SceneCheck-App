@@ -66,6 +66,33 @@ export function SCListSkeleton({ rows = 4 }: { rows?: number }) {
   );
 }
 
+// Alternating chat-bubble placeholders for a thread still loading its initial
+// history (native chat detail). Each row is full-width so the percentage bubble
+// width reads relative to the thread, left/right-aligned like real messages.
+export function SCMessageSkeleton({ bubbles = 6 }: { bubbles?: number }) {
+  // (width, mine, tall) per bubble so the stack reads as a conversation.
+  const shapes: Array<[DimensionValue, boolean, number]> = [
+    ['58%', false, 32],
+    ['40%', true, 32],
+    ['68%', false, 48],
+    ['34%', true, 32],
+    ['50%', false, 32],
+    ['44%', true, 48],
+  ];
+  return (
+    <View style={{ paddingHorizontal: 14, paddingVertical: 8, gap: 12 }}>
+      {Array.from({ length: bubbles }).map((_, i) => {
+        const [w, mine, h] = shapes[i % shapes.length];
+        return (
+          <View key={i} style={{ width: '100%', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+            <SCSkeleton width={w} height={h} radius={RADIUS.lg} />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 // Horizontal rail of event-card-shaped placeholders (Home "Happening near you").
 export function SCRailSkeleton({ cards = 3 }: { cards?: number }) {
   const t = useTokens();

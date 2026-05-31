@@ -27,6 +27,7 @@ import type { Chat, ChatMember } from '@/types/domain';
 import { WebAvatar } from './WebAvatar';
 import { WebIcon } from './WebIcon';
 import { WebTip } from './WebTip';
+import { WebSkeletonRows } from './WebSkeleton';
 
 const NAMES_BEFORE_PLUS = 2;
 
@@ -211,18 +212,7 @@ export function WebChatList({ activeChatId = null }: Props) {
 
       <div style={{ padding: '4px 12px 20px', flex: 1 }}>
         {loading && chats.length === 0 ? (
-          <div
-            style={{
-              padding: '20px 12px',
-              fontFamily: FONT.mono,
-              fontSize: 11,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: t.ink3,
-            }}
-          >
-            Loading…
-          </div>
+          <WebSkeletonRows rows={6} />
         ) : chats.length === 0 ? (
           <div
             style={{

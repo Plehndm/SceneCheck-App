@@ -102,12 +102,12 @@ export default function WebSearchScreen() {
     [matchedEvents, tab],
   );
 
-  const { results: peopleRaw } = useSearchPeople(query);
-  const { results: orgsRaw } = useSearchOrgs(query);
+  const { results: peopleRaw, loading: peopleLoading } = useSearchPeople(query);
+  const { results: orgsRaw, loading: orgsLoading } = useSearchOrgs(query);
   // useInterests returns Interest rows (`tag` + subscriberCount etc.);
   // we cap to a comfortable per-section ceiling. With an empty query
   // the hook returns the top suggested set per its existing implementation.
-  const { interests: interestsRaw } = useInterests(query);
+  const { interests: interestsRaw, loading: interestsLoading } = useInterests(query);
 
   const people = useMemo(() => {
     const v = excludeSelf(peopleRaw, meId);
@@ -325,7 +325,7 @@ export default function WebSearchScreen() {
         )}
 
         {(tab === 'all' || tab === 'people') && (
-          <WebDiscSection title="People" count={people.length} emptyText="No matching people.">
+          <WebDiscSection title="People" count={people.length} loading={peopleLoading} emptyText="No matching people.">
             <div style={peopleGridStyle}>
               {people.map(p => (
                 <WebPersonRow key={p.id} person={p} message />
@@ -335,7 +335,7 @@ export default function WebSearchScreen() {
         )}
 
         {(tab === 'all' || tab === 'orgs') && (
-          <WebDiscSection title="Organizations" count={orgs.length} emptyText="No matching orgs.">
+          <WebDiscSection title="Organizations" count={orgs.length} loading={orgsLoading} emptyText="No matching orgs.">
             <div style={peopleGridStyle}>
               {orgs.map(o => (
                 <WebOrgRow key={o.id} org={o} showBio={false} />
@@ -345,7 +345,7 @@ export default function WebSearchScreen() {
         )}
 
         {(tab === 'all' || tab === 'interests') && (
-          <WebDiscSection title="Interests" count={interests.length} emptyText="No matching tags.">
+          <WebDiscSection title="Interests" count={interests.length} loading={interestsLoading} emptyText="No matching tags.">
             <div style={tagsRowStyle}>
               {interests.map(i => {
                 const subscribed = meInterests.includes(i.tag);
