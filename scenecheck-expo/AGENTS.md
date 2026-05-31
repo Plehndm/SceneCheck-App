@@ -2,6 +2,17 @@
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before writing any code.
 
+## Start here — read the project docs first
+
+Before planning or writing any code, read these four documents in `../docs/` to understand the current state of the project and the direction it's heading. They are the source of truth for *what* is built, *what's tested*, and *what's intended* — this file only covers the *how* of the wiring.
+
+- **`../docs/PROGRESS_SNAPSHOT.md`** — chronological log of what's been built. Its §1 timeline table + numbered detail sections are the fastest way to learn the current state and recent work. Skim the latest sections first.
+- **`../docs/TEST_PLAN.md`** — what's covered (and deliberately *not* covered) by the Jest suite, plus the §2.N delta sections explaining why some web-UI / SQL / network work sits outside Jest and is verified on the deployed build instead.
+- **`../docs/IN4MATX-43-Requirements-Document.md`** — the functional requirements (the `FR*.x` references used throughout the code and the other two docs). Check this for the *intended* behavior before changing a feature.
+- **`../docs/IN4MATX 43 Architecture Document.md`** — the system design (cross-platform structure, Supabase backend, data flow). Check this for the *direction* the project is heading and the architectural constraints to stay within.
+
+Keep these current as part of substantial work: when you add or change a feature, update the snapshot (and the test plan if coverage changed) so the next instance inherits an accurate picture.
+
 ## SceneCheck-Expo orientation
 
 Quick map of the non-obvious wiring in this app so changes don't accidentally break a working invariant.
