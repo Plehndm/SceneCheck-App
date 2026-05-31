@@ -113,6 +113,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-30 | **Events nearby honors user coords + radius; default bumped 5 → 10 mi.** Two related discovery-pipeline fixes. **(1) Coords + radius wire-up:** `app/(tabs)/index.tsx` (Home rail) was passing `radiusM` but not coords — `fetchEvents` fell back to `DEFAULT_REGION` (Irvine) instead of the user's actual location. `app/events.tsx` (the "HAPPENING NEAR YOU" full list) was calling `useEvents()` with **no arguments at all**, so BOTH coords and radius defaulted (Irvine + 5mi hardcoded). After the LA-cluster scrape landed 100+ events across OC + LA, the `rank_events_query` RPC's `ST_DWithin` only saw the ~5mi bubble around Irvine — anything further was filtered at the DB. Both screens now match the Map tab's pattern (`useEvents({ lat, lng, radiusM })` from `useLocation` + `useStore(s => s.radius)`). **(2) Default radius bump:** `store.radius` and `DEFAULT_RADIUS_M` (`components/Map/types.ts`) both bumped 5 → 10 mi (8047 → 16093 m) so a fresh install surfaces events from the full anchor metro instead of a tight Irvine bubble. `api.fetchEvents` fallback now references `DEFAULT_RADIUS_M` instead of inlining 8047. Test fixtures updated (`test-utils`, `unit/store`, `unit/map-types`, `screens/map-tab`); slider range stays 0.5–50 mi. 426/426; `tsc` clean. See §73. |
 | 2026-05-30 | **Desktop web build — full large-screen parity surface (`scenecheck-expo/web/` + `*.web.tsx`).** A dedicated desktop web experience landed across nine commits: platform-branched `_layout`s + a `WebShell` (fixed full-viewport chrome, two-glow background) wrapping an Instagram-style left **rail** and the route content; a library of shared web atoms under `web/`; a desktop **map** (react-leaflet over OSM via `Map.web.impl` + a JS-injected `leafletCss`) with rich pin hover cards, search autocomplete, and a filter popover; a two-pane **chat** (realtime, announcements, retry, edited); a sticky-left **profile** with five slide-over overlays + secondary lists; a **create-event** wizard with live preview and a **settings** screen with inline summaries; and a four-section **discover/search** + activity panel + notifications feed. Overlay routes use `presentation:'transparentModal'` on web so they slide over via `WebSlideOver` instead of replacing the page. See §74. |
 | 2026-05-30 | **Friend/own events on the web map + event-detail routing parity + edit-notify trigger fix (migrations 00043–00045) + rail/shell layout.** `rank_events_query` (`00043`) now returns `is_friend_creator` (an accepted-friendship `EXISTS`) so friend-hosted events bucket as `kind:'friend'` (coloured) instead of grey `other`, and its filter widened to `status='published' OR creator_id = p_user_id` so a creator always sees their own events — drafts included; `transformEventRow` consumes the flag. Migration `00044` fixes a latent crash in `notify_event_updated` (`text[] || 'literal'` resolved as `anyarray || anyarray` → "malformed array literal") by switching to `array_append` — this had silently broken **every** event edit/UPDATE that touched a tracked column. Migration `00045` re-stamps the 9 seeded events to upcoming `now()`-relative times so the other-account/org-hosted events stop being filtered out by `rank_events_query`'s `start_at > now()-2h` window. Web **event detail** reached native parity: clickable **Where → `/map?focus=<id>`**, a ticket-price fact, a scraped **"view original listing"** link, and the **N/unk** unknown-capacity display; `map.web` reads `?focus` to select + pan to an event and `WebMap` gained a `centerOn` prop that imperatively re-centres leaflet. **Layout:** added **Profile** to the rail's middle nav; fixed the rail overflowing off the bottom of the window (`alignSelf:'stretch'` instead of `height:'100%'`, so its bottom padding actually lifts the Settings/account cluster) + `minHeight:0` on the nav scroll area; re-centred the LIVE chip with the legend; and halved the top insets on the rail + `WebShell`. 426/426; `tsc` clean; migrations applied to the hosted project. See §74. |
+| 2026-05-30 | **Web build follow-ups — auth screens, floating dialogs, optimistic counts, discover/profile parity.** A batch of desktop-web polish on top of §74. **Auth:** a two-pane sign-in / sign-up / forgot / reset surface (`web/WebAuth.tsx` + `app/auth/*.web.tsx`) wired to the existing Supabase calls (`api.signIn` / `signUp` / `requestPasswordReset` / `updatePassword`), preserving the confirm-email banner, 18+ gate, and onboarding redirect; native keeps its screens. **Floating dialogs:** web-tailored `EditProfileSheet.web.tsx` + `ConfirmDialog.web.tsx` (centered popups instead of bottom sheets), so the edit-profile + sign-out/confirm flows read as desktop modals. **Counts:** new `useOptimisticAttendees` overlays a ±1 so a card's attendee count + the unknown-capacity `N/unk` "people are going" stripe (`WebCapBar`) update the instant the viewer joins/leaves. **Discover/nav:** the Discover **Events** tab now shows the full discovery-range set (was an 8-item cap); home gains a SEE-ALL-events button (`?tab=events`); the bottom "People with shared interests" carousel + the (now-removed-from-the-right-rail) people list deep-link to `?tab=people`; the Following tab gains "Find more organizations" (`?tab=orgs`). **Create-event:** location **autocomplete** (OpenStreetMap Nominatim, biased to the host's location — shared `lib/geocode.ts`) drops the preview pin on select; the live-preview card shows the posting account's **avatar** (`WebEventListCard` `hostLookup`); a `WebMap` `chrome` prop hides the legend/controls in the small preview. **Layout:** rail sized via `alignSelf:'stretch'` (fixes the off-screen overflow that ate the bottom cluster) + halved top insets on rail + `WebShell`; profile **tab strip wraps** instead of scrolling. **Other-profile parity:** people now get a HOSTED/ATTENDED/RATING stat row (attended via `api.getAttendedCount`), and the Hosting + Reviews sections always render for any visible (public OR friended) profile with empty states + per-event rating badges. 426/426; `tsc` clean. See §75. |
 
 ### Current layout
 
@@ -4661,7 +4662,107 @@ project via `supabase db push`.
 
 ---
 
-## 75. How to re-snapshot this file
+## 75. Web build follow-ups — auth, floating dialogs, optimistic counts, discover/profile parity
+
+_Last updated: 2026-05-30_
+
+A batch of desktop-web polish + parity fixes layered on the §74 build. All
+web-only (the `.web.tsx` variants / `web/` modules); native is untouched.
+
+### 75.1 Two-pane auth screens (`web/WebAuth.tsx` + `app/auth/*.web.tsx`)
+
+Ported the standalone "SceneCheck Signin" design as web-only auth screens
+(Metro serves the `.web.tsx`; native `app/auth/*.tsx` unchanged). `WebAuth.tsx`
+holds the shared shell — a fixed-dark brand panel (decorative campus map, brand
+pins, floating event card, LIVE chip, headline) beside the form — plus the form
+atoms (`AuthField`, `SSOButtonRow`, `PrimaryAuthButton`, `FormHead`,
+`OrDivider`). Each screen keeps the native Supabase wiring:
+
+- **sign-in** → `api.signIn`; confirm-email/confirmed banner from
+  `?confirmEmail`/`?confirmed`, resend-confirmation, friendly auth-error rewrite.
+- **sign-up** → `api.signUp(email, password, name, isoBirthdate, accountType)`;
+  18+ gate (native `<input type=date>` yields ISO directly), the dormant
+  check-your-email fallback, and live → `/onboarding/interests` (mock → tabs).
+- **forgot** → `api.requestPasswordReset` + the "check your inbox" confirmation.
+- **reset** → recovery-session gate + `api.updatePassword`.
+
+SSO buttons are placeholders (no OAuth provider configured) — they toast.
+`_layout` renders sign-up + forgot as full pages on web (native keeps the modal).
+
+### 75.2 Floating web dialogs (`ConfirmDialog.web.tsx` / `EditProfileSheet.web.tsx`)
+
+The native bottom-sheet `ConfirmDialog` + `EditProfileSheet` got web variants
+that render as **centered floating popups** (dimmed backdrop, backdrop-click +
+Escape dismiss). `ConfirmDialog.web` reads the same store contract, so every
+`showConfirm` caller — sign-out from the rail, draft delete, cancel event —
+becomes a desktop modal on web. `EditProfileSheet.web` keeps the same fields +
+save path (`api.updateProfile` → `setMe`, incl. the UNIQUE-username rewrite).
+
+### 75.3 Optimistic attendee counts (`hooks/useOptimisticAttendees.ts`)
+
+Cards read `event.attendees` (server `subscriber_count`), which only refreshed
+on the next `rank_events_query` fetch — so the count, and `WebCapBar`'s
+unknown-capacity diagonal "people are going" stripe (which keys off
+`attendees > 0`), lagged the join/leave the viewer just performed.
+`useOptimisticAttendees(events, effectiveJoined)` overlays a ±1: it snapshots
+the membership the server count reflects on first toggle, then shows
+`attendees + (joinedNow − base)` so joining/leaving moves the count instantly;
+undo / re-toggle resolve back to the server count (they key off the live joined
+set), and a fresh `events` array clears the overlay (no double-count). Home +
+Map filter the adjusted list; `onJoin` calls `markToggled()` before the store
+mutation. `WebCapBar` also shows `N/unk` (was `/0`) for unknown-cap events.
+
+### 75.4 Discover / navigation deep-links
+
+- The Discover **Events** tab (and its tab-count) now shows the **full
+  discovery-range set** instead of the 8-item per-section cap; the "all"
+  overview keeps the capped preview (`matchedEvents` vs `events`).
+- Home "Happening near you" gains a **SEE ALL** → `/search?tab=events`.
+- The bottom **People with shared interests** carousel SEE-ALL deep-links to
+  `/search?tab=people`; the duplicate right-rail shared-interest list was
+  removed (it now lives only in the bottom carousel).
+- The profile **Following** tab gains **Find more organizations** →
+  `/search?tab=orgs`; **Find more friends** stays `?tab=people`.
+- Profile: **View requests** moved out from beside Edit profile into the
+  Friends tab (opposite Find more friends, with a pending count); the tab strip
+  **wraps** instead of getting its own horizontal scrollbar.
+
+### 75.5 Create-event location + preview
+
+- Location field **autocompletes** via OpenStreetMap Nominatim, biased to a
+  viewbox around the host's location (shared `lib/geocode.ts`, the same logic
+  the native `LocationPickerSheet` uses). Picking a suggestion fills the name
+  AND lat/lng, so the right-pane map preview pin jumps to the spot.
+- The live-preview card shows the posting account's **avatar** (`WebEventListCard`
+  gained an optional `hostLookup`); the avatar resolution falls back to the
+  account's own `avatar_url`, not just the locally-picked store picture.
+- `WebMap` gained a **`chrome`** prop (default true); the 180px preview passes
+  `chrome={false}` so the legend + zoom controls don't cover the pin.
+
+### 75.6 Rail / shell layout
+
+Rail sized via `alignSelf:'stretch'` instead of `height:'100%'` — the latter
+made it a full `100vh` offset below the shell's top inset, so its bottom (and
+most of its bottom padding) overflowed off-screen, which is why bumping the
+padding never visibly moved the Settings/account cluster. Top insets on the rail
++ `WebShell` were also halved so both sit closer to the top.
+
+### 75.7 Other-profile stats parity (`app/profile/[id].web.tsx`)
+
+People now get a **HOSTED / ATTENDED / RATING** stat row (attended via
+`api.getAttendedCount`), and the **Hosting** + **Reviews** sections always
+render for a visible profile — public **or** friended — with empty states
+("Not hosting anything right now." / "No ratings yet.") and **per-event rating**
+badges, mirroring the native other-profile. Previously those sections vanished
+when empty, so a friend couldn't see a friend's full stats. Private accounts
+viewed by non-friends are unchanged (still gated to the request card).
+
+**Verification:** TSC clean, jest 426/426 (web UI + the shared hook/geocode
+helpers are outside the Jest suite — see TEST_PLAN §2.68).
+
+---
+
+## 76. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

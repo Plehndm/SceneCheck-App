@@ -1963,6 +1963,39 @@ event-detail parity were verified on the deployed build.
 
 ---
 
+### 2.68 Web build follow-ups — auth, dialogs, optimistic counts, discover/profile parity (post-§2.67 delta)
+
+_Captured 2026-05-30 alongside `docs/PROGRESS_SNAPSHOT.md` §75._
+
+The §75 batch: two-pane web auth screens, floating edit-profile/confirm dialogs,
+optimistic attendee counts, discover/nav deep-links, create-event location
+autocomplete, rail/shell layout, and other-profile stats parity. Like the rest
+of the web build these are web-only UI surfaces (react-native-web DOM +
+react-leaflet) plus two pure-TS helpers, so they sit **outside** the Jest suite
+for the documented reasons (§2.2 / Part 3 Q2). No new Jest tests; the suite
+stays 426/426 and the shared logic each surface leans on keeps its coverage.
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| `web/WebAuth.tsx` + `app/auth/*.web.tsx` (sign-in/up, forgot, reset) | `tsc` clean; 426/426 (native `app/auth/*.tsx` screen tests unchanged) | Web-only DOM screens; they reuse the already-tested `api.signIn`/`signUp`/`requestPasswordReset`/`updatePassword`. Nominatim/OAuth aside, the auth flows are exercised on the deployed build. |
+| `components/ConfirmDialog.web.tsx`, `components/EditProfileSheet.web.tsx` | `tsc` clean | Web variants of bottom-sheet components; same store contract (`confirm`/`dismissConfirm`, `api.updateProfile`). The native components retain their existing screen-test coverage. |
+| `hooks/useOptimisticAttendees.ts` | `tsc` clean; used only by web screens | Pure derivation (snapshot baseline + ±1 overlay). A unit test would be cheap (it's plain TS) and is a reasonable future add; not wired yet since it's only consumed by the out-of-suite web screens. |
+| `lib/geocode.ts` (`suggestPlaces`) | manual / on-device | Network call to OpenStreetMap Nominatim — no result under jsdom; verified on the deployed create-event flow. Shared with the native `LocationPickerSheet`. |
+| `app/search.web.tsx` (full Events tab), home see-all + carousel deep-links, `app/profile/[id].web.tsx` stats parity, `WebCapBar` `N/unk` + stripe, `WebMap` `chrome`, rail/shell layout | `tsc` clean; 426/426 | Web-only chrome/layout + the discover/profile surfaces. `lib/ratings` (`summarizeRatings`/`ratingForEvent`) and `lib/price`, which these lean on, keep their existing unit coverage. |
+
+**Delivered count:** jest 426 / 426 (no new tests — web UI + network/geocode +
+the web-only optimistic hook are outside the Jest environment); `tsc` clean;
+lint at the baseline.
+
+**What this section deliberately does NOT do:** add Jest tests for the web auth
+screens, floating dialogs, leaflet preview, or Nominatim autocomplete — they
+need a real browser (Playwright, already the top future-add in Part 3). The
+`useOptimisticAttendees` overlay is the one piece that's pure TS and unit-test-
+able in isolation; flagged for a follow-up. Everything here was verified on the
+deployed web build.
+
+---
+
 ## Part 3 — Reflection
 
 ### 1. What did your tests catch that you missed before?
