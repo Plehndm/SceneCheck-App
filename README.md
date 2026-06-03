@@ -20,11 +20,14 @@ All project documents live in the [`docs/`](docs/) folder:
 |---|---|
 | Progress snapshot | [`docs/PROGRESS_SNAPSHOT.md`](docs/PROGRESS_SNAPSHOT.md) |
 | Test plan | [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) |
+| Test coverage report (HTML) | [`docs/coverage/lcov-report/index.html`](docs/coverage/lcov-report/index.html) |
 | Architecture document | [`docs/IN4MATX 43 Architecture Document.md`](docs/IN4MATX%2043%20Architecture%20Document.md) |
 | Requirements document | [`docs/IN4MATX-43-Requirements-Document.md`](docs/IN4MATX-43-Requirements-Document.md) |
 | Code reviews | [`docs/CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md), [`docs/CODE_REVIEW_REPORT_2.md`](docs/CODE_REVIEW_REPORT_2.md), [`docs/CODE_REVIEW_REPORT_3.md`](docs/CODE_REVIEW_REPORT_3.md) |
 | Web build review | [`docs/WEB_BUILD_REVIEW.md`](docs/WEB_BUILD_REVIEW.md) |
 | User flow traces | [`docs/user_flow_traces.md`](docs/user_flow_traces.md) |
+
+> 📊 **Test coverage:** the committed Jest coverage report lives at [`docs/coverage/lcov-report/index.html`](docs/coverage/lcov-report/index.html) — open it in a browser for the per-file breakdown. Headline numbers + what's deliberately not covered are in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) §2.5. To regenerate it: `cd scenecheck-expo && npm run test:coverage -- --coverageDirectory=../docs/coverage`.
 
 ### Quick start (active project)
 
