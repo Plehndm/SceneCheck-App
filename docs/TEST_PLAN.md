@@ -281,30 +281,47 @@ Approximate run-times:
 
 ### 2.5 Coverage achieved
 
-_Snapshot from `npm test -- --coverage --forceExit` on 2026-05-19._
+_Last updated: 2026-06-03 (commit `b9607d2`) — fresh `npm run test:coverage`
+(`jest --coverage`; the 3 stale-fixture test failures don't block coverage
+collection). Jest runs the unit + integration suites together, so the figures
+below are the **combined / merged** coverage. The full per-file HTML report is
+committed at [`docs/coverage/lcov-report/index.html`](coverage/lcov-report/index.html)._
 
 | Module group | Stmts % | Branch % | Funcs % | Lines % |
 |---|---|---|---|---|
-| **All files** | **55.05** | **44.93** | **63.81** | **55.66** |
+| **All files (combined)** | **45.4** | **34.7** | **53.3** | **47.5** |
 | `theme/` | 100 | 100 | 100 | 100 |
-| `lib/date-time.ts` | 100 | 100 | 100 | 100 |
+| `lib/date-time.ts` | 64.5 | 61.1 | 66.7 | 65.4 |
 | `lib/conflicts.ts` | 92.7 | 92.1 | 100 | 100 |
-| `lib/supabase.ts` | 100 | 50 | 100 | 100 |
-| `lib/api.ts` | 15.4 | 11.0 | 40.5 | 12.8 |
+| `lib/supabase.ts` | 100 | 54.5 | 100 | 100 |
+| `lib/api.ts` | 16.2 | 11.2 | 46.2 | 13.4 |
 | `lib/notifications.ts` | 0 | 0 | 0 | 0 |
-| `store/useStore.ts` | 89.5 | 61.1 | 86.6 | 90.7 |
-| `components/Map/types.ts` | 100 | 81.8 | 100 | 100 |
-| `components/Map/Map.native.tsx` | 80.0 | 63.6 | 60.0 | 77.8 |
-| `components/` (SC primitives) | 61.0 | 61.0 | 52.8 | 61.7 |
+| `store/useStore.ts` | 85.1 | 51.9 | 80.8 | 85.8 |
+| `components/Map/types.ts` | 90.0 | 66.7 | 100 | 90.0 |
+| `components/Map/Map.native.tsx` | 29.3 | 36.1 | 41.2 | 27.9 |
+| `components/` (SC primitives, excl. `Map/`, 36 files) | 56.7 | 50.3 | 55.0 | 59.2 |
 | `hooks/useImagePicker.ts` | 91.7 | 75.0 | 100 | 91.3 |
 | `hooks/useLocation.ts` | 77.8 | 50.0 | 100 | 77.8 |
 
+**Why the overall number moved (55.7% → 47.5% lines since the 2026-05-19
+snapshot):** the measured surface grew faster than the tests. `collectCoverageFrom`
+scopes coverage to `lib/ store/ theme/ components/ hooks/` (83 files now vs ~50
+then); the two biggest drags are the §65 **custom native-map overlay rewrite**
+(`Map/Map.native.tsx` 80% → 29% as a lot of platform-marker/animation code
+landed) and the expanded `hooks/` directory (27 files, ~48% — many are thin
+data-hooks whose live-mode branch only runs against Supabase). The denominators
+on a few stable files also rose (`lib/date-time.ts` gained the year-aware
+date/time helpers; `store/useStore.ts` gained slices). This is the honest
+trade-off of shipping web + native breadth that's verified on the deployed build
+rather than in Jest — not a regression in the existing tests.
+
 **What's intentionally NOT covered:**
 
-- **`lib/api.ts` live-mode (15.4%)** — Mock-mode is exhaustively covered. Live-mode calls go to Supabase; testing them would require either mocking the entire Supabase client (low value, brittle) or a real instance. Edge Functions are the right place to test the live wire format.
+- **`lib/api.ts` live-mode (16.2%)** — Mock-mode is exhaustively covered. Live-mode calls go to Supabase; testing them would require either mocking the entire Supabase client (low value, brittle) or a real instance. Edge Functions are the right place to test the live wire format. The file also grew substantially (every Phase 1–7 + web method), so the uncovered live half pulls the percentage down.
 - **`lib/notifications.ts` (0%)** — Push notifications require a real device (`Device.isDevice` guards). The module is structurally simple and exercised manually via Expo Go on a phone.
+- **`components/Map/Map.native.tsx` (29.3%)** — The §65 rewrite replaced the crashing `react-native-maps` markers with a custom RN overlay (projection math + animated pins) that needs a real native map surface to exercise; the shared `pinColor` / `eventLatLng` logic stays 90%-covered via `Map/types.ts`.
 - **`components/ConfirmDialog.tsx`, `ToastHost.tsx` (0%)** — Modal overlays. They're rendered at the root layout; screen tests verify the *trigger* (`showConfirm`/`showToast` in the store), but the modal-rendered output requires the layout to be in the tree. Planned next-milestone.
-- **`components/Map/Map.web.tsx` (excluded from coverage)** — Web-only file, runs under react-leaflet which needs the DOM. Skipped in the native test bundle on purpose; the underlying `pinColor` / `eventLatLng` helpers are covered via `Map/types.ts`.
+- **`components/Map/Map.web.tsx` + all `web/` modules + `app/**/*.web.tsx`** — Web-only surfaces (react-native-web DOM + react-leaflet) are **excluded** from `collectCoverageFrom`; they need a real browser (Playwright) and are verified on the deployed build (see §2.7–§2.9, §2.67–§2.69). `app/` route files are out of scope here too — the screen *behavior* is covered by the integration tests under `tests/screens/`, which render the components without counting toward this module-level table.
 - **Template leftovers (`themed-text`, `parallax-scroll-view`, etc.)** — Came with `create-expo-app`; not used by SceneCheck code. Slated for deletion in a cleanup pass.
 - **App layout files (`app/_layout.tsx`, `app/(tabs)/_layout.tsx`)** — Expo Router layout components; covered transitively when their children render.
 
