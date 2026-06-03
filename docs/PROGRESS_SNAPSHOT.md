@@ -114,6 +114,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-30 | **Desktop web build — full large-screen parity surface (`scenecheck-expo/web/` + `*.web.tsx`).** A dedicated desktop web experience landed across nine commits: platform-branched `_layout`s + a `WebShell` (fixed full-viewport chrome, two-glow background) wrapping an Instagram-style left **rail** and the route content; a library of shared web atoms under `web/`; a desktop **map** (react-leaflet over OSM via `Map.web.impl` + a JS-injected `leafletCss`) with rich pin hover cards, search autocomplete, and a filter popover; a two-pane **chat** (realtime, announcements, retry, edited); a sticky-left **profile** with five slide-over overlays + secondary lists; a **create-event** wizard with live preview and a **settings** screen with inline summaries; and a four-section **discover/search** + activity panel + notifications feed. Overlay routes use `presentation:'transparentModal'` on web so they slide over via `WebSlideOver` instead of replacing the page. See §74. |
 | 2026-05-30 | **Friend/own events on the web map + event-detail routing parity + edit-notify trigger fix (migrations 00043–00045) + rail/shell layout.** `rank_events_query` (`00043`) now returns `is_friend_creator` (an accepted-friendship `EXISTS`) so friend-hosted events bucket as `kind:'friend'` (coloured) instead of grey `other`, and its filter widened to `status='published' OR creator_id = p_user_id` so a creator always sees their own events — drafts included; `transformEventRow` consumes the flag. Migration `00044` fixes a latent crash in `notify_event_updated` (`text[] || 'literal'` resolved as `anyarray || anyarray` → "malformed array literal") by switching to `array_append` — this had silently broken **every** event edit/UPDATE that touched a tracked column. Migration `00045` re-stamps the 9 seeded events to upcoming `now()`-relative times so the other-account/org-hosted events stop being filtered out by `rank_events_query`'s `start_at > now()-2h` window. Web **event detail** reached native parity: clickable **Where → `/map?focus=<id>`**, a ticket-price fact, a scraped **"view original listing"** link, and the **N/unk** unknown-capacity display; `map.web` reads `?focus` to select + pan to an event and `WebMap` gained a `centerOn` prop that imperatively re-centres leaflet. **Layout:** added **Profile** to the rail's middle nav; fixed the rail overflowing off the bottom of the window (`alignSelf:'stretch'` instead of `height:'100%'`, so its bottom padding actually lifts the Settings/account cluster) + `minHeight:0` on the nav scroll area; re-centred the LIVE chip with the legend; and halved the top insets on the rail + `WebShell`. 426/426; `tsc` clean; migrations applied to the hosted project. See §74. |
 | 2026-05-30 | **Web build follow-ups — auth screens, floating dialogs, optimistic counts, discover/profile parity.** A batch of desktop-web polish on top of §74. **Auth:** a two-pane sign-in / sign-up / forgot / reset surface (`web/WebAuth.tsx` + `app/auth/*.web.tsx`) wired to the existing Supabase calls (`api.signIn` / `signUp` / `requestPasswordReset` / `updatePassword`), preserving the confirm-email banner, 18+ gate, and onboarding redirect; native keeps its screens. **Floating dialogs:** web-tailored `EditProfileSheet.web.tsx` + `ConfirmDialog.web.tsx` (centered popups instead of bottom sheets), so the edit-profile + sign-out/confirm flows read as desktop modals. **Counts:** new `useOptimisticAttendees` overlays a ±1 so a card's attendee count + the unknown-capacity `N/unk` "people are going" stripe (`WebCapBar`) update the instant the viewer joins/leaves. **Discover/nav:** the Discover **Events** tab now shows the full discovery-range set (was an 8-item cap); home gains a SEE-ALL-events button (`?tab=events`); the bottom "People with shared interests" carousel + the (now-removed-from-the-right-rail) people list deep-link to `?tab=people`; the Following tab gains "Find more organizations" (`?tab=orgs`). **Create-event:** location **autocomplete** (OpenStreetMap Nominatim, biased to the host's location — shared `lib/geocode.ts`) drops the preview pin on select; the live-preview card shows the posting account's **avatar** (`WebEventListCard` `hostLookup`); a `WebMap` `chrome` prop hides the legend/controls in the small preview. **Layout:** rail sized via `alignSelf:'stretch'` (fixes the off-screen overflow that ate the bottom cluster) + halved top insets on rail + `WebShell`; profile **tab strip wraps** instead of scrolling. **Other-profile parity:** people now get a HOSTED/ATTENDED/RATING stat row (attended via `api.getAttendedCount`), and the Hosting + Reviews sections always render for any visible (public OR friended) profile with empty states + per-event rating badges. 426/426; `tsc` clean. See §75. |
+| 2026-06-02 | **Map live-status chip, profile→discover deep-link, floating web onboarding, David/Maya event date shift (migration 00046) + a stale Data API finding.** Web-only UX: the map LIVE/OFFLINE chip (`web/useOnline.ts`) now reflects **real** connection health — `navigator.onLine` *plus* a Supabase Realtime heartbeat channel (`SUBSCRIBED` = live) — instead of the browser flag alone (which stays `true` on a no-internet LAN); the profile **"Add interests"** chip deep-links to `/search?tab=interests` (Discover's Interests tab); and the FR1.3 onboarding picker gets a web variant (`app/onboarding/interests.web.tsx`) presented as a **floating dialog over a blurred, inert preview of the explore page** (native unchanged). Hosted data: migration **`00046`** shifts Maya's + the davidplehn07@gmail.com account's events one week out so they re-enter `rank_events_query`'s window — applied + **verified on the primary** (Morning Ride → 2026-06-09 published; David's "IN4MATX 43 Study Session" → 2026-06-09, still **draft**). ⚠️ While verifying, found the hosted **Data API is serving stale reads** (9 events frozen at May dates vs the primary's 222) — almost certainly a read replica with stalled replication, which is *also* why events fell off the map; the shift won't surface in the app until that infra issue is resolved. `tsc` clean; jest 423/426 (3 pre-existing stale-fixture failures; the web surfaces are outside Jest). See §76. |
 
 ### Current layout
 
@@ -4762,7 +4763,109 @@ helpers are outside the Jest suite — see TEST_PLAN §2.68).
 
 ---
 
-## 76. How to re-snapshot this file
+## 76. Map live-status chip, profile→discover deep-link, floating web onboarding, David/Maya event shift
+
+_Last updated: 2026-06-02_
+
+A small batch of web-only UX fixes plus a hosted-data date shift. Native is
+untouched; every `.tsx` change is a `web/` module or a `.web.tsx` variant.
+
+### 76.1 Map LIVE chip now reflects real connection health (`web/useOnline.ts`)
+
+The map's LIVE/OFFLINE chip (Home left-pane map + the `/map` route) keyed off
+`navigator.onLine` alone, which only knows whether *a* network interface exists
+— it stays `true` on a Wi-Fi network with no internet, behind a captive portal,
+or when the backend is down, so the chip claimed "LIVE — events update in real
+time" while the app had no usable connection. `useOnline` now returns
+`browserOnline && realtimeOnline`: it keeps the `navigator.onLine` +
+`online`/`offline` window events for instant hard-disconnect detection, AND
+opens one bare Supabase **Realtime heartbeat channel** (the same socket chat +
+notifications ride on), treating the app as connected only while that channel
+reports `SUBSCRIBED` (a channel that errors / times out / closes flips it to
+OFFLINE; the client auto-reconnects and re-fires `SUBSCRIBED` on recovery). The
+heartbeat topic is per-hook-instance (`app-health:${useId()}`) so two mounted
+consumers never share — and tear down — the same channel. Mock mode (no client)
+falls back to `navigator.onLine`, preserving the prior test default.
+
+### 76.2 Profile "Add interests" deep-links to Discover's Interests tab
+
+The dashed **+ Add** chip under "Your interests" on the web profile
+(`app/(tabs)/profile.web.tsx`) routed to `/search` (the combined "all" Discover
+view). It now deep-links to `/search?tab=interests`, landing directly on the
+interest picker — `search.web.tsx` already hydrates its initial tab from the
+`?tab=` param (the same mechanism §75.4's nav deep-links use).
+
+### 76.3 Floating web onboarding over a blurred explore page (`app/onboarding/interests.web.tsx`)
+
+The post-signup FR1.3 interest picker (`app/onboarding/interests.tsx`) rendered
+full-screen on every platform. The new web-only variant presents it as a
+**centered floating dialog hovering over a blurred, inert preview of the explore
+page**: the real `HomeWeb` explore component renders behind the card
+(`aria-hidden` + `pointer-events:none`, blurred + dimmed under a frosted scrim),
+and the picker — search box, scrollable interest-chip grid, Continue / Skip —
+floats on top. The backdrop mounts client-side only (after first effect) so the
+static pre-render doesn't spin up a second Leaflet map and there's no hydration
+mismatch; `useLocation` defers to a user gesture on web, so the backdrop quietly
+falls back to the UCI default region (no geolocation prompt during onboarding).
+Picker logic (local selection set → `api.markOnboarded` →
+`router.replace('/(tabs)')`, error toast + retry) mirrors the native screen
+exactly. Routing is unchanged (no `_layout` / AuthGate edits).
+
+### 76.4 David's + Maya's events shifted forward (migration `00046`) + a stale Data API finding
+
+Per request, **migration `00046_shift_david_maya_events_upcoming.sql`** moves the
+two accounts the user verifies with to one week out (preserving each event's
+clock time + duration) so they re-enter `rank_events_query`'s
+`start_at > now()-2h` window: Maya's seeded **Morning Ride** (by its fixed seed
+UUID + her `creator_id`) and the **davidplehn07@gmail.com** account's events (by
+an email subquery, so it catches them wherever they live and no-ops if none
+exist). Applied to the hosted project via `supabase db push` and **verified
+directly against the primary DB**: Morning Ride → `2026-06-09 14:00` (published);
+David's **"IN4MATX 43 Study Session"** → `2026-06-09 18:00`.
+
+Two findings mean the shift **won't surface in the app yet**:
+
+- **The hosted Data API is serving stale reads.** The live REST / Data API
+  returns only **9 events, all frozen at May 7–13**, while the actual primary
+  (where `db push` writes — same project ref `kmlecodm…` on both the pooler and
+  the API URL) has **222 events** and the shifted dates. Even a trivial hardcoded
+  `UPDATE … WHERE id = …` recorded as applied but didn't change the row the API
+  returns; a `RAISE NOTICE` probe on the primary confirmed the new date *is*
+  there. This points to the API reading a **stale source — most likely a read
+  replica whose replication stalled around early May** — which is *also* the
+  original reason every event "fell off the map" (the feed is frozen pre-scrape,
+  pre-`00045`/`00046`). It's a hosted-project infrastructure issue (dashboard →
+  Database → Replication / Read Replicas, a project restart, or Supabase
+  support), not something fixable from code.
+- **David's event is a `draft`.** Drafts never appear on the map regardless of
+  date, so the Study Session also needs publishing once the read path is live.
+
+The throwaway diagnostic migrations used to probe the primary were reverted
+(`supabase migration repair --status reverted`) and deleted; the remote history
+and the repo both end cleanly at `00046`.
+
+### 76.5 `docs/TEST_PLAN.md` correctness pass
+
+Brought the test plan in line with the actual current state (verified by `npm
+test` + `npx tsc --noEmit`): header → **426 tests / 57 suites** (was 409/409 ·
+56), dated 2026-06-02, "most recent" pointer → §2.69, prototype path "repo root"
+→ `legacy/`; honestly recorded the **3 currently-failing tests** (2 `SCDatePicker`
+year-less-fixture cases the picker re-rolls to the next future occurrence, 1
+`sign-up` mock-mode case predating the 18+ birthdate field) as stale fixtures,
+not regressions; §2.1 delivered counts, §2.2 prototype path, and §2.4 run
+commands + run-times table refreshed; Supabase commands switched to
+`npx --no-install supabase …`. The web changes above are documented in TEST_PLAN
+§2.69 (outside the Jest suite, per the standing web-UI rationale).
+
+**Verification:** `tsc` clean; `npm test` 423/426 (the 3 stale-fixture failures
+above; the `useOnline` / discover deep-link / floating-onboarding changes are
+web-only `.web.tsx` surfaces outside the Jest suite — see TEST_PLAN §2.69).
+Migration `00046` applied + verified on the hosted primary; the live Data API
+stale-read issue is outstanding and flagged for the user.
+
+---
+
+## 77. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

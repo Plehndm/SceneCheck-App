@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-05-23 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype at the repo root (kept as a reference), and the Supabase backend at `supabase/`. Test count is **409/409** across 56 suites, and `npx tsc --noEmit` is clean. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.44 — dark-mode contrast fixes + darker review icon)._
+_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.69 — map live-status chip, discover deep-link, floating web onboarding, + the David/Maya event date shift)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -121,13 +121,13 @@ in `.env`._
 
 | Category | Required? | Minimum | Delivered |
 |---|---|---|---|
-| **Unit tests** | Required | ≥ 5 | 6 files (`scenecheck-expo/tests/unit/`), 111 test cases |
-| **Integration tests** | Required | ≥ 3 | 36 files (10 components + 18 screens + 8 hooks), 232 test cases |
-| **Total tests** | — | — | **343 tests, 49 suites** |
+| **Unit tests** | Required | ≥ 5 | 10 files (`scenecheck-expo/tests/unit/`), 164 test cases |
+| **Integration tests** | Required | ≥ 3 | 47 files (13 components + 26 screens + 8 hooks), 262 test cases |
+| **Total tests** | — | — | **426 tests, 57 suites** (423 passing; 3 stale-fixture failures noted in the header) |
 
 ### 2.2 Migration note
 
-The original prototype at `tests/` (root) had 5 unit + 4 integration tests on the legacy JS source. Those tests still exist and remain runnable on the prototype, but the active project is the Expo port at `scenecheck-expo/`, which is what the numbers above reflect.
+The original prototype (now relocated to `legacy/`) had 5 unit + 4 integration tests on the legacy JS source. Those tests still exist and remain runnable there (`cd legacy && npm install && npm test`), but the active project is the Expo port at `scenecheck-expo/`, which is what the numbers above reflect.
 
 ### 2.3 Tests by category
 
@@ -241,9 +241,10 @@ supabase/
     ├── rls.test.sql                     # updated for the Phase 7 policy rename
     └── schema.test.sql
 
-tests/                                   # legacy prototype tests (kept for reference)
-├── unit/         (5 files, ~25 cases on the legacy JS source)
-└── integration/  (4 files)
+legacy/                                  # legacy prototype (relocated from repo root)
+└── tests/                               # kept for reference
+    ├── unit/         (5 files, ~25 cases on the legacy JS source)
+    └── integration/  (4 files)
 ```
 
 Run commands (copy-paste on a fresh clone):
@@ -252,15 +253,17 @@ Run commands (copy-paste on a fresh clone):
 # Active project (Expo port) — frontend tests
 cd scenecheck-expo
 npm install
-npm test                  # 259 tests / 33 suites in ~4s
-npm run test:coverage     # add --coverage flag
+npm test                  # 426 tests / 57 suites in ~36s (423 pass; 3 stale-fixture fails — see header)
+npm run test:coverage     # = jest --coverage
 
-# Database tests (requires Docker + Supabase CLI)
+# Database tests (requires Docker + Supabase CLI). The CLI isn't on PATH
+# in this workspace — run it through npx --no-install supabase ...
 cd ..
-supabase start
-supabase test db          # pgTAP suite
+npx --no-install supabase start
+npx --no-install supabase test db   # pgTAP suite
 
-# Legacy prototype tests (root, original Jest setup)
+# Legacy prototype tests (now under legacy/, original Jest setup)
+cd legacy
 npm install
 npm test
 ```
@@ -269,11 +272,11 @@ Approximate run-times:
 
 | Category | Count | Time | Where it runs |
 |---|---|---|---|
-| Unit (6 files) | 111 | <1s | local + CI |
-| Component (10 files) | 43 | <1s | local + CI |
-| Hook (8 files) | 33 | <1s | local + CI |
-| Screen integration (25 files) | 151 | ~3s | local + CI |
-| **Total (Jest)** | **343** | **~5s** | local + CI |
+| Unit (10 files) | 164 | ~2s | local + CI |
+| Component (13 files) | 56 (54 pass) | ~3s | local + CI |
+| Hook (8 files) | 33 | ~1s | local + CI |
+| Screen integration (26 files) | 173 (172 pass) | ~8s | local + CI |
+| **Total (Jest)** | **426 (423 pass)** | **~36s cold** | local + CI |
 | Database (pgTAP) | — | ~5s | local (Docker) |
 
 ### 2.5 Coverage achieved
@@ -1993,6 +1996,32 @@ need a real browser (Playwright, already the top future-add in Part 3). The
 `useOptimisticAttendees` overlay is the one piece that's pure TS and unit-test-
 able in isolation; flagged for a follow-up. Everything here was verified on the
 deployed web build.
+
+### 2.69 Map live-status chip + discover deep-link + floating web onboarding (post-§2.68 delta)
+
+_Captured 2026-06-02 alongside `docs/PROGRESS_SNAPSHOT.md` §76._
+
+Three web-only UX changes plus a hosted-data migration. Like the rest of the web
+build these are web-only surfaces (react-native-web DOM + react-leaflet) or
+DB-only SQL, so they sit **outside** the Jest suite for the documented reasons
+(§2.2 / Part 3 Q2). No new Jest tests; the suite is unchanged (still 426 total /
+423 passing — see the header for the 3 stale-fixture failures).
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| `web/useOnline.ts` — LIVE chip reflects real connection health (browser online + a Supabase Realtime heartbeat channel) | `tsc` clean; web-only | Previously `navigator.onLine` only (stays `true` on a no-internet LAN). Now also opens one bare Realtime channel and reports connected only while it's `SUBSCRIBED`. Mock mode (no client) falls back to `navigator.onLine`, so the native map-tab screen test is unaffected. The leaflet/realtime behaviour is verified on the deployed build. |
+| `app/(tabs)/profile.web.tsx` — "Add interests" → `/search?tab=interests` | `tsc` clean; 426/426 | One-line deep-link; `search.web.tsx` already reads `?tab=` (the §2.68 nav-deep-link mechanism). |
+| `app/onboarding/interests.web.tsx` (new) — floating picker over a blurred explore backdrop | `tsc` clean; web-only | Web variant of the native `onboarding/interests.tsx`; same picker logic (`api.markOnboarded` → `router.replace('/(tabs)')`). The blurred `HomeWeb` backdrop + Leaflet preview need a real browser (Playwright), so it's verified on the deployed build; the native screen keeps its existing flow + tests. |
+| `supabase/migrations/00046_shift_david_maya_events_upcoming.sql` (new) | Live verification via `supabase db push` + a primary-DB `RAISE NOTICE` probe | Shifts Maya's + the davidplehn07@gmail.com account's events one week out so they re-enter `rank_events_query`'s window. Applied to the hosted project and verified on the **primary** (Morning Ride → 2026-06-09 published; David's Study Session → 2026-06-09, still draft). No DB under Jest, so it follows the existing migration-testing path. ⚠️ The hosted **Data API is serving stale reads** (9 events frozen at May dates vs the primary's 222), so the shift won't surface in the app until that infra issue is resolved — see PROGRESS_SNAPSHOT §76.4. |
+
+**Delivered count:** jest 426 total / 423 passing (no new tests — web UI + the SQL
+migration are outside the Jest environment); `tsc` clean.
+
+**What this section deliberately does NOT do:** add Jest tests for the realtime
+heartbeat in `useOnline`, the floating onboarding backdrop, or the date-shift
+migration — they need a real browser (Playwright, the standing top future-add in
+Part 3) or a Postgres container (pgTAP/Deno) respectively. The `useOnline`
+mock-mode fallback keeps the native map-tab test green without a Supabase mock.
 
 ---
 
