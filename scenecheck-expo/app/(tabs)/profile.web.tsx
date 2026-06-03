@@ -311,7 +311,10 @@ export default function ProfileWeb() {
                 ))}
                 <button
                   type="button"
-                  onClick={() => router.push('/search' as never)}
+                  // Deep-link straight into Discover's Interests section so
+                  // "Add" lands on the tag picker, not the all-results view.
+                  // search.web.tsx hydrates its initial tab from `?tab=`.
+                  onClick={() => router.push('/search?tab=interests' as never)}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
