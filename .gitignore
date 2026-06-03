@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Test output
+# Test output (generated coverage). Exception: the committed HW4 coverage
+# HTML report lives under docs/coverage/ and is kept tracked.
 coverage/
+!/docs/coverage/
 
 # Local env / secrets — never commit real Supabase keys.
 .env
