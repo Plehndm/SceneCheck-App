@@ -27,7 +27,21 @@ All project documents live in the [`docs/`](docs/) folder:
 | Web build review | [`docs/WEB_BUILD_REVIEW.md`](docs/WEB_BUILD_REVIEW.md) |
 | User flow traces | [`docs/user_flow_traces.md`](docs/user_flow_traces.md) |
 
-> 📊 **Test coverage:** the committed Jest coverage report lives at [`docs/coverage/lcov-report/index.html`](docs/coverage/lcov-report/index.html) — open it in a browser for the per-file breakdown. Headline numbers + what's deliberately not covered are in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) §2.5. To regenerate it: `cd scenecheck-expo && npm run test:coverage -- --coverageDirectory=../docs/coverage`.
+### 📊 Viewing the test coverage report
+
+The Jest coverage report is committed at [`docs/coverage/lcov-report/index.html`](docs/coverage/lcov-report/index.html). It's a standard HTML report, so **open it in a web browser** — it isn't meant to be read as raw text.
+
+- **Locally (recommended):** clone/pull the repo, then open the file in your default browser:
+  - **Windows:** double-click `docs\coverage\lcov-report\index.html` in File Explorer, or run `ii docs\coverage\lcov-report\index.html` in PowerShell.
+  - **macOS:** `open docs/coverage/lcov-report/index.html`
+  - **Linux:** `xdg-open docs/coverage/lcov-report/index.html`
+
+  The **All files** summary table loads first; click any folder or file row to drill into the line-by-line view (green = covered, red = uncovered), or sort by a column to find the least-covered files.
+- **On GitHub:** GitHub does **not** render committed HTML — clicking the file just shows its raw source. To view it rendered without cloning, paste the file's GitHub URL into [htmlpreview.github.io](https://htmlpreview.github.io/).
+
+Just want the numbers? The headline percentages and the "what's deliberately not covered" notes are in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) §2.5 — no browser needed.
+
+**Regenerate the report:** `cd scenecheck-expo && npm run test:coverage -- --coverageDirectory=../docs/coverage`
 
 ### Quick start (active project)
 
