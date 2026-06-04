@@ -76,6 +76,11 @@ export interface SCEvent {
   // scraped from. The event-detail screen links to it in place of a host.
   // Absent for user-created events and mock fixtures.
   sourceUrl?: string;
+  // Preview/cover image URL. Populated for scraped events from the source's
+  // schema.org JSON-LD `image` (e.g. Eventbrite's img.evbuc.com CDN); null for
+  // user-created events without an uploaded image. Cards/detail show a
+  // placeholder when null.
+  image?: string | null;
   // Ticket price range. All three fields are either ALL null (price not
   // specified — hides the affordance) or ALL set. priceMin = priceMax = 0
   // renders as FREE. priceMin = priceMax > 0 renders as "$N". priceMin <

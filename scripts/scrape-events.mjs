@@ -143,6 +143,23 @@ function extractJsonLdEvents(html) {
   return items;
 }
 
+// schema.org `image` is loosely typed: a URL string, an array of URLs, or an
+// ImageObject ({ url }) — Eventbrite emits a single img.evbuc.com URL string.
+// Return the first usable http(s) URL, or null. We DON'T rewrite the URL's
+// size params: Eventbrite signs the transform with an `s=` hash, so changing
+// `w`/`h` would invalidate the signature and 403 the image.
+function normalizeImageUrl(image) {
+  const pick = (v) => {
+    if (typeof v === 'string') return v.trim();
+    if (v && typeof v === 'object' && typeof v.url === 'string') return v.url.trim();
+    return null;
+  };
+  const first = Array.isArray(image)
+    ? image.map(pick).find(Boolean) ?? null
+    : pick(image);
+  return first && /^https?:\/\//i.test(first) ? first : null;
+}
+
 /**
  * Scrape SOURCE_URL and return events in the `ingest-scraped` payload shape:
  *   { title, start_at, location: { lat, lng },          // REQUIRED
@@ -478,6 +495,9 @@ async function scrapeOneSource(url) {
       // The original listing page — ingest-scraped stores it as source_url and
       // the event-detail screen links to it in place of a host.
       source_url: it.url ? String(it.url).trim() : null,
+      // Cover image from the source's schema.org `image` (Eventbrite hosts
+      // these on img.evbuc.com). Hot-linked as-is; null when absent.
+      image_url: normalizeImageUrl(it.image),
     });
     if (resolved.price_min !== null) {
       priceCount++;

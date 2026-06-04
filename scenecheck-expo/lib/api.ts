@@ -92,6 +92,7 @@ interface EventRow {
   lng: number | null;
   source: string | null;
   source_url?: string | null;
+  image_url?: string | null;
   creator_id: string | null;
   // rank_events_query (migration 00043) exposes this so a friend's event
   // can bucket as kind 'friend'. Absent on the direct table selects
@@ -159,6 +160,7 @@ function transformEventRow(row: EventRow, currentUserId: string | null): SCEvent
     x: 0.5,
     y: 0.5,
     sourceUrl: row.source_url ?? undefined,
+    image: row.image_url ?? null,
     // Price triple — pass null through (lib/price.priceState reads
     // null as "not specified" and hides the affordance).
     priceMin: num(row.price_min),

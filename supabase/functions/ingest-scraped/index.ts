@@ -57,6 +57,13 @@ serve(async (req: Request) => {
       if (priceMax < priceMin) return errorResponse("price_max must be >= price_min");
     }
 
+    // Optional cover image (hot-linked from the source CDN, e.g. Eventbrite's
+    // img.evbuc.com). Accept only an http(s) URL; anything else stores NULL.
+    const imageUrl: string | null =
+      typeof body.image_url === "string" && /^https?:\/\//i.test(body.image_url)
+        ? body.image_url
+        : null;
+
     const admin = createAdminClient();
     const { lat, lng } = body.location;
 
@@ -81,12 +88,14 @@ serve(async (req: Request) => {
       price_min: number | null;
       price_max: number | null;
       price_currency: string | null;
+      image_url: string | null;
     };
+    const DUPE_COLS = "id, start_at, end_at, price_min, price_max, price_currency, image_url";
     let dupeRow: DupeRow | null = null;
     if (body.source_url) {
       const { data } = await admin
         .from("events")
-        .select("id, start_at, end_at, price_min, price_max, price_currency")
+        .select(DUPE_COLS)
         .eq("source", "scraped")
         .eq("source_url", body.source_url)
         .limit(1);
@@ -95,7 +104,7 @@ serve(async (req: Request) => {
     if (!dupeRow) {
       const { data } = await admin
         .from("events")
-        .select("id, start_at, end_at, price_min, price_max, price_currency")
+        .select(DUPE_COLS)
         .eq("source", "scraped")
         .eq("title", body.title)
         .eq("start_at", body.start_at)
@@ -129,6 +138,9 @@ serve(async (req: Request) => {
       if ((dupeRow.price_currency ?? null) !== (priceCurrency ?? null)) {
         patch.price_currency = priceCurrency;
       }
+      // Backfill/refresh the cover image (older rows predate the column; the
+      // source may also swap its image).
+      if ((dupeRow.image_url ?? null) !== imageUrl) patch.image_url = imageUrl;
       if (Object.keys(patch).length > 0) {
         const { error: updErr } = await admin
           .from("events")
@@ -162,6 +174,7 @@ serve(async (req: Request) => {
         status: "published", // scraped events go live immediately
         source: "scraped",
         source_url: body.source_url || null, // original listing the scraper pulled from
+        image_url: imageUrl, // hot-linked cover image from the source CDN
         min_subscribers: 1,
       })
       .select("id")
