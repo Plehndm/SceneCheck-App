@@ -173,7 +173,11 @@ export function WebEventListCard({
         <button
           onClick={(e: MouseEvent<HTMLButtonElement>) => {
             e.stopPropagation();
-            onJoin(event.id);
+            // "Manage" your own event opens it (the host edit/cancel actions
+            // live on the detail overlay) — it must NOT run the join/leave
+            // handler, which would try to subscribe you to your own event.
+            if (event.kind === 'yours') onOpen(event.id);
+            else onJoin(event.id);
           }}
           style={{
             marginLeft: 'auto',
