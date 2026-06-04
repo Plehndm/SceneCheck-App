@@ -143,12 +143,18 @@ export function WebActivityRow({
           cta: 'View event',
           ctaHref: eventId ? `/event/${eventId}` : deepLink,
         };
+      // The DB trigger (`notify_event_updated`, migration 00032/00044) emits
+      // the type as `event.updated` (a dot); the underscore variant is kept
+      // for any dispatcher that normalizes it. Without the `event.updated`
+      // case these fell through to `default` and rendered the raw type
+      // ("event.updated") instead of the event title.
+      case 'event.updated':
       case 'event_update':
         return {
           icon: 'edit',
           accentToken: 'warn',
-          title: `${eventTitle} changed`,
-          body: preview || 'The host updated this event.',
+          title: `${eventTitle} was updated`,
+          body: preview || 'The host changed this event.',
           cta: 'View event',
           ctaHref: eventId ? `/event/${eventId}` : deepLink,
         };

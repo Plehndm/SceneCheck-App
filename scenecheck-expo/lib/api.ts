@@ -1449,7 +1449,30 @@ export const api = {
       .order('created_at', { ascending: false })
       .limit(50);
     if (error) throw error;
-    return data;
+    const rows = (data ?? []) as { payload_json?: Record<string, unknown> | null }[];
+    // Enrich event-related notifications with the event title so the UI can say
+    // "<title> was updated" instead of a bare type. The `notify_event_updated`
+    // trigger payload (migrations 00032/00044) carries only `event_id`, so we
+    // batch-resolve titles in one query here rather than per-row in the
+    // component. Best-effort: a failed/empty lookup just leaves `event_title`
+    // unset and the UI falls back to "an event".
+    const eventIds = Array.from(new Set(
+      rows
+        .map(r => r.payload_json?.event_id)
+        .filter((v): v is string => typeof v === 'string'),
+    ));
+    if (eventIds.length) {
+      const { data: evs } = await sb.from('events').select('id, title').in('id', eventIds);
+      const titleById = new Map<string, string>();
+      for (const e of (evs ?? []) as { id: string; title: string }[]) titleById.set(e.id, e.title);
+      for (const r of rows) {
+        const eid = r.payload_json?.event_id;
+        if (typeof eid === 'string' && r.payload_json && titleById.has(eid)) {
+          r.payload_json.event_title = titleById.get(eid);
+        }
+      }
+    }
+    return rows;
   },
 
   async markNotificationRead(notifId: string): Promise<void> {
