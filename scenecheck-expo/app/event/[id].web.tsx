@@ -224,6 +224,25 @@ export default function EventDetailWeb() {
               </WebTip>
             </div>
           </div>
+          {/* Hero image — scraped events carry one from the source CDN.
+              Hides itself on load failure so a dead URL never shows a broken
+              icon; user-created events without an image simply omit it. */}
+          {event.image && (
+            <img
+              src={event.image}
+              alt=""
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: 220,
+                objectFit: 'cover',
+                borderRadius: 16,
+                marginBottom: 16,
+                background: t.subtle,
+              }}
+            />
+          )}
           <div
             style={{
               fontFamily: FONT.display,

@@ -8,7 +8,7 @@
 // `eventOverrides`, so edits survive route changes without globals.
 
 import { useState } from 'react';
-import { Linking, Pressable, ScrollView, View } from 'react-native';
+import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
@@ -79,6 +79,9 @@ export default function EventDetailScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // Hide the hero cover image if its URL fails to load (e.g. an expired source
+  // CDN link) so the panel falls back to the solid accent colour.
+  const [heroImgFailed, setHeroImgFailed] = useState(false);
 
   // useEvent: in mock mode this is synchronous (SC_EVENT_BY_ID lookup);
   // in live mode it hits `api.getEventById` and re-renders when the
@@ -343,8 +346,20 @@ export default function EventDetailScreen() {
 
   return (
     <Screen contentContainerStyle={{ paddingBottom: 140 }} onRefresh={() => { reloadEvent(); reloadAttendees(); }}>
-      {/* Hero panel — kept compact; the old 240px left a lot of dead space. */}
-      <View style={{ position: 'relative', height: 120, backgroundColor: accent, overflow: 'hidden' }}>
+      {/* Hero panel — kept compact; the old 240px left a lot of dead space.
+          Scraped events carry a cover image (source CDN); when present it fills
+          the panel (taller) behind the chrome, with the accent colour as the
+          fallback. Imageless events keep the solid accent band. */}
+      {(() => { const hasImage = !!e.image && !heroImgFailed; return (
+      <View style={{ position: 'relative', height: hasImage ? 200 : 120, backgroundColor: accent, overflow: 'hidden' }}>
+        {hasImage && (
+          <Image
+            source={{ uri: e.image! }}
+            onError={() => setHeroImgFailed(true)}
+            resizeMode="cover"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+        )}
         <SCTopBar
           onBack={() => router.back()}
           right={
@@ -394,6 +409,7 @@ export default function EventDetailScreen() {
           )}
         </View>
       </View>
+      ); })()}
 
       {/* Title + tags */}
       <View style={{ paddingHorizontal: 18, paddingTop: 20 }}>

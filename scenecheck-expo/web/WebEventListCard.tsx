@@ -91,6 +91,26 @@ export function WebEventListCard({
         ...style,
       }}
     >
+      {/* Cover image (scraped events carry one from the source CDN). Full-bleeds
+          the card's top padding; hides itself if the URL fails to load so a
+          dead/expired CDN link never leaves a broken-image icon. */}
+      {event.image && (
+        <img
+          src={event.image}
+          alt=""
+          loading="lazy"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          style={{
+            display: 'block',
+            width: 'calc(100% + 28px)',
+            height: 140,
+            margin: '-14px -14px 4px',
+            objectFit: 'cover',
+            borderRadius: '16px 16px 0 0',
+            background: t.subtle,
+          }}
+        />
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent }} />
         <span

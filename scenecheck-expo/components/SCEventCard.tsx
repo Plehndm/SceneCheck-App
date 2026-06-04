@@ -3,7 +3,8 @@
 // horizontal scroll container; on RN the parent is a <ScrollView
 // horizontal> and we just give it a fixed width.
 
-import { View, Pressable } from 'react-native';
+import { useState } from 'react';
+import { View, Pressable, Image } from 'react-native';
 import { useTokens } from '@/theme/ThemeProvider';
 import { SCText } from './SCText';
 import { SCTag } from './SCTag';
@@ -30,6 +31,9 @@ interface Props {
 
 export function SCEventCard({ event, joined, showConflict, onPress, meInterests = [], conflictLookup }: Props) {
   const t = useTokens();
+  // Hide the cover image if its URL fails to load (e.g. an expired source CDN
+  // link) so the card never shows a broken-image box.
+  const [imgFailed, setImgFailed] = useState(false);
   // Label + color both derive from the one category (lib/events) so they
   // always agree: yours / friend / recommended (interest match) / other.
   const label = EVENT_CATEGORY_LABEL[eventCategory(event, meInterests)];
@@ -47,6 +51,15 @@ export function SCEventCard({ event, joined, showConflict, onPress, meInterests 
         gap: 10,
       }, pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] }]}
     >
+      {/* Cover image — scraped events carry one from the source CDN. */}
+      {event.image && !imgFailed && (
+        <Image
+          source={{ uri: event.image }}
+          onError={() => setImgFailed(true)}
+          resizeMode="cover"
+          style={{ width: '100%', height: 110, borderRadius: RADIUS.lg, backgroundColor: t.subtle }}
+        />
+      )}
       {/* Kind row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: accent }} />
