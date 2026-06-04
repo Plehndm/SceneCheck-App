@@ -116,6 +116,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-30 | **Web build follow-ups — auth screens, floating dialogs, optimistic counts, discover/profile parity.** A batch of desktop-web polish on top of §74. **Auth:** a two-pane sign-in / sign-up / forgot / reset surface (`web/WebAuth.tsx` + `app/auth/*.web.tsx`) wired to the existing Supabase calls (`api.signIn` / `signUp` / `requestPasswordReset` / `updatePassword`), preserving the confirm-email banner, 18+ gate, and onboarding redirect; native keeps its screens. **Floating dialogs:** web-tailored `EditProfileSheet.web.tsx` + `ConfirmDialog.web.tsx` (centered popups instead of bottom sheets), so the edit-profile + sign-out/confirm flows read as desktop modals. **Counts:** new `useOptimisticAttendees` overlays a ±1 so a card's attendee count + the unknown-capacity `N/unk` "people are going" stripe (`WebCapBar`) update the instant the viewer joins/leaves. **Discover/nav:** the Discover **Events** tab now shows the full discovery-range set (was an 8-item cap); home gains a SEE-ALL-events button (`?tab=events`); the bottom "People with shared interests" carousel + the (now-removed-from-the-right-rail) people list deep-link to `?tab=people`; the Following tab gains "Find more organizations" (`?tab=orgs`). **Create-event:** location **autocomplete** (OpenStreetMap Nominatim, biased to the host's location — shared `lib/geocode.ts`) drops the preview pin on select; the live-preview card shows the posting account's **avatar** (`WebEventListCard` `hostLookup`); a `WebMap` `chrome` prop hides the legend/controls in the small preview. **Layout:** rail sized via `alignSelf:'stretch'` (fixes the off-screen overflow that ate the bottom cluster) + halved top insets on rail + `WebShell`; profile **tab strip wraps** instead of scrolling. **Other-profile parity:** people now get a HOSTED/ATTENDED/RATING stat row (attended via `api.getAttendedCount`), and the Hosting + Reviews sections always render for any visible (public OR friended) profile with empty states + per-event rating badges. 426/426; `tsc` clean. See §75. |
 | 2026-06-02 | **Map live-status chip, profile→discover deep-link, floating web onboarding, David/Maya event date shift (migration 00046) + a stale Data API finding.** Web-only UX: the map LIVE/OFFLINE chip (`web/useOnline.ts`) now reflects **real** connection health — `navigator.onLine` *plus* a Supabase Realtime heartbeat channel (`SUBSCRIBED` = live) — instead of the browser flag alone (which stays `true` on a no-internet LAN); the profile **"Add interests"** chip deep-links to `/search?tab=interests` (Discover's Interests tab); and the FR1.3 onboarding picker gets a web variant (`app/onboarding/interests.web.tsx`) presented as a **floating dialog over a blurred, inert preview of the explore page** (native unchanged). Hosted data: migration **`00046`** shifts Maya's + the davidplehn07@gmail.com account's events one week out so they re-enter `rank_events_query`'s window — applied + **verified on the primary** (Morning Ride → 2026-06-09 published; David's "IN4MATX 43 Study Session" → 2026-06-09, still **draft**). ⚠️ While verifying, found the hosted **Data API is serving stale reads** (9 events frozen at May dates vs the primary's 222) — almost certainly a read replica with stalled replication, which is *also* why events fell off the map; the shift won't surface in the app until that infra issue is resolved. `tsc` clean; jest 423/426 (3 pre-existing stale-fixture failures; the web surfaces are outside Jest). See §76. |
 | 2026-06-04 | **Web + mobile correctness sweep (deployed-build bug fixes).** A run of fixes found testing the live build. **JOIN buttons:** pages reading `useStore(s => s.isJoined)` subscribed to the stable function ref and never re-rendered on join/leave — `profile`/`my-events`/`my-hosting`/`interests/[tag]`/event-detail web now subscribe to the `joined`+`pendingLeave` SETS; event-detail also keys the check on the resolved `event.id` (not the raw URL param) so it works when opened from an activity deep link (`/event/<UUID>` vs the mock-id the joined set uses). **Chat:** `new-chat` honors `?to=` (open-or-create the DM, deduped), and `api.subscribeToChat` uses a unique channel topic to stop the realtime `cannot add postgres_changes callbacks after subscribe()` crash (`client.channel(topic)` was handing back an already-subscribed channel on re-mount). **Recommendations:** Home/Map/Discover re-fetch on interest change so "Recommended" labels refresh live. **Calendar:** the `expo-auth-session` Google hook crashed the linked-calendar screen when unconfigured — web got a no-OAuth `.web` variant, native gates the hook behind `isConfigured()`; both toast "not set up yet". **MANAGE:** `WebEventListCard`'s own-event button opens the event (host actions) instead of running join. **Mobile search:** passes `useLocation` coords + shows the full in-range set on the EVENTS tab (was Irvine-default + capped at 6). **Activity:** event-change notifications now render the event title ("`<title>` was updated") via the `event.updated` case + a batched title enrichment in `api.fetchNotifications`. `tsc` clean; jest 423/426; web/native UI verified on the deployed build. See §77. |
+| 2026-06-04 | **Event preview/cover images (Eventbrite → app).** Eventbrite's schema.org Event JSON-LD carries an `image` URL (`img.evbuc.com`); verified live that all events on a discovery page have one. **Slice 1 (pipeline):** the FR6 scraper reads `it.image` (`normalizeImageUrl`: string\|array\|`{url}`, http(s) only, kept verbatim so the signed CDN transform stays valid) and ships `image_url`; migration **`00047`** adds nullable `events.image_url` + DROP/CREATEs `rank_events_query` to surface it on the discovery feed (explicit column list); `ingest-scraped` validates + inserts + self-heals it; `lib/api` `EventRow`/`transformEventRow` map `row.image_url → event.image`; `types/domain` `SCEvent` gains `image`; two mock events get Picsum previews. **Slice 2 (UI):** `WebEventListCard` full-bleed banner, web event-detail 220px hero, `SCEventCard` 110px thumbnail, native event-detail hero fills with the image (accent fallback). Every surface hides the image on load error and omits it when null (user-created events unchanged). **Hot-linked** (not re-hosted). `tsc` clean; jest 423/426; migration applied + `ingest-scraped` redeployed to hosted. Existing rows backfill on the next scrape (self-heal); the §76.4 stale-Data-API caveat applies to live images. See §78. |
 
 ### Current layout
 
@@ -4958,7 +4959,66 @@ the touched-screen Jest suites here and confirmed on the deployed build.
 
 ---
 
-## 78. How to re-snapshot this file
+## 78. Event preview/cover images (Eventbrite → app)
+
+_Last updated: 2026-06-04_
+
+Scraped events now carry a cover image, shown as a preview on cards + the
+event-detail screen. Eventbrite's schema.org `Event` JSON-LD includes an
+`image` URL on its CDN (`img.evbuc.com`) — verified live that every event on a
+discovery page has one — and the scraper already parses that JSON-LD, so the
+data was a field away. Shipped in two slices; hot-linked (not re-hosted).
+
+### 78.1 Slice 1 — pipeline
+
+- **Scraper (`scripts/scrape-events.mjs`):** `normalizeImageUrl` accepts a
+  string, an array, or an `{ url }` ImageObject and returns the first http(s)
+  URL. The URL is stored **verbatim** — Eventbrite signs its resize transform
+  with an `s=` hash, so rewriting `w`/`h` would invalidate it and 403 the image.
+  The event payload gains `image_url`.
+- **DB (migration `00047_events_image.sql`):** adds nullable `events.image_url`
+  and DROP+CREATEs `rank_events_query` (an explicit-column-list SQL function) to
+  return `image_url` — without this the home/map/search **feed** cards wouldn't
+  get the image; only the event-detail screen (which selects `*`) would.
+- **Ingest (`supabase/functions/ingest-scraped`):** validates `image_url` is an
+  http(s) URL, writes it on insert, and **self-heals** it on the dedup path so
+  the existing scraped rows backfill on the next scrape.
+- **App data layer:** `lib/api.ts` `EventRow` + `transformEventRow` map
+  `row.image_url → event.image`; `types/domain.ts` `SCEvent` gains
+  `image?: string | null`. Two mock events get Picsum previews so the feature
+  shows in mock mode / demos.
+
+### 78.2 Slice 2 — UI
+
+- **Web:** `WebEventListCard` gets a full-bleed top banner; the event-detail
+  overlay (`event/[id].web.tsx`) gets a 220px hero above the title.
+- **Native:** `SCEventCard` gets a 110px thumbnail; the event-detail hero panel
+  (`event/[id].tsx`) fills with the image (taller, accent colour as fallback).
+- Every surface **hides the image on load error** (`onError`) so a dead/expired
+  CDN link never leaves a broken-image box, and **omits it entirely when
+  `event.image` is null** — user-created / non-Eventbrite events render exactly
+  as before.
+
+### 78.3 Hot-link vs re-host
+
+We hot-link the `img.evbuc.com` URL rather than downloading + re-hosting to a
+Supabase bucket. Cheaper + zero extra I/O in the scraper/function; the tradeoff
+is a third-party CDN dependency (URLs could theoretically rotate/expire — the
+`onError` fallback covers that). Re-hosting (mirroring the `avatars` bucket) is
+the upgrade path if that becomes a problem.
+
+**Verification:** `tsc` clean; lint clean (one pre-existing `ScrollView`
+warning); jest 423/426 (only the pre-existing stale-fixture failures —
+`SCDatePicker` + mock-mode `sign-up`). Migration `00047` applied + `ingest-
+scraped` redeployed to the hosted project. **Live caveats:** existing events
+backfill only on the next **scrape-events** GitHub Action run (the user triggers
+it); and if the §76.4 stale-Data-API read issue persists on the hosted project,
+live images lag the same way the event-date shift did — the mock previews
+demonstrate the UI regardless.
+
+---
+
+## 79. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.70 — web + mobile correctness sweep: JOIN-button reactivity, chat realtime crash, calendar OAuth crash, mobile search range, activity-notification titles)._
+_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.71 — event preview/cover images: Eventbrite JSON-LD `image` → scraper/DB/RPC/ingest pipeline + card & detail UI)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -2070,6 +2070,37 @@ channel lifecycle, the leaflet/web join surfaces, or the OAuth-gated calendar
 row — they need a real browser (Playwright, the standing top future-add in Part
 3). The `api.fetchNotifications` enrichment and `subscribeToChat` both no-op in
 mock mode, so they have no Jest-reachable branch without a Supabase mock.
+
+### 2.71 Event preview/cover images (post-§2.70 delta)
+
+_Captured 2026-06-04 alongside `docs/PROGRESS_SNAPSHOT.md` §78._
+
+A cross-stack feature: scrape Eventbrite's JSON-LD `image`, store it on
+`events.image_url`, and show it as a preview. No new Jest tests; the suite is
+unchanged at **426 total / 423 passing** (the 3 stale-fixture failures in the
+header are unrelated). The pipeline pieces are Node/Deno/SQL (outside the Jest
+environment) and the UI is a render-only addition guarded by `tsc` + the
+existing event-render suites.
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| `scripts/scrape-events.mjs` `normalizeImageUrl` + `image_url` | Node `--test` scraper suite stays green; verified against the live Eventbrite page | Pure URL-normalize logic; the live parse was confirmed by replicating the scraper's fetch (56/56 events had an `image`). |
+| Migration `00047` (`events.image_url` + `rank_events_query`) | Live verification via `supabase db push` | No DB under Jest; follows the existing migration-testing path. Applied to hosted. |
+| `supabase/functions/ingest-scraped` `image_url` validate/insert/heal | Deno function — outside Jest; redeployed + live-verified | Mirrors the existing price-field validate/heal pattern. |
+| `lib/api.ts` `EventRow`/`transformEventRow` + `types/domain.ts` `SCEvent.image` | `tsc`; `api-mock` + `useEvent`/`useEvents` suites green | Additive optional field; mock fixtures gained `image` on two events, which the existing event-render assertions ignore. |
+| `data/mocks.ts` (two Picsum images) | `tsc`; 426/426 | So the feature renders in mock mode / demos without a live scrape. |
+| UI: `WebEventListCard`, `event/[id].web.tsx`, `SCEventCard`, `event/[id].tsx` | `tsc`; `event-detail` + `home` + `SCEventCard` suites green (34/34) | Render-only; conditional on `event.image` with an `onError` hide, so the imageless path (every existing test fixture) is unchanged. |
+
+**Delivered count:** jest 426 total / 423 passing (no new tests — the pipeline is
+Node/Deno/SQL and the UI is a conditional render covered by the existing
+event-render suites); `tsc` clean.
+
+**What this section deliberately does NOT do:** add a Jest test for the
+image-render branch or the scraper's `image_url` field. The render branch needs
+a fixture with `image` set *and* a DOM/native image surface to assert against
+(Playwright territory); the scraper field is exercised by the live-parse check
+in §78 + the Node scraper suite. Re-hosting (vs hot-linking) and a user-event
+image upload are noted as future work in PROGRESS_SNAPSHOT §78.3.
 
 ---
 
