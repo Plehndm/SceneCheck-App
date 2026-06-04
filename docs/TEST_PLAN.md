@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.69 — map live-status chip, discover deep-link, floating web onboarding, + the David/Maya event date shift)._
+_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.70 — web + mobile correctness sweep: JOIN-button reactivity, chat realtime crash, calendar OAuth crash, mobile search range, activity-notification titles)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -2039,6 +2039,37 @@ heartbeat in `useOnline`, the floating onboarding backdrop, or the date-shift
 migration — they need a real browser (Playwright, the standing top future-add in
 Part 3) or a Postgres container (pgTAP/Deno) respectively. The `useOnline`
 mock-mode fallback keeps the native map-tab test green without a Supabase mock.
+
+### 2.70 Web + mobile correctness sweep (post-§2.69 delta)
+
+_Captured 2026-06-04 alongside `docs/PROGRESS_SNAPSHOT.md` §77._
+
+A batch of bug fixes found testing the deployed build. Most are web-only
+`.web.tsx` surfaces (outside the Jest suite for the documented reasons — §2.2 /
+Part 3 Q2); the rest touch the native search/calendar screens and shared
+`lib/api.ts` methods that short-circuit in mock mode. No new Jest tests; the
+suite is unchanged at **426 total / 423 passing** (the 3 stale-fixture failures
+in the header are unrelated), and the existing native-screen suites that cover
+the touched files stay green.
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| JOIN-button reactivity — `profile.web`, `my-events.web`, `my-hosting.web`, `interests/[tag].web`, `event/[id].web` | `tsc`; 426/426; `event-detail` suite green | Subscribe to the `joined`+`pendingLeave` sets instead of the stable `s.isJoined` fn ref; event-detail also keys on the resolved `event.id` (not the UUID URL param) so it works from activity deep links. Web-only render behaviour verified on the deployed build. |
+| `app/new-chat.tsx` `?to=` + `lib/api.ts` `subscribeToChat` unique topic | `tsc`; `new-chat` + `useChats` suites green | The realtime channel-reuse crash (`cannot add postgres_changes callbacks after subscribe()`) and the ignored Message deep link. `subscribeToChat` is exercised in mock mode (no-op channel); the live realtime path is browser-verified. |
+| Recommendation refresh on interest change — `index.web`, `map.web`, `search.web` | `tsc`; 426/426 | Re-fetch the feed when `subscribedInterests` changes so labels re-derive. Web-only; verified on the deployed build. |
+| Calendar OAuth-hook crash — `settings/linked-calendar.web.tsx` (new) + `settings/linked-calendar.tsx` (native gate) | `tsc`; `settings-subscreens` suite green | Native only mounts `Google.useAuthRequest` when `isConfigured()`; mock mode reports configured so the test still renders the connect row + Apple/Outlook store writes. |
+| `WebEventListCard` MANAGE opens own event | `tsc` | One-line handler branch (`yours` → `onOpen`); web-only. |
+| `app/search.tsx` honors `useLocation` coords + uncaps the EVENTS tab | `tsc`; `search` suite green (9/9) | Native search now matches the home/map feed; the suite's event-render + query-narrow + tab assertions still pass. |
+| Activity notification title — `WebActivityRow` `event.updated` case + `api.fetchNotifications` title enrichment | `tsc`; 426/426 | `fetchNotifications` short-circuits in mock mode, so the batched `events` title lookup is live-only; the row copy is web-only. |
+
+**Delivered count:** jest 426 total / 423 passing (no new tests — web UI + the
+live-only API enrichments are outside the Jest environment); `tsc` clean.
+
+**What this section deliberately does NOT do:** add Jest tests for the realtime
+channel lifecycle, the leaflet/web join surfaces, or the OAuth-gated calendar
+row — they need a real browser (Playwright, the standing top future-add in Part
+3). The `api.fetchNotifications` enrichment and `subscribeToChat` both no-op in
+mock mode, so they have no Jest-reachable branch without a Supabase mock.
 
 ---
 

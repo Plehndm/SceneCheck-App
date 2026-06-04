@@ -115,6 +115,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-05-30 | **Friend/own events on the web map + event-detail routing parity + edit-notify trigger fix (migrations 00043–00045) + rail/shell layout.** `rank_events_query` (`00043`) now returns `is_friend_creator` (an accepted-friendship `EXISTS`) so friend-hosted events bucket as `kind:'friend'` (coloured) instead of grey `other`, and its filter widened to `status='published' OR creator_id = p_user_id` so a creator always sees their own events — drafts included; `transformEventRow` consumes the flag. Migration `00044` fixes a latent crash in `notify_event_updated` (`text[] || 'literal'` resolved as `anyarray || anyarray` → "malformed array literal") by switching to `array_append` — this had silently broken **every** event edit/UPDATE that touched a tracked column. Migration `00045` re-stamps the 9 seeded events to upcoming `now()`-relative times so the other-account/org-hosted events stop being filtered out by `rank_events_query`'s `start_at > now()-2h` window. Web **event detail** reached native parity: clickable **Where → `/map?focus=<id>`**, a ticket-price fact, a scraped **"view original listing"** link, and the **N/unk** unknown-capacity display; `map.web` reads `?focus` to select + pan to an event and `WebMap` gained a `centerOn` prop that imperatively re-centres leaflet. **Layout:** added **Profile** to the rail's middle nav; fixed the rail overflowing off the bottom of the window (`alignSelf:'stretch'` instead of `height:'100%'`, so its bottom padding actually lifts the Settings/account cluster) + `minHeight:0` on the nav scroll area; re-centred the LIVE chip with the legend; and halved the top insets on the rail + `WebShell`. 426/426; `tsc` clean; migrations applied to the hosted project. See §74. |
 | 2026-05-30 | **Web build follow-ups — auth screens, floating dialogs, optimistic counts, discover/profile parity.** A batch of desktop-web polish on top of §74. **Auth:** a two-pane sign-in / sign-up / forgot / reset surface (`web/WebAuth.tsx` + `app/auth/*.web.tsx`) wired to the existing Supabase calls (`api.signIn` / `signUp` / `requestPasswordReset` / `updatePassword`), preserving the confirm-email banner, 18+ gate, and onboarding redirect; native keeps its screens. **Floating dialogs:** web-tailored `EditProfileSheet.web.tsx` + `ConfirmDialog.web.tsx` (centered popups instead of bottom sheets), so the edit-profile + sign-out/confirm flows read as desktop modals. **Counts:** new `useOptimisticAttendees` overlays a ±1 so a card's attendee count + the unknown-capacity `N/unk` "people are going" stripe (`WebCapBar`) update the instant the viewer joins/leaves. **Discover/nav:** the Discover **Events** tab now shows the full discovery-range set (was an 8-item cap); home gains a SEE-ALL-events button (`?tab=events`); the bottom "People with shared interests" carousel + the (now-removed-from-the-right-rail) people list deep-link to `?tab=people`; the Following tab gains "Find more organizations" (`?tab=orgs`). **Create-event:** location **autocomplete** (OpenStreetMap Nominatim, biased to the host's location — shared `lib/geocode.ts`) drops the preview pin on select; the live-preview card shows the posting account's **avatar** (`WebEventListCard` `hostLookup`); a `WebMap` `chrome` prop hides the legend/controls in the small preview. **Layout:** rail sized via `alignSelf:'stretch'` (fixes the off-screen overflow that ate the bottom cluster) + halved top insets on rail + `WebShell`; profile **tab strip wraps** instead of scrolling. **Other-profile parity:** people now get a HOSTED/ATTENDED/RATING stat row (attended via `api.getAttendedCount`), and the Hosting + Reviews sections always render for any visible (public OR friended) profile with empty states + per-event rating badges. 426/426; `tsc` clean. See §75. |
 | 2026-06-02 | **Map live-status chip, profile→discover deep-link, floating web onboarding, David/Maya event date shift (migration 00046) + a stale Data API finding.** Web-only UX: the map LIVE/OFFLINE chip (`web/useOnline.ts`) now reflects **real** connection health — `navigator.onLine` *plus* a Supabase Realtime heartbeat channel (`SUBSCRIBED` = live) — instead of the browser flag alone (which stays `true` on a no-internet LAN); the profile **"Add interests"** chip deep-links to `/search?tab=interests` (Discover's Interests tab); and the FR1.3 onboarding picker gets a web variant (`app/onboarding/interests.web.tsx`) presented as a **floating dialog over a blurred, inert preview of the explore page** (native unchanged). Hosted data: migration **`00046`** shifts Maya's + the davidplehn07@gmail.com account's events one week out so they re-enter `rank_events_query`'s window — applied + **verified on the primary** (Morning Ride → 2026-06-09 published; David's "IN4MATX 43 Study Session" → 2026-06-09, still **draft**). ⚠️ While verifying, found the hosted **Data API is serving stale reads** (9 events frozen at May dates vs the primary's 222) — almost certainly a read replica with stalled replication, which is *also* why events fell off the map; the shift won't surface in the app until that infra issue is resolved. `tsc` clean; jest 423/426 (3 pre-existing stale-fixture failures; the web surfaces are outside Jest). See §76. |
+| 2026-06-04 | **Web + mobile correctness sweep (deployed-build bug fixes).** A run of fixes found testing the live build. **JOIN buttons:** pages reading `useStore(s => s.isJoined)` subscribed to the stable function ref and never re-rendered on join/leave — `profile`/`my-events`/`my-hosting`/`interests/[tag]`/event-detail web now subscribe to the `joined`+`pendingLeave` SETS; event-detail also keys the check on the resolved `event.id` (not the raw URL param) so it works when opened from an activity deep link (`/event/<UUID>` vs the mock-id the joined set uses). **Chat:** `new-chat` honors `?to=` (open-or-create the DM, deduped), and `api.subscribeToChat` uses a unique channel topic to stop the realtime `cannot add postgres_changes callbacks after subscribe()` crash (`client.channel(topic)` was handing back an already-subscribed channel on re-mount). **Recommendations:** Home/Map/Discover re-fetch on interest change so "Recommended" labels refresh live. **Calendar:** the `expo-auth-session` Google hook crashed the linked-calendar screen when unconfigured — web got a no-OAuth `.web` variant, native gates the hook behind `isConfigured()`; both toast "not set up yet". **MANAGE:** `WebEventListCard`'s own-event button opens the event (host actions) instead of running join. **Mobile search:** passes `useLocation` coords + shows the full in-range set on the EVENTS tab (was Irvine-default + capped at 6). **Activity:** event-change notifications now render the event title ("`<title>` was updated") via the `event.updated` case + a batched title enrichment in `api.fetchNotifications`. `tsc` clean; jest 423/426; web/native UI verified on the deployed build. See §77. |
 
 ### Current layout
 
@@ -4865,7 +4866,99 @@ stale-read issue is outstanding and flagged for the user.
 
 ---
 
-## 77. How to re-snapshot this file
+## 77. Web + mobile correctness sweep (deployed-build bug fixes)
+
+_Last updated: 2026-06-04_
+
+A series of fixes found while testing the live build. All are app-layer (no
+schema changes); most are web `.web.tsx` surfaces, two touch shared modules
+(`lib/api.ts`) and one native screen (`app/search.tsx`, `settings/linked-calendar.tsx`).
+
+### 77.1 JOIN/JOINED buttons weren't re-rendering
+
+Several pages derived the join state from `const isJoined = useStore(s => s.isJoined)`.
+That subscribes to the **stable function reference** (which never changes
+identity), so the component never re-rendered when the `joined` set changed and
+the button stayed stale. Fixed by subscribing to the `joined` + `pendingLeave`
+SETS and deriving reactively (a row mid-undo-grace reads as not-joined, so the
+button flips back to JOIN immediately): `app/(tabs)/profile.web.tsx`,
+`app/my-events.web.tsx`, `app/my-hosting.web.tsx`, `app/interests/[tag].web.tsx`,
+and the event-detail overlay `app/event/[id].web.tsx`.
+
+The event-detail overlay had a second, deep-link-specific bug: it keyed the
+check on the raw URL param, but `transformEventRow` maps `row.id → toMockId`, so
+`event.id` (and the joined set) are **mock-ids** while an **activity
+notification** deep-links to `/event/<UUID>`. The UUID never matched the joined
+set, so the button never reflected/updated state when opened from a
+notification. It now keys on the resolved `event.id`.
+
+### 77.2 Start-chat realtime crash + ignored deep link
+
+`api.subscribeToChat` used a fixed channel topic `messages:<uuid>`.
+`client.channel(topic)` returns the **same** channel for a repeated topic, and
+when the thread re-mounts (route change / React dev double-invoke) before the
+prior channel's async `removeChannel` settles, `.on('postgres_changes', …)` runs
+on an already-subscribed channel and throws *"cannot add postgres_changes
+callbacks … after subscribe()"* — which crashed `WebChatThread` on open (the
+user reported this as a "postGIS" error; it was `postgres_changes`). A unique
+per-subscription topic suffix guarantees a fresh channel. Separately, `new-chat`
+now honors the `?to=<id>` deep link (the Message buttons) by opening-or-creating
+the DM directly — `api.createChat` already dedupes to the existing thread.
+
+### 77.3 Recommendation labels refresh on interest change
+
+`Home` / `Map` / `Discover` now re-fetch the events feed when the subscribed-
+interest set changes, so the "Recommended" card labels + map pin colors (derived
+from the interest set) update immediately instead of only after a manual reload.
+
+### 77.4 Calendar screen crash (web + native)
+
+The linked-calendar screen called `expo-auth-session`'s `Google.useAuthRequest(…)`
+at render, which errors when no OAuth client id is configured — crashing the
+screen on **both** platforms whenever `EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` is
+unset. Web got a new `app/settings/linked-calendar.web.tsx` that skips OAuth
+entirely and toasts "sync isn't set up yet" on provider select. Native
+(`linked-calendar.tsx`) now only mounts the OAuth-driving row when
+`googleCalendar.isConfigured()` is true; otherwise a "COMING SOON" row renders
+(no hook → no crash) and toasts the same message. Mock mode reports configured,
+so the existing settings-subscreens test keeps exercising the connect row.
+
+### 77.5 MANAGE button on your own event
+
+`WebEventListCard`'s bottom button always ran `onJoin(event.id)`; on a `yours`
+card (labeled MANAGE) that tried to subscribe you to your own event. It now
+routes `yours` cards to `onOpen` (the detail overlay, where host edit/cancel
+live) and only non-host cards join/leave.
+
+### 77.6 Mobile search discovery range
+
+`app/search.tsx` called `useEvents({ radiusM })` with no coords, so it anchored
+on the Irvine default instead of the user's location, and capped events to 6
+even on the dedicated EVENTS tab. It now passes `lat`/`lng` from `useLocation`
+(matching the home/map feed) and shows the full in-range set on the EVENTS tab
+(the combined ALL feed keeps a 6-item preview); tab counts use the true match
+count.
+
+### 77.7 Activity notification names the changed event
+
+Event-change notifications rendered the raw type instead of the event title for
+two reasons: the `notify_event_updated` trigger emits the type `event.updated`
+(a dot) but `WebActivityRow` only had an `event_update` (underscore) case, and
+the trigger payload carries only `event_id`, no title. Added the `event.updated`
+case, and `api.fetchNotifications` now batch-resolves titles
+(`events.select('id,title').in(ids)`) and injects `event_title` into each
+payload — so existing + new notifications read "`<title>` was updated" with no
+migration.
+
+**Verification:** `tsc` clean; lint clean; jest 423/426 (the 3 pre-existing
+stale-fixture failures only — `SCDatePicker` + mock-mode `sign-up`; see TEST_PLAN
+header). These are web `.web.tsx` surfaces + native search/calendar + shared
+`api.ts` methods that short-circuit in mock mode, so they're verified by `tsc` +
+the touched-screen Jest suites here and confirmed on the deployed build.
+
+---
+
+## 78. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:
