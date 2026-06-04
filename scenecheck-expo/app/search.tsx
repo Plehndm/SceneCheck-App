@@ -17,6 +17,7 @@ import { SCTopBar } from '@/components/SCTopBar';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
 import { useEvents } from '@/hooks/useEvents';
+import { useLocation } from '@/hooks/useLocation';
 import { useSearchPeople, useSearchOrgs } from '@/hooks/useSearch';
 import { excludeSelf } from '@/lib/people';
 import { whenRange } from '@/lib/date-time';
@@ -47,24 +48,40 @@ export default function SearchScreen() {
   // the Map/Settings refetches the in-range events, so their recommendations
   // re-derive against your current interests.
   const radiusM = Math.round(useStore(s => s.radius) * MILES_TO_METERS);
+  // Anchor discovery on the user's ACTUAL location (falls back to the default
+  // region when permission isn't granted) so the events match the home/map
+  // feed instead of being pinned to the Irvine default. Passing only radiusM
+  // before meant search ignored where the user actually is.
+  const { coords } = useLocation();
   const lowered = query.trim().toLowerCase();
 
   // Events come from useEvents (live or fixtures) and are filtered locally.
   // People + orgs come from Supabase (fixtures in mock mode); the hooks
   // already apply the query, so when it's empty we just cap the default view.
-  const { events: allEvents, loading: eventsLoading, reload: reloadEvents } = useEvents({ radiusM });
+  const { events: allEvents, loading: eventsLoading, reload: reloadEvents } = useEvents({
+    lat: coords?.latitude,
+    lng: coords?.longitude,
+    radiusM,
+  });
   const { results: peopleAll, loading: peopleLoading, reload: reloadPeople } = useSearchPeople(query);
   const { results: orgsAll, loading: orgsLoading, reload: reloadOrgs } = useSearchOrgs(query);
   const loading = eventsLoading || peopleLoading || orgsLoading;
 
-  const events = useMemo(() => {
-    if (!lowered) return allEvents.slice(0, 6);
+  // Full in-range match set (uncapped) — drives the EVENTS tab + its count.
+  const matchedEvents = useMemo(() => {
+    if (!lowered) return allEvents;
     return allEvents.filter(e =>
       e.title.toLowerCase().includes(lowered) ||
       e.where.toLowerCase().includes(lowered) ||
       e.interests.some(i => i.toLowerCase().includes(lowered))
     );
   }, [lowered, allEvents]);
+  // The dedicated EVENTS tab shows EVERY event in the discovery range; the
+  // combined ALL feed shows a capped preview so it doesn't bury people/orgs.
+  const events = useMemo(
+    () => (tab === 'events' ? matchedEvents : matchedEvents.slice(0, 6)),
+    [matchedEvents, tab],
+  );
 
   // Never surface yourself in people results (live excludes self in the
   // query; this also covers mock mode where the fixture list is unfiltered).
@@ -208,8 +225,8 @@ export default function SearchScreen() {
         contentContainerStyle={{ paddingHorizontal: 14, gap: 6, paddingBottom: 14 }}
       >
         {([
-          { k: 'all', label: `ALL · ${events.length + people.length + orgs.length}` },
-          { k: 'events', label: `EVENTS · ${events.length}` },
+          { k: 'all', label: `ALL · ${matchedEvents.length + people.length + orgs.length}` },
+          { k: 'events', label: `EVENTS · ${matchedEvents.length}` },
           { k: 'people', label: `PEOPLE · ${people.length}` },
           { k: 'orgs', label: `ORGS · ${orgs.length}` },
         ] as { k: Tab; label: string }[]).map(c => (
