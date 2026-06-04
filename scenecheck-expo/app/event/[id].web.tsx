@@ -55,7 +55,13 @@ export default function EventDetailWeb() {
   // flips back to JOIN immediately instead of staying stuck on JOINED.
   const joinedSet = useStore(s => s.joined);
   const pendingLeave = useStore(s => s.pendingLeave);
-  const joined = id ? joinedSet.has(id) && !pendingLeave.has(id) : false;
+  // Key the join check on the RESOLVED event's id (a mock-id), NOT the raw URL
+  // param. Deep links from the activity feed open `/event/<UUID>`, but the
+  // joined set is keyed by `event.id` (transformEventRow maps row.id →
+  // toMockId), so checking the UUID never matched and the button never
+  // reflected/updated the join state when opened from a notification. Subtract
+  // pendingLeave too so the 5-second undo-grace flips the button back to JOIN.
+  const joined = !!event && joinedSet.has(event.id) && !pendingLeave.has(event.id);
   const showToast = useStore(s => s.showToast);
   // FR7.2 — used by the post-join calendar side effect below. Only
   // Google is wired in this iteration; other providers stay no-op.
