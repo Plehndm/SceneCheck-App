@@ -246,6 +246,11 @@ function requireClient() {
   return supabase;
 }
 
+// Monotonic suffix for realtime channel topics (see subscribeToChat). A fresh
+// topic per subscription avoids `client.channel(topic)` handing back a stale,
+// already-subscribed channel for a repeated topic.
+let _chatChannelSeq = 0;
+
 // ── API surface ───────────────────────────────────────────────
 export const api = {
   isMock,
@@ -1320,7 +1325,19 @@ export const api = {
     if (isMock()) return { unsubscribe: () => {} };
     const sb = requireClient();
     const uuid = toUUID(chatId);
-    const channel = sb.channel(`messages:${uuid}`)
+    // `client.channel(topic)` returns the SAME channel instance for a repeated
+    // topic. When the thread re-mounts (route change, or React's dev double-
+    // invoke) the previous channel's `removeChannel` is still settling — async,
+    // so it's briefly still in the client's channel list — and `channel()`
+    // hands it back already-subscribed. Calling `.on('postgres_changes', …)` on
+    // an already-`subscribe()`d channel throws:
+    //   "cannot add `postgres_changes` callbacks for realtime:messages:… after `subscribe()`"
+    // which crashed WebChatThread on open. A unique per-subscription topic
+    // suffix guarantees a fresh, unsubscribed channel every time; the
+    // postgres_changes binding below (table + chat_id filter) is what scopes
+    // the stream, not the topic string, so a distinct topic is harmless.
+    const topic = `messages:${uuid}:${++_chatChannelSeq}`;
+    const channel = sb.channel(topic)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${uuid}`,
       }, (payload) => onMessage(payload.new))

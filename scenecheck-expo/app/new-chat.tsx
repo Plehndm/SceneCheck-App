@@ -1,9 +1,9 @@
 // Start a new chat — pick one (DM) or more (group) people, then begin
 // the conversation. Friends surface first in the list.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
 import { SCCard } from '@/components/SCCard';
@@ -30,6 +30,30 @@ export default function NewChatScreen() {
   // catalogue but that doesn't translate to RLS-controlled
   // friendships).
   const { friends } = useFriends();
+
+  // Deep-link target: the Message buttons on profiles + person rows route here
+  // as `/new-chat?to=<id>`. When present we open (or create) the DM with that
+  // person directly — api.createChat DEDUPES, so this lands on the existing
+  // thread if you already DM them, and a fresh one otherwise. Without this the
+  // param was ignored and the screen just showed an empty picker.
+  const params = useLocalSearchParams<{ to?: string }>();
+  const toId = typeof params.to === 'string' && params.to ? params.to : undefined;
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!toId || autoStarted.current) return;
+    autoStarted.current = true;
+    setStarting(true);
+    api
+      .createChat([toId], 'dm')
+      .then(({ id }) => router.replace(`/chat/${id}` as never))
+      .catch((e) => {
+        showToast({
+          message: e instanceof Error ? `Couldn't start chat: ${e.message}` : "Couldn't start chat.",
+          kind: 'error',
+        });
+        setStarting(false);
+      });
+  }, [toId, showToast]);
 
   const ordered = useMemo<Account[]>(() => friends, [friends]);
   // Picked chips resolve against the friend list — the only source you can
@@ -69,6 +93,19 @@ export default function NewChatScreen() {
     picked.length === 0 ? 'PICK ONE OR MORE PEOPLE' :
     picked.length === 1 ? 'DIRECT MESSAGE' :
     `GROUP CHAT · ${picked.length} SELECTED`;
+
+  // While auto-opening a deep-linked DM (`?to=`), show a minimal opening state
+  // rather than flashing the friend picker before the redirect lands.
+  if (toId && starting) {
+    return (
+      <Screen scroll={false}>
+        <SCTopBar onBack={() => router.back()} title="New chat" subtitle="OPENING…" />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <SCText size={14} color={t.ink3}>Opening chat…</SCText>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll={false}>
