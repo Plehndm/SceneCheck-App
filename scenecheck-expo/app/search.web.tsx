@@ -15,7 +15,7 @@
 // the unfiltered hook calls; events come from the user's discovery
 // radius via useEvents).
 
-import { useMemo, useState, useEffect, type CSSProperties } from 'react';
+import { useMemo, useState, useEffect, useRef, type CSSProperties } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
@@ -80,11 +80,22 @@ export default function WebSearchScreen() {
   // Events: server returns the radius-cut set; we sub-filter by query
   // client-side (same pattern as the native search.tsx).
   const radiusM = Math.round(radiusMiles * MILES_TO_METERS);
-  const { events: allEvents, loading: eventsLoading } = useEvents({
+  const { events: allEvents, loading: eventsLoading, reload: reloadEvents } = useEvents({
     lat: coords?.latitude,
     lng: coords?.longitude,
     radiusM,
   });
+  // FR4.4 — re-fetch when the viewer's interests change so the "Recommended"
+  // labels in the results refresh immediately instead of only on reload.
+  const interestKey = useMemo(
+    () => meInterests.slice().sort().join('|'),
+    [meInterests],
+  );
+  const interestsHydrated = useRef(false);
+  useEffect(() => {
+    if (!interestsHydrated.current) { interestsHydrated.current = true; return; }
+    reloadEvents();
+  }, [interestKey, reloadEvents]);
   // Full discovery-range set matching the query (uncapped) — drives the true
   // Events tab-count and the dedicated Events section.
   const matchedEvents = useMemo(() => {

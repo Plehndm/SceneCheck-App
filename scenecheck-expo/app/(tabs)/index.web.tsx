@@ -22,7 +22,7 @@
 //   • Join taps go through the store's optimistic flow + api.subscribe
 //     ToEvent — same as native Home.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
@@ -72,11 +72,24 @@ export default function HomeWeb() {
   const { coords } = useLocation();
   const dateCityLabel = useDateCityLabel(coords, 'granted');
   const radiusM = Math.round(radius * MILES_TO_METERS);
-  const { events, loading } = useEvents({
+  const { events, loading, reload: reloadEvents } = useEvents({
     lat: coords?.latitude,
     lng: coords?.longitude,
     radiusM,
   });
+  // FR4.4 — when the viewer changes their subscribed interests, re-fetch the
+  // feed so the "Recommended" labels/colors (derived from the interest set)
+  // refresh immediately instead of only after a manual reload. Keyed on a
+  // stable serialization of the set so it fires once per real change.
+  const interestKey = useMemo(
+    () => Array.from(subscribedInterests).sort().join('|'),
+    [subscribedInterests],
+  );
+  const interestsHydrated = useRef(false);
+  useEffect(() => {
+    if (!interestsHydrated.current) { interestsHydrated.current = true; return; }
+    reloadEvents();
+  }, [interestKey, reloadEvents]);
   const { results: peopleResults, loading: peopleLoading } = useSearchPeople('');
   const peopleNearby = excludeSelf(peopleResults, meId).slice(0, 4);
   const online = useOnline() && !(tweaks?.offline ?? false);

@@ -9,7 +9,7 @@
 // the Home tab + Settings + Map agree on radius and the recommended
 // chip stays in sync with `subscribedInterests`.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { useTokens } from '@/theme/ThemeProvider';
@@ -46,11 +46,22 @@ export default function MapWeb() {
 
   const { coords, status, isFallback, request } = useLocation();
   const radiusM = Math.round(radius * MILES_TO_METERS);
-  const { events } = useEvents({
+  const { events, reload: reloadEvents } = useEvents({
     lat: coords?.latitude,
     lng: coords?.longitude,
     radiusM,
   });
+  // FR4.4 — re-fetch the feed when the viewer's subscribed interests change so
+  // the pin colors + "Recommended" buckets refresh immediately (not on reload).
+  const interestKey = useMemo(
+    () => Array.from(subscribedInterests).sort().join('|'),
+    [subscribedInterests],
+  );
+  const interestsHydrated = useRef(false);
+  useEffect(() => {
+    if (!interestsHydrated.current) { interestsHydrated.current = true; return; }
+    reloadEvents();
+  }, [interestKey, reloadEvents]);
   const online = useOnline() && !(tweaks?.offline ?? false);
 
   const effectiveJoined = useMemo(() => {
