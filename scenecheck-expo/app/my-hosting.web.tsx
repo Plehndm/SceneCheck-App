@@ -16,7 +16,11 @@ export default function MyHostingWeb() {
   const t = useTokens();
   const meId = useStore(s => s.me.id);
   const { events, loading } = useHostedEvents(meId);
-  const isJoined = useStore(s => s.isJoined);
+  // Subscribe to the joined + pending-leave SETS (not the stable `isJoined`
+  // fn reference) so any JOIN button re-renders on join/leave.
+  const joinedSet = useStore(s => s.joined);
+  const pendingLeave = useStore(s => s.pendingLeave);
+  const isJoined = (eid: string) => joinedSet.has(eid) && !pendingLeave.has(eid);
   // Routed through the shared hook so optimistic-commit + waitlist
   // toast + UNDO grace match every other web caller.
   const onJoin = useJoinEventHandler();

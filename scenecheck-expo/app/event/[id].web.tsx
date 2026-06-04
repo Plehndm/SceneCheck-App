@@ -49,7 +49,13 @@ export default function EventDetailWeb() {
   const { profile: hostProfile } = useProfile(event?.hostId ?? undefined);
   const { ratings } = useRatings(event?.hostId ?? undefined);
   const me = useStore(s => s.me);
-  const joined = useStore(s => (id ? s.isJoined(id) : false));
+  // Subscribe to the joined + pending-leave SETS (not the stable `isJoined`
+  // fn reference) so the JOIN/JOINED button re-renders on join AND on leave;
+  // a row mid-undo-grace (in pendingLeave) reads as not-joined so the button
+  // flips back to JOIN immediately instead of staying stuck on JOINED.
+  const joinedSet = useStore(s => s.joined);
+  const pendingLeave = useStore(s => s.pendingLeave);
+  const joined = id ? joinedSet.has(id) && !pendingLeave.has(id) : false;
   const showToast = useStore(s => s.showToast);
   // FR7.2 — used by the post-join calendar side effect below. Only
   // Google is wired in this iteration; other providers stay no-op.

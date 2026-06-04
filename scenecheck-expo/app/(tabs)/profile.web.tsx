@@ -66,7 +66,12 @@ export default function ProfileWeb() {
   const removeDraft = useStore(s => s.removeDraft);
   const showConfirm = useStore(s => s.showConfirm);
   const showToast = useStore(s => s.showToast);
-  const isJoined = useStore(s => s.isJoined);
+  // Subscribe to the joined + pending-leave SETS (not the stable `isJoined`
+  // function reference, which never changes identity) so the JOIN/JOINED
+  // buttons in the tabs below re-render the moment the viewer joins or leaves.
+  const joinedSet = useStore(s => s.joined);
+  const pendingLeave = useStore(s => s.pendingLeave);
+  const isJoined = (eid: string) => joinedSet.has(eid) && !pendingLeave.has(eid);
   // Routed through the shared hook so optimistic-commit + waitlist
   // toast + UNDO grace match every other web caller.
   const onJoin = useJoinEventHandler();

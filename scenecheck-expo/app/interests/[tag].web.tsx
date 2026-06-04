@@ -33,7 +33,12 @@ export default function InterestDetailWeb() {
   const subscribed = useStore(s => s.subscribedInterests);
   const toggleStore = useStore(s => s.toggleInterestSub);
   const showToast = useStore(s => s.showToast);
-  const isJoined = useStore(s => s.isJoined);
+  // Subscribe to the joined + pending-leave SETS (not the stable `isJoined`
+  // fn reference, which never changes) so the JOIN buttons re-render the
+  // moment the viewer joins or leaves an event.
+  const joinedSet = useStore(s => s.joined);
+  const pendingLeave = useStore(s => s.pendingLeave);
+  const isJoined = (eid: string) => joinedSet.has(eid) && !pendingLeave.has(eid);
   // Routed through the shared hook so optimistic-commit + waitlist
   // toast + UNDO grace match every other web caller.
   const onJoin = useJoinEventHandler();

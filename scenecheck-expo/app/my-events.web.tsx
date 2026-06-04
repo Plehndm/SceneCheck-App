@@ -15,7 +15,10 @@ export default function MyEventsWeb() {
   const t = useTokens();
   const { events, loading } = useJoinedEvents();
   const pendingLeave = useStore(s => s.pendingLeave);
-  const isJoined = useStore(s => s.isJoined);
+  // Subscribe to the joined SET (not the stable `isJoined` fn reference) so
+  // the cards re-render on join/leave; a pending-leave row reads as not-joined.
+  const joinedSet = useStore(s => s.joined);
+  const isJoined = (eid: string) => joinedSet.has(eid) && !pendingLeave.has(eid);
   // Routed through the shared hook so optimistic-commit + waitlist
   // toast + UNDO grace match every other web caller.
   const onJoin = useJoinEventHandler();
