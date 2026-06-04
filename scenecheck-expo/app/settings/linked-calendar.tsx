@@ -1,17 +1,20 @@
 // Settings → Linked calendar. FR7.2 — Google Calendar OAuth connect /
-// disconnect, plus a "not configured" affordance for builds without OAuth
-// credentials wired. The other calendar providers (Apple, Outlook) stay
-// here as inert options until Phase 4.x.
+// disconnect, plus a graceful "not set up yet" affordance for builds without
+// OAuth credentials wired. Apple / Outlook stay as inert single-select options
+// until a later phase.
 //
-// State:
-// - The Google connection is owned by lib/google-calendar.ts. We just call
-//   isConfigured() to know whether the connect button should be live, and
-//   connect()/disconnect() to flip the connection. Local UI state caches
-//   the "connected" flag so the row re-renders immediately.
-// - The store's `linkedCalendar` slice still drives the radio for Apple /
-//   Outlook (legacy single-select). When the user connects Google we also
-//   set the store value to 'google' so create-event / event-detail (which
-//   read from the store) know to fire the calendar side-effects.
+// CRASH FIX (web + native): `expo-auth-session`'s `Google.useAuthRequest(...)`
+// has to be called at render, and it errors when no client id is configured
+// for the current platform — which crashed this screen on BOTH web and native
+// whenever `EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` is unset (the "calendar link
+// button gives an error when pressed" report — pressing the row navigates here
+// and the screen blew up on mount). We now only mount the OAuth-driving row
+// when `googleCalendar.isConfigured()` is true; otherwise a sibling row renders
+// the same affordance and surfaces a friendly "sync isn't set up yet" toast on
+// press instead of crashing. `isConfigured()` is derived from a build-time env
+// var, so the branch is stable for the session (no conditional-hook hazard).
+// Mock mode reports configured=true, so demos/tests keep the connect row (its
+// OAuth flow is short-circuited in mock mode anyway).
 
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -44,121 +47,11 @@ export default function LinkedCalendarScreen() {
   const t = useTokens();
   const value = useStore(s => s.linkedCalendar);
   const setValue = useStore(s => s.setLinkedCalendar);
-  const showToast = useStore(s => s.showToast);
 
-  // OAuth credentials may not be wired in dev builds — the connect button
-  // surfaces a different label in that case so the user knows to update
-  // .env / AGENTS.md instead of tapping a dead button.
+  // Whether real OAuth credentials are wired for this build. When false we
+  // skip the `useAuthRequest` hook entirely (it would throw on render) and
+  // render the graceful "not set up yet" row instead.
   const configured = googleCalendar.isConfigured();
-  // Google connection state is owned by the lib. We start optimistic from
-  // the store (set to 'google' iff the user previously connected) and let
-  // a refresh effect re-sync after connect/disconnect.
-  const [googleConnected, setGoogleConnected] = useState(value === 'google');
-
-  // Keep the local flag in sync with the store on mount + when the route
-  // refocuses; the OAuth web flow returns to the app and the lib stamps
-  // the store, so this catches that.
-  useEffect(() => { setGoogleConnected(value === 'google'); }, [value]);
-
-  // expo-auth-session's Google provider must be driven from a component —
-  // the hook returns `[request, response, promptAsync]`. `request` is null
-  // until the env-keyed config resolves (so the connect button stays
-  // pressable but `promptAsync()` is gated below). On a successful response
-  // the `useEffect` downstream extracts the access token and hands it to
-  // `googleCalendar.completeConnect`. Mock mode short-circuits this entirely
-  // (`googleCalendar.connect()` returns a fake success without ever calling
-  // promptAsync), so the hook config not being available in mock builds is
-  // not a regression.
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    googleCalendar.getAuthRequestConfig(),
-  );
-
-  useEffect(() => {
-    if (!response) return;
-    if (response.type !== 'success') return;
-    const auth = response.authentication;
-    if (!auth?.accessToken) {
-      showToast({ message: "Google didn't return an access token.", kind: 'error' });
-      return;
-    }
-    // Implicit-flow tokens don't carry a refresh token, so completeConnect
-    // is called with refresh_token=null. `insertEvent` handles the expired-
-    // access-token case by throwing a 'reconnect' error, which the
-    // event-detail / create-event call sites surface as a side-effect toast
-    // ("Joined, but couldn't add to your Calendar.") without blocking the
-    // primary flow. The user reconnects from this same screen.
-    const expiresIn = typeof auth.expiresIn === 'number' ? auth.expiresIn : 3600;
-    googleCalendar
-      .completeConnect(auth.accessToken, null, expiresIn)
-      .then(() => {
-        setValue('google');
-        setGoogleConnected(true);
-        showToast({ message: 'Google Calendar connected.', kind: 'success' });
-      })
-      .catch((e) => {
-        showToast({
-          message: e instanceof Error
-            ? `Couldn't finish connecting: ${e.message}`
-            : "Couldn't finish connecting.",
-          kind: 'error',
-        });
-      });
-    // Only react to a new `response`; everything else here is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [response]);
-
-  const handleConnect = async () => {
-    if (!configured) {
-      showToast({
-        message: 'Google OAuth isn\'t configured for this build. See scenecheck-expo/AGENTS.md.',
-        kind: 'info',
-        duration: 6000,
-      });
-      return;
-    }
-    // Mock mode preserves the pre-hook behaviour: `googleCalendar.connect()`
-    // returns success immediately without touching the OAuth flow.
-    if (api.isMock()) {
-      try {
-        await googleCalendar.connect();
-        setValue('google');
-        setGoogleConnected(true);
-        showToast({ message: 'Google Calendar connected.', kind: 'success' });
-      } catch (e) {
-        showToast({
-          message: e instanceof Error ? `Couldn't connect: ${e.message}` : "Couldn't connect.",
-          kind: 'error',
-        });
-      }
-      return;
-    }
-    if (!request) {
-      showToast({ message: 'OAuth not ready yet — try again.', kind: 'info' });
-      return;
-    }
-    // promptAsync resolves once the user finishes (or cancels) the consent
-    // flow; the `useEffect` above completes the connection on success.
-    promptAsync().catch((e) => {
-      showToast({
-        message: e instanceof Error ? `Couldn't connect: ${e.message}` : "Couldn't connect.",
-        kind: 'error',
-      });
-    });
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await googleCalendar.disconnect();
-      setValue(null);
-      setGoogleConnected(false);
-      showToast({ message: 'Google Calendar disconnected.', kind: 'info' });
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? `Couldn't disconnect: ${e.message}` : "Couldn't disconnect.",
-        kind: 'error',
-      });
-    }
-  };
 
   return (
     <Screen>
@@ -171,57 +64,10 @@ export default function LinkedCalendarScreen() {
         </SCText>
       </View>
 
-      {/* Google Calendar — OAuth-backed connect/disconnect row */}
       <View style={{ paddingHorizontal: 14, gap: 8 }}>
-        <SCCard style={{
-          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
-          borderWidth: googleConnected ? 1.5 : 1,
-          borderColor: googleConnected ? t.primary : t.line,
-        }}>
-          <View style={{
-            width: 34, height: 34, borderRadius: RADIUS.md, backgroundColor: t.subtle,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <SCIcon name="calendar" size={16} color={googleConnected ? t.primary : t.ink2} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <SCText size={14} weight={googleConnected ? '600' : '500'}>Google Calendar</SCText>
-            <SCText size={11} color={t.ink3} style={{ marginTop: 1 }}>
-              {googleConnected ? 'Connected — events will sync.' : 'Sync events to your Google account'}
-            </SCText>
-          </View>
-          {googleConnected ? (
-            <Pressable
-              onPress={handleDisconnect}
-              accessibilityLabel="Disconnect Google Calendar"
-              style={({ pressed }) => [{
-                paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
-                borderWidth: 1, borderColor: t.danger + '59', backgroundColor: t.card,
-              }, pressed && { opacity: 0.85 }]}
-            >
-              <SCText variant="mono" size={10} weight="700" color={t.danger}>
-                DISCONNECT
-              </SCText>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleConnect}
-              accessibilityLabel="Connect Google Calendar"
-              style={({ pressed }) => [{
-                paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
-                backgroundColor: configured ? t.primary : t.subtle,
-                borderWidth: 1, borderColor: configured ? t.primary : t.line,
-              }, pressed && { opacity: 0.85 }]}
-            >
-              <SCText
-                variant="mono" size={10} weight="700"
-                color={configured ? t.primaryInk : t.ink2}
-              >
-                {configured ? 'CONNECT' : 'OAUTH NOT CONFIGURED'}
-              </SCText>
-            </Pressable>
-          )}
-        </SCCard>
+        {/* Google Calendar. Only the configured variant mounts the OAuth hook —
+            the not-configured variant avoids the crash and toasts instead. */}
+        {configured ? <GoogleConnectRow /> : <GoogleNotConfiguredRow />}
 
         {/* Other providers stay here as inert (legacy single-select). Picking
             one still updates the store so feature flags downstream can branch
@@ -263,7 +109,7 @@ export default function LinkedCalendarScreen() {
           );
         })}
         <Pressable
-          onPress={() => { setValue(null); setGoogleConnected(false); }}
+          onPress={() => setValue(null)}
           style={({ pressed }) => [{
             padding: 12, marginTop: 4,
             borderRadius: RADIUS.md, borderWidth: 1, borderColor: t.line,
@@ -274,5 +120,187 @@ export default function LinkedCalendarScreen() {
         </Pressable>
       </View>
     </Screen>
+  );
+}
+
+// ── Google rows ──────────────────────────────────────────────────────────────
+
+// Rendered only when `googleCalendar.isConfigured()` — this is the ONLY place
+// the `expo-auth-session` hook is called, so an unconfigured build never hits
+// the render-time crash.
+function GoogleConnectRow() {
+  const t = useTokens();
+  const value = useStore(s => s.linkedCalendar);
+  const setValue = useStore(s => s.setLinkedCalendar);
+  const showToast = useStore(s => s.showToast);
+
+  // Google connection state is owned by the lib. We start optimistic from the
+  // store (set to 'google' iff the user previously connected) and re-sync on
+  // connect/disconnect + when the route refocuses after the OAuth round-trip.
+  const [googleConnected, setGoogleConnected] = useState(value === 'google');
+  useEffect(() => { setGoogleConnected(value === 'google'); }, [value]);
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    googleCalendar.getAuthRequestConfig(),
+  );
+
+  useEffect(() => {
+    if (!response) return;
+    if (response.type !== 'success') return;
+    const auth = response.authentication;
+    if (!auth?.accessToken) {
+      showToast({ message: "Google didn't return an access token.", kind: 'error' });
+      return;
+    }
+    const expiresIn = typeof auth.expiresIn === 'number' ? auth.expiresIn : 3600;
+    googleCalendar
+      .completeConnect(auth.accessToken, null, expiresIn)
+      .then(() => {
+        setValue('google');
+        setGoogleConnected(true);
+        showToast({ message: 'Google Calendar connected.', kind: 'success' });
+      })
+      .catch((e) => {
+        showToast({
+          message: e instanceof Error
+            ? `Couldn't finish connecting: ${e.message}`
+            : "Couldn't finish connecting.",
+          kind: 'error',
+        });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [response]);
+
+  const handleConnect = async () => {
+    // Mock mode preserves the pre-hook behaviour: `googleCalendar.connect()`
+    // returns success immediately without touching the OAuth flow.
+    if (api.isMock()) {
+      try {
+        await googleCalendar.connect();
+        setValue('google');
+        setGoogleConnected(true);
+        showToast({ message: 'Google Calendar connected.', kind: 'success' });
+      } catch (e) {
+        showToast({
+          message: e instanceof Error ? `Couldn't connect: ${e.message}` : "Couldn't connect.",
+          kind: 'error',
+        });
+      }
+      return;
+    }
+    if (!request) {
+      showToast({ message: 'OAuth not ready yet — try again.', kind: 'info' });
+      return;
+    }
+    promptAsync().catch((e) => {
+      showToast({
+        message: e instanceof Error ? `Couldn't connect: ${e.message}` : "Couldn't connect.",
+        kind: 'error',
+      });
+    });
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await googleCalendar.disconnect();
+      setValue(null);
+      setGoogleConnected(false);
+      showToast({ message: 'Google Calendar disconnected.', kind: 'info' });
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? `Couldn't disconnect: ${e.message}` : "Couldn't disconnect.",
+        kind: 'error',
+      });
+    }
+  };
+
+  return (
+    <SCCard style={{
+      padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+      borderWidth: googleConnected ? 1.5 : 1,
+      borderColor: googleConnected ? t.primary : t.line,
+    }}>
+      <View style={{
+        width: 34, height: 34, borderRadius: RADIUS.md, backgroundColor: t.subtle,
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <SCIcon name="calendar" size={16} color={googleConnected ? t.primary : t.ink2} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <SCText size={14} weight={googleConnected ? '600' : '500'}>Google Calendar</SCText>
+        <SCText size={11} color={t.ink3} style={{ marginTop: 1 }}>
+          {googleConnected ? 'Connected — events will sync.' : 'Sync events to your Google account'}
+        </SCText>
+      </View>
+      {googleConnected ? (
+        <Pressable
+          onPress={handleDisconnect}
+          accessibilityLabel="Disconnect Google Calendar"
+          style={({ pressed }) => [{
+            paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
+            borderWidth: 1, borderColor: t.danger + '59', backgroundColor: t.card,
+          }, pressed && { opacity: 0.85 }]}
+        >
+          <SCText variant="mono" size={10} weight="700" color={t.danger}>
+            DISCONNECT
+          </SCText>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={handleConnect}
+          accessibilityLabel="Connect Google Calendar"
+          style={({ pressed }) => [{
+            paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
+            backgroundColor: t.primary, borderWidth: 1, borderColor: t.primary,
+          }, pressed && { opacity: 0.85 }]}
+        >
+          <SCText variant="mono" size={10} weight="700" color={t.primaryInk}>
+            CONNECT
+          </SCText>
+        </Pressable>
+      )}
+    </SCCard>
+  );
+}
+
+// Rendered when OAuth isn't configured. No `useAuthRequest` here, so the screen
+// can't crash; pressing the row explains that sync isn't ready yet.
+function GoogleNotConfiguredRow() {
+  const t = useTokens();
+  const showToast = useStore(s => s.showToast);
+  const notReady = () =>
+    showToast({
+      message: "Google Calendar sync isn't fully set up yet — it's coming soon.",
+      kind: 'info',
+      duration: 4200,
+    });
+  return (
+    <Pressable onPress={notReady} style={({ pressed }) => [pressed && { opacity: 0.85 }]}>
+      <SCCard style={{
+        padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+        borderWidth: 1, borderColor: t.line,
+      }}>
+        <View style={{
+          width: 34, height: 34, borderRadius: RADIUS.md, backgroundColor: t.subtle,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <SCIcon name="calendar" size={16} color={t.ink2} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <SCText size={14} weight="500">Google Calendar</SCText>
+          <SCText size={11} color={t.ink3} style={{ marginTop: 1 }}>
+            Sync events to your Google account
+          </SCText>
+        </View>
+        <View style={{
+          paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
+          borderWidth: 1, borderColor: t.line, backgroundColor: t.subtle,
+        }}>
+          <SCText variant="mono" size={10} weight="700" color={t.ink2}>
+            COMING SOON
+          </SCText>
+        </View>
+      </SCCard>
+    </Pressable>
   );
 }
