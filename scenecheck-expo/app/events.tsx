@@ -3,7 +3,7 @@
 // taps through to /event/[id].
 
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
@@ -164,12 +164,7 @@ export default function EventsListScreen() {
                   borderRadius: RADIUS.lg,
                 }, pressed && { opacity: 0.9 }]}
               >
-                <View style={{
-                  width: 44, borderRadius: RADIUS.md, backgroundColor: accent,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <SCIcon name="pin" size={20} color="white" />
-                </View>
+                <EventChipIcon event={e} accent={accent} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
@@ -233,5 +228,38 @@ export default function EventsListScreen() {
         </View>
       )}
     </Screen>
+  );
+}
+
+// Event-chip leading icon: the event's cover image when present (scraped events
+// carry one from the source CDN), otherwise the colored category pin. Local
+// failed-state so a dead/expired image URL falls back to the pin rather than a
+// broken box.
+function EventChipIcon({ event, accent }: { event: SCEvent; accent: string }) {
+  const t = useTokens();
+  const [failed, setFailed] = useState(false);
+  const hasImg = !!event.image && !failed;
+  return (
+    <View
+      style={{
+        width: 44,
+        borderRadius: RADIUS.md,
+        overflow: 'hidden',
+        backgroundColor: hasImg ? t.subtle : accent,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {hasImg ? (
+        <Image
+          source={{ uri: event.image! }}
+          onError={() => setFailed(true)}
+          resizeMode="cover"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+      ) : (
+        <SCIcon name="pin" size={20} color="white" />
+      )}
+    </View>
   );
 }
