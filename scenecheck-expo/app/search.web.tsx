@@ -129,9 +129,14 @@ export default function WebSearchScreen() {
     return (lowered ? orgsRaw : orgsRaw.slice(0, SECTION_LIMIT)).slice(0, SECTION_LIMIT);
   }, [orgsRaw, lowered]);
 
-  const interests = useMemo(() => {
-    return (interestsRaw ?? []).slice(0, SECTION_LIMIT * 2);
-  }, [interestsRaw]);
+  const allInterests = useMemo(() => interestsRaw ?? [], [interestsRaw]);
+  // The dedicated Interests tab shows the FULL catalog (the user is there to
+  // browse/pick a tag); the combined 'all' overview shows a capped preview so
+  // it doesn't bury events/people/orgs.
+  const interests = useMemo(
+    () => (tab === 'interests' ? allInterests : allInterests.slice(0, SECTION_LIMIT * 2)),
+    [allInterests, tab],
+  );
 
   const eventGridStyle: CSSProperties = {
     display: 'grid',
@@ -267,11 +272,11 @@ export default function WebSearchScreen() {
             }}
           >
             {([
-              { k: 'all', label: 'All', n: matchedEvents.length + people.length + orgs.length + interests.length },
+              { k: 'all', label: 'All', n: matchedEvents.length + people.length + orgs.length + allInterests.length },
               { k: 'events', label: 'Events', n: matchedEvents.length },
               { k: 'people', label: 'People', n: people.length },
               { k: 'orgs', label: 'Organizations', n: orgs.length },
-              { k: 'interests', label: 'Interests', n: interests.length },
+              { k: 'interests', label: 'Interests', n: allInterests.length },
             ] as { k: Tab; label: string; n: number }[]).map(c => {
               const on = tab === c.k;
               return (

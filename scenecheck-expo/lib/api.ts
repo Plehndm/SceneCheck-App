@@ -1003,7 +1003,11 @@ export const api = {
     const filtered = query.trim().length > 0
       ? q.ilike('name', `%${query.trim()}%`)
       : q;
-    const { data, error } = await filtered.order('subscriber_count', { ascending: false }).limit(50);
+    // 500 covers the full auto-tagged catalog (the scraper mints a new interest
+    // per unmatched derived tag, so the table grows well past the old 50 cap —
+    // which truncated the Discover interests filter). Still bounded so a
+    // runaway catalog can't return an unbounded payload.
+    const { data, error } = await filtered.order('subscriber_count', { ascending: false }).limit(500);
     if (error) throw error;
     return (data ?? []).map(row => ({
       tag: row.name as string,
