@@ -111,6 +111,19 @@ export default function HomeWeb() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Auto-scroll the right list to the event highlighted on the map (pin hover
+  // / selection) so the user can see which card it is. Skipped while the cursor
+  // is already over the list — otherwise hovering a card would yank the list
+  // out from under the pointer.
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const listHovering = useRef(false);
+  useEffect(() => {
+    if (!hoveredId || listHovering.current) return;
+    // `center` keeps the whole selected card visible (mid-list) rather than
+    // pinning it to the top edge under the sticky header.
+    cardRefs.current[hoveredId]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [hoveredId]);
+
   const isPresetDist = (DISTANCES as readonly number[]).includes(radius);
   const distLabel = !isPresetDist
     ? `Custom · ${radius} mi`
@@ -289,6 +302,8 @@ export default function HomeWeb() {
 
       {/* ───────── RIGHT LIST COLUMN ───────── */}
       <div
+        onMouseEnter={() => { listHovering.current = true; }}
+        onMouseLeave={() => { listHovering.current = false; }}
         style={{
           width: RIGHT_COL_W,
           flexShrink: 0,
@@ -411,15 +426,16 @@ export default function HomeWeb() {
             </div>
           ) : (
             listEvents.map(e => (
-              <WebEventListCard
-                key={e.id}
-                event={e}
-                joined={effectiveJoined.has(e.id)}
-                active={hoveredId === e.id}
-                onOpen={goEvent}
-                onJoin={onJoin}
-                onHover={setHoveredId}
-              />
+              <div key={e.id} ref={(el) => { cardRefs.current[e.id] = el; }}>
+                <WebEventListCard
+                  event={e}
+                  joined={effectiveJoined.has(e.id)}
+                  active={hoveredId === e.id}
+                  onOpen={goEvent}
+                  onJoin={onJoin}
+                  onHover={setHoveredId}
+                />
+              </div>
             ))
           )}
         </div>
