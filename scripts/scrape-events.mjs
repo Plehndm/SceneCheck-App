@@ -642,9 +642,11 @@ async function main() {
           : (e.price_min === e.price_max)
             ? `$${e.price_min}`
             : `$${e.price_min}-$${e.price_max}`;
-      console.log(`• ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name} | ${p}`);
+      const img = e.image_url ? 'IMG' : ' — ';
+      console.log(`• [${img}] ${e.title} | ${e.start_at} | ${e.location.lat},${e.location.lng} | ${e.location_name} | ${p}`);
     }
-    console.log(`DRY_RUN: ${events.length} event(s) would be ingested (nothing POSTed).`);
+    const withImg = events.filter((e) => e.image_url).length;
+    console.log(`DRY_RUN: ${events.length} event(s) would be ingested (${withImg} with a cover image; nothing POSTed).`);
     return;
   }
 
