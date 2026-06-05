@@ -16,7 +16,7 @@
 // the call site (not in the hook) because the hook is generic across
 // list pages; calendar insert is overlay-specific UX.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTokens } from '@/theme/ThemeProvider';
 import { FONT } from '@/theme/tokens';
@@ -40,11 +40,13 @@ import { WebIcon, type WebIconName } from '@/web/WebIcon';
 import { WebStars } from '@/web/WebStars';
 import { WebJoinButton } from '@/web/WebJoinButton';
 import { wKindMeta } from '@/web/kind';
+import { EditEventSheet } from '@/components/EditEventSheet';
 
 export default function EventDetailWeb() {
   const t = useTokens();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { event, loading } = useEvent(id);
+  const { event, loading, reload } = useEvent(id);
+  const [editOpen, setEditOpen] = useState(false);
   const { attendees } = useAttendees(id);
   const { profile: hostProfile } = useProfile(event?.hostId ?? undefined);
   const { ratings } = useRatings(event?.hostId ?? undefined);
@@ -127,9 +129,10 @@ export default function EventDetailWeb() {
   // a waitlist in that case. Otherwise full = goingCount >= cap.
   const capUnknown = event.cap <= 0;
   const isFull = !capUnknown && goingCount >= event.cap;
-  const joinLabel = event.kind === 'yours'
-    ? 'MANAGE EVENT'
-    : (isFull ? 'JOIN WAITLIST' : 'JOIN EVENT');
+  // Host vs attendee: the creator manages/edits their own event (a separate,
+  // creator-only affordance) and never sees a JOIN button; everyone else joins.
+  const isHost = event.kind === 'yours' || event.hostId === me.id;
+  const joinLabel = isFull ? 'JOIN WAITLIST' : 'JOIN EVENT';
 
   const handleJoinToggle = async () => {
     if (!id || !event) return;
@@ -289,13 +292,31 @@ export default function EventDetailWeb() {
             </button>
           )}
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-            <WebJoinButton
-              joined={joined}
-              onToggle={handleJoinToggle}
-              size="lg"
-              full
-              label={joinLabel}
-            />
+            {isHost ? (
+              // Creator-only: opens the edit modal. Separate from (and instead
+              // of) the JOIN button — you don't join your own event.
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                style={{
+                  flex: 1, height: 52, borderRadius: 14, border: 'none', cursor: 'pointer',
+                  background: t.ink, color: t.card,
+                  fontFamily: FONT.mono, fontSize: 14, fontWeight: 600,
+                  letterSpacing: '0.12em', textTransform: 'uppercase',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                <WebIcon name="edit" size={17} /> Edit event
+              </button>
+            ) : (
+              <WebJoinButton
+                joined={joined}
+                onToggle={handleJoinToggle}
+                size="lg"
+                full
+                label={joinLabel}
+              />
+            )}
             <WebTip title="Group chat" side="top">
               <button
                 type="button"
@@ -550,6 +571,14 @@ export default function EventDetailWeb() {
           )}
         </div>
       </div>
+
+      {/* Host-only edit modal (position: fixed; overlays the slide-over). */}
+      <EditEventSheet
+        visible={editOpen}
+        event={event}
+        onClose={() => setEditOpen(false)}
+        onSaved={reload}
+      />
     </WebSlideOver>
   );
 }

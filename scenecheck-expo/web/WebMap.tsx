@@ -800,13 +800,30 @@ export function WebMapHoverCard({ event, joined, onJoin, onOpen }: WebMapHoverCa
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <WebJoinButton
-            joined={joined}
-            onToggle={(e) => { e.stopPropagation(); onJoin(); }}
-            size="md"
-            full
-            label={event.kind === 'yours' ? 'MANAGE' : 'JOIN EVENT'}
-          />
+          {event.kind === 'yours' ? (
+            // Your own event: MANAGE opens the detail (where the host EDIT lives)
+            // — it must NOT run the join handler against your own event.
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              style={{
+                flex: 1, height: 42, borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: t.ink, color: t.card,
+                fontFamily: FONT.mono, fontSize: 12, fontWeight: 600,
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+              }}
+            >
+              Manage event
+            </button>
+          ) : (
+            <WebJoinButton
+              joined={joined}
+              onToggle={(e) => { e.stopPropagation(); onJoin(); }}
+              size="md"
+              full
+              label="JOIN EVENT"
+            />
+          )}
           <WebTip title="Open event" desc="Full details, attendees & chat" side="top">
             <button
               onClick={(e) => { e.stopPropagation(); onOpen(); }}
