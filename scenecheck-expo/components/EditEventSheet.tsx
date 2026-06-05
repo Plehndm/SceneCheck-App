@@ -13,7 +13,7 @@
 // override with the freshly-fetched DB row.
 
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { SCText } from './SCText';
 import { SCIcon } from './SCIcon';
 import { useTokens } from '@/theme/ThemeProvider';
@@ -31,6 +31,7 @@ interface Props {
 
 export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
   const t = useTokens();
+  const { height: windowH } = useWindowDimensions();
   const applyEventOverride = useStore(s => s.applyEventOverride);
   const showToast = useStore(s => s.showToast);
 
@@ -160,6 +161,16 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
             </SCText>
           </View>
 
+          {/* Scrollable field area, height-clamped so the sheet never grows
+              past the screen — without this the stacked fields (esp. the
+              multi-line Description) pushed the capacity stepper + price rows
+              into each other on shorter devices. Header + action buttons stay
+              pinned outside the scroll. */}
+          <ScrollView
+            style={{ maxHeight: windowH * 0.52 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           <FormField label="Title">
             <TextInput
               value={title}
@@ -296,8 +307,9 @@ export function EditEventSheet({ visible, event, onClose, onSaved }: Props) {
               </View>
             )}
           </FormField>
+          </ScrollView>
 
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
             <Pressable
               onPress={onClose}
               style={({ pressed }) => [{
