@@ -56,7 +56,7 @@ function makeEmptyForm(meInterests: readonly string[]): DraftForm {
     cap: 12,
     interests: meInterests.length > 0 ? [...meInterests] : ['biking'],
     visibility: 'public',
-    minSubs: 3,
+    minSubs: 1,
     addToCalendar: true,
     autoGroupChat: true,
     priceMode: 'none',
@@ -1244,32 +1244,6 @@ function TagsLimitsStep({
         </div>
       </Field>
 
-      <Field
-        label="Publish gate (min. subscribers)"
-        hint="FR5.4 — your event stays hidden from public search until this many people have joined."
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <input
-            type="number"
-            min={0}
-            max={Math.max(1, form.cap)}
-            value={form.minSubs}
-            onChange={(e) =>
-              onChange({
-                minSubs: Math.max(
-                  0,
-                  Math.min(form.cap, parseInt(e.target.value || '0', 10) || 0),
-                ),
-              })
-            }
-            style={{ ...inputStyle(t), width: 96, textAlign: 'center' }}
-          />
-          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: t.ink3 }}>
-            of {form.cap} spots
-          </span>
-        </div>
-      </Field>
-
       <WebToggleRow
         label="Add to my calendar"
         sub="Sync to your linked Google Calendar after publish."
@@ -1362,10 +1336,6 @@ function ReviewStep({
           {
             label: 'Visibility',
             value: form.visibility === 'public' ? 'Public' : 'Private',
-          },
-          {
-            label: 'Publish gate',
-            value: `${form.minSubs} of ${form.cap} subscribers`,
           },
           {
             label: 'Add to calendar',

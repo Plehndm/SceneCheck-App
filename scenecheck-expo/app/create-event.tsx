@@ -8,7 +8,6 @@ import { Pressable, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { SCText } from '@/components/SCText';
-import { SCCard } from '@/components/SCCard';
 import { SCTag } from '@/components/SCTag';
 import { SCIcon } from '@/components/SCIcon';
 import { SCTopBar } from '@/components/SCTopBar';
@@ -47,7 +46,7 @@ function makeEmptyForm(meInterests: readonly string[]): DraftForm {
       ? [...meInterests]
       : [...FALLBACK_INTERESTS],
     visibility: 'public',
-    minSubs: 3,
+    minSubs: 1,
     addToCalendar: true,
     autoGroupChat: true,
     priceMode: 'none',
@@ -563,13 +562,6 @@ export default function CreateEventScreen() {
             </View>
           </Pressable>
         </Field>
-
-        <SCCard style={{ padding: 12 }}>
-          <SCText variant="mono" size={11} color={t.ink3}>
-            Once {Math.max(1, Math.ceil(form.cap / 5))} subscribers join, this event becomes publicly
-            visible on the map. Until then, only you and people you share it with see it.
-          </SCText>
-        </SCCard>
       </View>
 
       {/* Bottom CTA */}
