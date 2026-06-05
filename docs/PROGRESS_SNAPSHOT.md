@@ -117,6 +117,7 @@ _Last updated: 2026-05-18 (commit 325bbd4)_
 | 2026-06-02 | **Map live-status chip, profile→discover deep-link, floating web onboarding, David/Maya event date shift (migration 00046) + a stale Data API finding.** Web-only UX: the map LIVE/OFFLINE chip (`web/useOnline.ts`) now reflects **real** connection health — `navigator.onLine` *plus* a Supabase Realtime heartbeat channel (`SUBSCRIBED` = live) — instead of the browser flag alone (which stays `true` on a no-internet LAN); the profile **"Add interests"** chip deep-links to `/search?tab=interests` (Discover's Interests tab); and the FR1.3 onboarding picker gets a web variant (`app/onboarding/interests.web.tsx`) presented as a **floating dialog over a blurred, inert preview of the explore page** (native unchanged). Hosted data: migration **`00046`** shifts Maya's + the davidplehn07@gmail.com account's events one week out so they re-enter `rank_events_query`'s window — applied + **verified on the primary** (Morning Ride → 2026-06-09 published; David's "IN4MATX 43 Study Session" → 2026-06-09, still **draft**). ⚠️ While verifying, found the hosted **Data API is serving stale reads** (9 events frozen at May dates vs the primary's 222) — almost certainly a read replica with stalled replication, which is *also* why events fell off the map; the shift won't surface in the app until that infra issue is resolved. `tsc` clean; jest 423/426 (3 pre-existing stale-fixture failures; the web surfaces are outside Jest). See §76. |
 | 2026-06-04 | **Web + mobile correctness sweep (deployed-build bug fixes).** A run of fixes found testing the live build. **JOIN buttons:** pages reading `useStore(s => s.isJoined)` subscribed to the stable function ref and never re-rendered on join/leave — `profile`/`my-events`/`my-hosting`/`interests/[tag]`/event-detail web now subscribe to the `joined`+`pendingLeave` SETS; event-detail also keys the check on the resolved `event.id` (not the raw URL param) so it works when opened from an activity deep link (`/event/<UUID>` vs the mock-id the joined set uses). **Chat:** `new-chat` honors `?to=` (open-or-create the DM, deduped), and `api.subscribeToChat` uses a unique channel topic to stop the realtime `cannot add postgres_changes callbacks after subscribe()` crash (`client.channel(topic)` was handing back an already-subscribed channel on re-mount). **Recommendations:** Home/Map/Discover re-fetch on interest change so "Recommended" labels refresh live. **Calendar:** the `expo-auth-session` Google hook crashed the linked-calendar screen when unconfigured — web got a no-OAuth `.web` variant, native gates the hook behind `isConfigured()`; both toast "not set up yet". **MANAGE:** `WebEventListCard`'s own-event button opens the event (host actions) instead of running join. **Mobile search:** passes `useLocation` coords + shows the full in-range set on the EVENTS tab (was Irvine-default + capped at 6). **Activity:** event-change notifications now render the event title ("`<title>` was updated") via the `event.updated` case + a batched title enrichment in `api.fetchNotifications`. `tsc` clean; jest 423/426; web/native UI verified on the deployed build. See §77. |
 | 2026-06-04 | **Event preview/cover images (Eventbrite → app).** Eventbrite's schema.org Event JSON-LD carries an `image` URL (`img.evbuc.com`); verified live that all events on a discovery page have one. **Slice 1 (pipeline):** the FR6 scraper reads `it.image` (`normalizeImageUrl`: string\|array\|`{url}`, http(s) only, kept verbatim so the signed CDN transform stays valid) and ships `image_url`; migration **`00047`** adds nullable `events.image_url` + DROP/CREATEs `rank_events_query` to surface it on the discovery feed (explicit column list); `ingest-scraped` validates + inserts + self-heals it; `lib/api` `EventRow`/`transformEventRow` map `row.image_url → event.image`; `types/domain` `SCEvent` gains `image`; two mock events get Picsum previews. **Slice 2 (UI):** `WebEventListCard` full-bleed banner, web event-detail 220px hero, `SCEventCard` 110px thumbnail, native event-detail hero fills with the image (accent fallback). Every surface hides the image on load error and omits it when null (user-created events unchanged). **Hot-linked** (not re-hosted). `tsc` clean; jest 423/426; migration applied + `ingest-scraped` redeployed to hosted. Existing rows backfill on the next scrape (self-heal); the §76.4 stale-Data-API caveat applies to live images. See §78. |
+| 2026-06-05 | **Event-management + image-display + create-flow polish.** A batch of deployed-build follow-ups. **Web event editing (new):** the web event detail had no edit at all and its MANAGE button ran the *join* handler against your own event. New `components/EditEventSheet.web.tsx` (floating edit modal, same `api.updateEvent` + `applyEventOverride` save path as native); the web detail now shows a **separate creator-only EDIT EVENT button** (`isHost = kind==='yours' \|\| hostId===me.id`) instead of a join button, and the map hover card's MANAGE opens the detail (where EDIT lives) rather than joining. **Mobile edit form:** `EditEventSheet` (native) stacked ~6 fields with no scroll, so capacity/price overlapped the description — fields now sit in a height-clamped `ScrollView` (52% of window) with header + buttons pinned. **Cover-image surfaces:** the mobile events-nearby chip's leading 44px box now shows the event image (colored category pin only as the fallback); the cluttered cover image was **removed** from the web rich-pin hover card and replaced with **scroll-to-selection** — hovering/selecting an event on the web home map auto-scrolls the right list so that card is centered (`scrollIntoView` block:`center`, skipped while the cursor is over the list). **Create-event:** removed the confusing "publish gate (min subscribers)" control (web `Field` + Review row) + the native explainer card; the form defaults `minSubs` to 1 and still sends `min_subscribers` (API/DB contract unchanged). **Scraper:** DRY_RUN prints an `[IMG]` marker + "N with a cover image" summary. `tsc` clean; jest 423/426; web/native UI verified on the deployed build. See §79. |
 
 ### Current layout
 
@@ -5018,7 +5019,71 @@ demonstrate the UI regardless.
 
 ---
 
-## 79. How to re-snapshot this file
+## 79. Event-management + image-display + create-flow polish
+
+_Last updated: 2026-06-05_
+
+A batch of follow-ups found testing the deployed build. All app-layer (no schema
+changes); mostly web `.web.tsx` surfaces plus two native screens.
+
+### 79.1 Web event editing (the MANAGE button finally does something)
+
+The web event detail had **no edit capability** — and the host's MANAGE button
+was wired to the *join* handler, so tapping it tried to subscribe the creator to
+their own event. New **`components/EditEventSheet.web.tsx`**: a centered floating
+modal (title / when / where / description / capacity / price) using the same
+save path as the native sheet — `api.updateEvent(id, patch)` then
+`applyEventOverride(id, patch)`, with `onSaved` reloading the detail's hook. The
+web detail now branches on `isHost = event.kind === 'yours' || event.hostId ===
+me.id`: the host sees a **separate, creator-only EDIT EVENT button** that opens
+the modal (instead of a JOIN button — you don't join your own event), and
+everyone else still gets JOIN. The map hover card's and list card's MANAGE both
+open the detail (where EDIT lives) rather than running join.
+
+### 79.2 Mobile edit-event sheet overlap
+
+The native `EditEventSheet` stacked ~6 fields in a fixed bottom sheet with no
+scroll, so on shorter devices the capacity stepper + price rows overlapped the
+multi-line description. The fields now live in a height-clamped `ScrollView`
+(`maxHeight: 52%` of the window), with the header + action buttons pinned
+outside the scroll.
+
+### 79.3 Cover images on more surfaces, minus the clutter
+
+- **Mobile events-nearby chips** (`app/events.tsx`): the leading 44px box is now
+  an `EventChipIcon` that renders the event's cover image when present, falling
+  back to the colored category pin only when there's no image (or the URL fails).
+- **Web rich-pin hover card**: the cover image added in §78 made the popup
+  cramped, so it was **removed**. Instead, on the web home, hovering/selecting an
+  event on the map **scrolls the right list to that card, centered**
+  (`scrollIntoView({ block: 'center' })`) — skipped while the cursor is already
+  over the list so hovering a card doesn't yank the list under the pointer. The
+  `active` border highlight + the scroll make the selection obvious.
+
+### 79.4 Removed the publish-gate UI
+
+The "publish gate (min. subscribers)" control — the web `Field` + number input,
+its Review-summary row, and the native explainer card ("Once N subscribers join,
+this becomes publicly visible…") — was unclear and didn't matter in practice. All
+of it is gone; the create-event form defaults `minSubs` to **1** (the
+`events.min_subscribers` column default) and still sends `min_subscribers` in the
+publish payload, so the API/DB contract is unchanged.
+
+### 79.5 Scraper DRY_RUN diagnostic
+
+`DRY_RUN` now prints an `[IMG]` / `[—]` marker per event and an "N with a cover
+image" summary line, so the Eventbrite image parsing is easy to confirm locally
+without ingesting.
+
+**Verification:** `tsc` clean; lint clean (only the pre-existing `SCEvent` /
+`setActiveAccount` warnings); jest 423/426 (the 3 stale-fixture failures only —
+`SCDatePicker` + mock-mode `sign-up`). The touched native screens keep their
+existing Jest suites green (`create-event` 9/9, `events-list` 5/5, `EditEventSheet`
++ `event-detail`); the web surfaces are verified on the deployed build.
+
+---
+
+## 80. How to re-snapshot this file
 
 If you take a fresh measurement and want to update one section, the
 pattern is:

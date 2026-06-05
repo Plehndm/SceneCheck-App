@@ -1,6 +1,6 @@
 # SceneCheck — Test Plan & Implementation Report
 
-_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.71 — event preview/cover images: Eventbrite JSON-LD `image` → scraper/DB/RPC/ingest pipeline + card & detail UI)._
+_Last updated: 2026-06-02 — covers the Expo SDK 54 + TypeScript port at `scenecheck-expo/`, the original prototype now kept under `legacy/` (reference only), and the Supabase backend at `supabase/`. The Jest suite is **426 tests across 57 suites**; on this date **423 pass and 3 fail**, and `npx tsc --noEmit` is clean. The 3 failures are stale test fixtures, not product regressions: two `tests/components/SCDatePicker.test.tsx` cases pin a year-less `"Sat May 16"` value that the picker now re-formats to the next future occurrence (a different weekday once today is past May 16), and one `tests/screens/sign-up.test.tsx` mock-mode happy-path case predates the 18+ birthdate field — submit is now blocked by the "Pick your birthdate" gate before it can navigate. The 7-phase migration is complete (§2.7 … §2.16); subsequent deltas are tracked here as new §2.x sections plus chronology rows in `docs/PROGRESS_SNAPSHOT.md` §1 (most recent: §2.72 — event-management + image-display + create-flow polish: web event editing, edit-sheet overlap fix, cover-image chips, scroll-to-selection, publish-gate removal)._
 
 _Backend target: Jest runs in mock mode (no env vars under
 `jest-expo`); the dev server (`npm run web`) currently points at
@@ -2101,6 +2101,36 @@ a fixture with `image` set *and* a DOM/native image surface to assert against
 (Playwright territory); the scraper field is exercised by the live-parse check
 in §78 + the Node scraper suite. Re-hosting (vs hot-linking) and a user-event
 image upload are noted as future work in PROGRESS_SNAPSHOT §78.3.
+
+### 2.72 Event-management + image-display + create-flow polish (post-§2.71 delta)
+
+_Captured 2026-06-05 alongside `docs/PROGRESS_SNAPSHOT.md` §79._
+
+A batch of deployed-build follow-ups: web event editing, the mobile edit-form
+overlap, more cover-image surfaces (minus the hover clutter), and removal of the
+publish-gate UI. Most are web-only `.web.tsx` surfaces (outside the Jest suite,
+§2.2 / Part 3 Q2); the rest touch native screens that keep their existing suites.
+No new Jest tests; the suite is unchanged at **426 total / 423 passing**.
+
+| Change | How it's covered | Notes |
+|---|---|---|
+| `components/EditEventSheet.web.tsx` (new) + `app/event/[id].web.tsx` host EDIT button + `web/WebMap.tsx` MANAGE→open | `tsc`; web-only | Reuses the native sheet's `api.updateEvent` + `applyEventOverride` path (the native `EditEventSheet` keeps its 4-case component suite). The web modal + the detail's host branch render in a browser, so verified on the deployed build. |
+| `components/EditEventSheet.tsx` ScrollView + height clamp | `tsc`; `EditEventSheet` suite green (4/4) | Layout-only — the existing tests (invisible-when-closed / pre-fill / save / cancel) are unaffected by wrapping the fields in a `ScrollView`. |
+| `app/events.tsx` `EventChipIcon` (image-or-pin) | `tsc`; `events-list` suite green (5/5) | Conditional render keyed on `event.image`; mock fixtures without an image take the pin branch, so the list-render + filter + nav assertions still pass. |
+| `app/(tabs)/index.web.tsx` scroll-to-selected | `tsc`; web-only | DOM `scrollIntoView` + a hover-guard ref — needs a real browser (Playwright); verified on the deployed build. |
+| `app/create-event.tsx` + `app/create-event.web.tsx` publish-gate removal | `tsc`; `create-event` suite green (9/9) | Pure UI removal; `minSubs` still defaults (1) and ships in the payload, so the existing publish-path assertions are unchanged. |
+| `scripts/scrape-events.mjs` DRY_RUN `[IMG]` marker | Node scraper suite green; manual DRY_RUN | Log-only. |
+
+**Delivered count:** jest 426 total / 423 passing (no new tests — web UI is
+outside the Jest environment, the native changes are layout/UI-removal covered by
+the existing screen suites); `tsc` clean.
+
+**What this section deliberately does NOT do:** add Jest tests for the web edit
+modal, the map-to-list scroll sync, or the image-or-pin chip branch — the first
+two need a real browser (Playwright, the standing top future-add in Part 3) and
+the chip's image branch needs a fixture with `event.image` set plus a native
+image surface to assert against. The native `EditEventSheet` save path keeps its
+existing component suite, which the `ScrollView` wrap doesn't disturb.
 
 ---
 
