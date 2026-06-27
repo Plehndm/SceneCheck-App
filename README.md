@@ -1,6 +1,4 @@
-# In4matx 43 Project
-
-## Title: SceneCheck
+# Title: SceneCheck
 
 ## 📁 Project structure
 
